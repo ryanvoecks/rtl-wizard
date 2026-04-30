@@ -1,4 +1,4 @@
-name: CI
+name: integrate
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   pre-commit:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
