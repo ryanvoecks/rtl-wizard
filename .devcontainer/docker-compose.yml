@@ -1,0 +1,138 @@
+services:
+  # Innermost layer. Mounts the real /var/run/docker.sock read-only and
+  # exposes only an allowlisted set of method+path combinations on TCP.
+  # Reachable only from policy-proxy via the socket-bus network.
+  socket-proxy:
+    image: wollomatic/socket-proxy:1
+    restart: unless-stopped
+    # wollomatic's image uses a non-root user, but the Docker Desktop
+    # socket inside the Linux VM is mode 0660 root:docker — a non-root,
+    # no-extra-group process gets EACCES on connect(). Run as root
+    # inside the container so the proxy can dial the socket. The host
+    # blast radius is still tiny: cap_drop ALL + no-new-privileges +
+    # read_only fs + the socket is mounted ro + this container is on
+    # an internal-only network with one peer (policy-proxy).
+    user: "0:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket-bus
+    command:
+      - '-loglevel=info'
+      - '-listenip=0.0.0.0'
+      # The socket-bus network is internal:true and contains only
+      # policy-proxy and socket-proxy. The compose network IS the ACL —
+      # nothing else can route here. We deliberately don't use a
+      # hostname-based -allowfrom because wollomatic resolves it at
+      # startup, before policy-proxy exists, which can leave the
+      # allowlist empty and reject every connection.
+      - '-allowfrom=0.0.0.0/0'
+      # Last-line bind-mount source allowlist. policy-proxy already
+      # rejects bad bind sources, but we duplicate the rule here so a
+      # bug in policy-proxy can't bypass this control.
+      - '-allowbindmountfrom=/tmp,/var/tmp'
+      # Bare /_ping, /version, /info are sent unversioned during the
+      # docker CLI's API-version negotiation. Permitting them is safe —
+      # they're read-only metadata endpoints with no body, no host
+      # effect, and no way to reach into the daemon's mutating surface.
+      # `networks` and `volumes` use a bare path (no /json suffix) for
+      # the list endpoint — `GET /v1.x/networks` and `GET /v1.x/volumes`
+      # — so the trailing-slash form is optional. Containers/images list
+      # via /json so the slash-required form already matches.
+      - '-allowGET=(/_ping|/version|/info|/v1\.[0-9]+/(_ping|version|info|events.*|containers/.*|images/.*|networks(/.*)?|volumes(/.*)?|exec/.*))'
+      - '-allowHEAD=(/_ping|/v1\.[0-9]+/.*)'
+      # `build` is the legacy + BuildKit image-build endpoint; `session` is
+      # the hijacked HTTP/2 channel buildx uses for context filesync, secrets,
+      # SSH agent forwarding, and gRPC solve. Both must be allowed for
+      # `docker compose build` (and Inspect's docker sandbox provider) to
+      # work; policy-proxy applies a query-string check on /build to reject
+      # the host-escape primitives that map across from /containers/create.
+      - '-allowPOST=/v1\.[0-9]+/(build|session|containers/create|containers/[a-zA-Z0-9_.-]+/(start|stop|kill|restart|wait|pause|unpause|resize|attach|exec|rename|update)|exec/[a-zA-Z0-9_.-]+/(start|resize)|images/create|images/load|images/[a-zA-Z0-9_./:%-]+/tag|networks/create|volumes/create|containers/prune|images/prune|networks/prune|volumes/prune)'
+      - '-allowDELETE=/v1\.[0-9]+/(containers|images|networks|volumes)/[a-zA-Z0-9_./:%-]+'
+
+  # Body-inspecting layer. JSON-parses POST /containers/create,
+  # /containers/{id}/update, /containers/{id}/exec, /volumes/create
+  # and rejects host-escape primitives (Privileged, host namespaces,
+  # CapAdd, Devices, dangerous bind sources, non-local volume drivers).
+  # Everything else is byte-tunneled so exec/attach/build still work.
+  policy-proxy:
+    build:
+      context: ./policy-proxy
+    restart: unless-stopped
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges
+    networks:
+      - policy-bus
+      - socket-bus
+    environment:
+      UPSTREAM_HOST: socket-proxy
+      UPSTREAM_PORT: "2375"
+      LISTEN_HOST: 0.0.0.0
+      LISTEN_PORT: "2375"
+      ALLOWED_BIND_PREFIXES: /tmp,/var/tmp
+    depends_on:
+      - socket-proxy
+
+  devcontainer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        CLAUDE_CODE_VERSION: latest
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      DOCKER_HOST: tcp://policy-proxy:2375
+      CLAUDE_CONFIG_DIR: /home/wizard/.claude
+      # Force `docker compose build` (and Inspect AI's docker sandbox
+      # provider) to send images through the daemon's legacy /build
+      # endpoint — already allowlisted in socket-proxy and query-param
+      # checked by policy-proxy. The buildx default in modern Docker
+      # would otherwise spawn a `moby/buildkit` sidecar with
+      # Privileged=true, which policy-proxy rightly denies. Routing
+      # through /build keeps builds inside the daemon's trust boundary
+      # (no new privileged container) at the cost of BuildKit-only
+      # features like cache mounts and build secrets — fine for Inspect
+      # sandboxes.
+      DOCKER_BUILDKIT: "0"
+      COMPOSE_DOCKER_CLI_BUILD: "0"
+    volumes:
+      - ..:/workspace:delegated
+      - claude-code-bashhistory:/commandhistory
+      - claude-code-config:/home/wizard/.claude
+    networks:
+      # policy-bus reaches policy-proxy only. The default bridge
+      # provides general internet egress (further restricted by
+      # init-firewall.sh inside the container).
+      - policy-bus
+      - default
+    depends_on:
+      - policy-proxy
+    command: sleep infinity
+
+networks:
+  # devcontainer ↔ policy-proxy. Marked internal so a misconfigured
+  # devcontainer cannot use this network for arbitrary internet egress.
+  policy-bus:
+    driver: bridge
+    internal: true
+  # policy-proxy ↔ socket-proxy. devcontainer is NOT a member, so
+  # there is no L3 path from the devcontainer to socket-proxy.
+  socket-bus:
+    driver: bridge
+    internal: true
+  default:
+    driver: bridge
+
+volumes:
+  claude-code-bashhistory:
+  claude-code-config:

@@ -1,0 +1,19 @@
+{
+  "name": "RTL Wizard",
+  "dockerComposeFile": "docker-compose.yml",
+  "service": "devcontainer",
+  "workspaceFolder": "/workspace",
+  "remoteUser": "wizard",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "anthropic.claude-code",
+        "eamodio.gitlens",
+        "ms-azuretools.vscode-docker",
+        "ms-python.python"
+      ]
+    }
+  },
+  "postStartCommand": "sudo /usr/local/bin/init-firewall.sh",
+  "waitFor": "postStartCommand"
+}

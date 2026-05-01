@@ -1,0 +1,25 @@
+{
+    "rtl-helper": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${PWD}",
+        "server/rtl_helper.py"
+      ],
+      "env": {}
+    },
+    "yosys-runner": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "${PWD}",
+        "server/yosys_runner.py"
+      ],
+      "env": {}
+    }
+  }
+}
