@@ -1,2 +1,2 @@
 # rtl-wizard
-RTL Wizard 
+RTL Wizard
