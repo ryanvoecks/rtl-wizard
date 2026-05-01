@@ -1,0 +1,13 @@
+[project]
+name = "rtl-wizard"
+version = "0.1.0"
+description = "MCP server for RTL development"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "google-genai>=1.73.1",
+    "inspect-ai>=0.3.212",
+    "inspect-swe>=0.2.47",
+    "mcp>=1.27.0",
+    "openai>=2.32.0",
+]
