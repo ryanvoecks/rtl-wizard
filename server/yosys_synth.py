@@ -1,17 +1,13 @@
 import shutil
 import subprocess
-import os
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
-
-mcp = FastMCP("yosys-runner")
+from util import eda_env
 
 YOSYS_BIN = shutil.which("yosys") or "yosys"
 OUTPUT_LIMIT = 20_000
 
 
-@mcp.tool()
 def yosys_synth(verilog_path: str, top: str | None = None) -> str:
     """Synthesize a Verilog/SystemVerilog file with yosys and return cell stats.
 
@@ -41,15 +37,9 @@ def yosys_synth(verilog_path: str, top: str | None = None) -> str:
         "stat"
     )
 
-    # TODO: Should we really pop the path if there's no original? Original is a sign of PyInstaller
-    env = os.environ.copy()
-    if "LD_LIBRARY_PATH_ORIG" in env:
-        env["LD_LIBRARY_PATH"] = env["LD_LIBRARY_PATH_ORIG"]
-    else:
-        env.pop("LD_LIBRARY_PATH", None)
     result = subprocess.run(
         [YOSYS_BIN, "-p", script],
-        env=env,
+        env=eda_env(),
         capture_output=True,
         text=True,
         timeout=120,
@@ -103,7 +93,3 @@ def _extract_stats(stdout: str) -> str | None:
     if not kept:
         return None
     return "\n".join(kept)
-
-
-if __name__ == "__main__":
-    mcp.run()
