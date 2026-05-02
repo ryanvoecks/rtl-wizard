@@ -1,8 +1,9 @@
 services:
   default:
+    image: rtl-wizard-sandbox:latest
     build:
-      context: ..
-      dockerfile: sandbox/Dockerfile
+      context: ../server
+      dockerfile: ../sandbox/Dockerfile
     command: "tail -f /dev/null"
     init: true
     stop_grace_period: 1s
