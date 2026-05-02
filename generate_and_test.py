@@ -71,25 +71,30 @@ SYSTEM_PROMPT_TEMPLATE = (
     "current directory, matching the module name and I/O signals from the spec. "
     "You may run `make clean && make vcs && make sim` to compile and simulate; "
     "the simulation prints `Passed` on success. Iterate until simulation passes. "
-    "Then optimize the design for PPA (power, performance, area): prefer fewer "
-    "sequential cells, narrower datapaths, shared logic, and shallower "
-    "combinational depth. The `yosys-runner` MCP server exposes a synthesis tool "
-    "that runs yosys on `{design}.v` and returns the cell/wire stats — call it "
-    "(use whatever exact name appears in your tool list) and treat the cell "
-    "count as the area metric, iterating to bring it down while keeping the "
-    "testbench green. Do not change the module interface or alter the testbench."
+    "Then optimize the design — your primary objective is to minimize "
+    "**combinational depth** (the longest topological path through the "
+    "post-techmap netlist), since that sets the achievable clock period. "
+    "Secondary PPA goals: prefer fewer sequential cells, narrower datapaths, "
+    "and shared logic. The `rtl-wizard` MCP server exposes a synthesis tool "
+    "that runs yosys on `{design}.v` and returns the cell/wire stats, plus a "
+    "tool that reconstructs the longest combinational path as annotated RTL — "
+    "call them (use whatever exact names appear in your tool list), use the "
+    "reconstructed critical path to identify the depth bottleneck, and "
+    "iterate to bring combinational depth down (while also watching cell "
+    "count as the area metric) and keeping the testbench green. Do not "
+    "change the module interface or alter the testbench."
 )
 
-YOSYS_MCP = MCPServerConfigStdio(
-    name="yosys-runner",
+RTL_WIZARD_MCP = MCPServerConfigStdio(
+    name="rtl-wizard",
     command="python3",
-    args=["/opt/yosys_runner.py"],
+    args=["/opt/rtl_wizard.py"],
 )
 
-yosys_mcp = mcp_server_sandbox(
-    name="yosys-runner",
+rtl_wizard_mcp = mcp_server_sandbox(
+    name="rtl-wizard",
     command="python3",
-    args=["/opt/yosys_runner.py"],
+    args=["/opt/rtl_wizard.py"],
 )
 
 def find_design(name: str) -> Path:
@@ -151,6 +156,7 @@ def rtllm_make_passes() -> Scorer:
 
 
 _CELL_COUNT_RE = re.compile(r"Number of cells:\s+(\d+)")
+_LTP_LENGTH_RE = re.compile(r"longest topological path.*?\(length=(\d+)\)", re.IGNORECASE)
 
 
 @scorer(metrics=[mean(), stderr()])
@@ -193,8 +199,46 @@ def yosys_cell_count(design: str) -> Scorer:
     return score
 
 
+@scorer(metrics=[mean(), stderr()])
+def yosys_gate_depth(design: str) -> Scorer:
+    """Synthesize the agent's design with yosys and report the longest
+    combinational path length (gate depth) via `ltp -noff`.
+
+    Gated on the testbench passing — returns NaN otherwise so the mean is
+    computed only over correct runs.
+    """
+    script = (
+        f"read_verilog -sv {design}.v; "
+        f"hierarchy -check -top {design}; "
+        "proc; flatten; opt; fsm; opt; memory; opt; "
+        "techmap; opt; "
+        "ltp -noff"
+    )
+    nan = float("nan")
+
+    async def score(state: TaskState, target: Target) -> Score:
+        pass_score = (state.scores or {}).get("rtllm_make_passes")
+        if pass_score is None or pass_score.value != CORRECT:
+            return Score(value=nan, explanation="testbench did not pass — gate depth omitted")
+
+        sbox = sandbox()
+        result = await sbox.exec(["yosys", "-p", script])
+        if not result.success:
+            return Score(
+                value=nan,
+                explanation=f"yosys failed (rc={result.returncode}):\n{result.stderr[-2000:]}",
+            )
+        matches = _LTP_LENGTH_RE.findall(result.stdout)
+        if not matches:
+            return Score(value=nan, explanation="could not parse gate depth from yosys ltp output")
+        depth = int(matches[-1])
+        return Score(value=depth, answer=str(depth), explanation=f"yosys reports gate depth of {depth}")
+
+    return score
+
+
 @task
-def rtllm_generate_and_test(design: str) -> Task:
+def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
     folder = find_design(design)
     description = (folder / "design_description.txt").read_text()
 
@@ -211,7 +255,7 @@ def rtllm_generate_and_test(design: str) -> Task:
     #     solver=codex_cli(
     #         system_prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
     #         env={"GEMINI_CLI_TRUST_WORKSPACE": "true", "LD_LIBRARY_PATH": ""},
-    #         mcp_servers=[YOSYS_MCP],
+    #         mcp_servers=[RTL_WIZARD_MCP],
     #         version="0.110.0",
     #     ),
     #     scorer=rtllm_make_passes(),
@@ -223,9 +267,10 @@ def rtllm_generate_and_test(design: str) -> Task:
         dataset=[sample],
         solver=react(
             prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
-            tools=[yosys_mcp, web_search(), bash(), python(), bash_session(), text_editor(), code_execution(), update_plan(), memory(), think()],
+            tools=[rtl_wizard_mcp, web_search(), bash(), python(), bash_session(), text_editor(), code_execution(), update_plan(), memory(), think()],
             on_continue="Please proceed to the next step using your best judgement. If you believe you are done, please call the `submit()` tool."
         ),
-        scorer=[rtllm_make_passes(), yosys_cell_count(design)],
+        scorer=[rtllm_make_passes(), yosys_cell_count(design), yosys_gate_depth(design)],
         sandbox=("docker", str(SANDBOX_COMPOSE)),
+        message_limit=message_limit,
     )
