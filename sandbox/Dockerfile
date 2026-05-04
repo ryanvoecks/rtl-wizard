@@ -12,6 +12,7 @@ RUN pip3 install --no-cache-dir mcp
 COPY rtl_wizard.py /opt/rtl_wizard.py
 COPY yosys_synth.py /opt/yosys_synth.py
 COPY reconstruct_from_path.py /opt/reconstruct_from_path.py
+COPY iverilog_sim.py /opt/iverilog_sim.py
 COPY util.py /opt/util.py
 
 # The inspect-tool-support base image sets LD_LIBRARY_PATH to point at its
