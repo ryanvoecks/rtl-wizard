@@ -16,10 +16,8 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from benchmark.scorers import (
-    openroad_power,
+    openroad_ppa,
     rtllm_make_passes,
-    yosys_cell_count,
-    yosys_gate_depth,
 )
 from benchmark.solvers import rtllm_react_solver
 
@@ -74,6 +72,9 @@ def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
     golden_testbench = folder / "testbench.v"
     if not golden_testbench.is_file():
         sys.exit(f"Golden testbench not found: {golden_testbench}")
+    golden_reference = folder / f"verified_{design}.v"
+    if not golden_reference.is_file():
+        sys.exit(f"Golden reference not found: {golden_reference}")
 
     sample = Sample(
         id=design,
@@ -87,9 +88,7 @@ def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
         solver=rtllm_react_solver(design),
         scorer=[
             rtllm_make_passes(design, golden_testbench),
-            yosys_cell_count(design),
-            yosys_gate_depth(design),
-            openroad_power(design),
+            openroad_ppa(design, golden_reference),
         ],
         sandbox=("docker", str(SANDBOX_COMPOSE)),
         message_limit=message_limit,
