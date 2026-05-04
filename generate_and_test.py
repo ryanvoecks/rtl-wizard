@@ -156,7 +156,7 @@ async def _collect_dut_files(design: str) -> tuple[dict[str, str], str | None]:
     empty and error explains what went wrong (with extra detail when the
     design file was dropped because the agent inlined the testbench).
     """
-    sbox = sandbox()
+    sbox = sandbox("solver")
     ls = await sbox.exec(["sh", "-c", "ls *.v *.sv 2>/dev/null"])
     names = [n for n in ls.stdout.split() if n]
     if not names:
@@ -281,7 +281,7 @@ def yosys_cell_count(design: str) -> Scorer:
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=nan, explanation="testbench did not pass — cell count omitted")
 
-        sbox = sandbox()
+        sbox = sandbox("scorer")
         result = await sbox.exec(["yosys", "-p", script])
         if not result.success:
             return Score(
@@ -319,7 +319,7 @@ def yosys_gate_depth(design: str) -> Scorer:
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=nan, explanation="testbench did not pass — gate depth omitted")
 
-        sbox = sandbox()
+        sbox = sandbox("scorer")
         result = await sbox.exec(["yosys", "-p", script])
         if not result.success:
             return Score(
