@@ -255,6 +255,18 @@ def rtllm_make_passes(design: str, golden_testbench: Path) -> Scorer:
 
 _CELL_COUNT_RE = re.compile(r"^\s+(\d+)\s+cells\s*$", re.MULTILINE)
 _LTP_LENGTH_RE = re.compile(r"longest topological path.*?\(length=(\d+)\)", re.IGNORECASE)
+# Last column of OpenSTA's `report_power` summary `Total` row — total
+# power in Watts, e.g. `Total  8.01e-05  8.81e-06  1.78e-06  9.07e-05 100.0%`.
+_POWER_TOTAL_RE = re.compile(r"^\s*Total\s+\S+\s+\S+\s+\S+\s+(\S+)", re.MULTILINE)
+
+# nangate45 ships with the OpenROAD-flow-scripts build (see sandbox/Dockerfile).
+# Single-corner Liberty + matching tech/cell LEFs — OpenSTA needs all three
+# before `report_power` can model cells. ORFS bundles a TAPCELL with no LEF
+# master, which surfaces as a benign WARNING ORD-2056 we ignore.
+_NANGATE_DIR = "/OpenROAD-flow-scripts/flow/platforms/nangate45"
+NANGATE_LIB = f"{_NANGATE_DIR}/lib/NangateOpenCellLibrary_typical.lib"
+NANGATE_TECH_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.tech.lef"
+NANGATE_CELL_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.macro.lef"
 
 
 @scorer(metrics=[mean(), stderr()])
@@ -335,6 +347,94 @@ def yosys_gate_depth(design: str) -> Scorer:
     return score
 
 
+@scorer(metrics=[mean(), stderr()])
+def openroad_power(design: str) -> Scorer:
+    """Synthesize the agent's design with yosys mapped to nangate45 standard
+    cells, then run OpenROAD's `report_power` (OpenSTA) and return the total
+    power in Watts.
+
+    Activity is the OpenSTA default and the clock is virtual at 1 ns when the
+    design has no clock port; absolute Watts aren't physically meaningful, but
+    every sample uses the same setup so the score is comparable across designs.
+
+    Gated on the testbench passing — returns NaN otherwise so the mean is
+    computed only over correct runs.
+    """
+    yosys_script = (
+        f"read_verilog -sv {design}.v; "
+        f"hierarchy -check -top {design}; "
+        "proc; opt; fsm; opt; memory; opt; "
+        "techmap; opt; "
+        f"dfflibmap -liberty {NANGATE_LIB}; "
+        f"abc -liberty {NANGATE_LIB}; "
+        "clean; "
+        f"write_verilog -noattr -noexpr -nohex -nodec /tmp/{design}_netlist.v"
+    )
+    # Common clock-port names in RTLLM; combinational designs fall through
+    # to a virtual clock so report_power still runs.
+    openroad_tcl = f"""\
+read_lef {NANGATE_TECH_LEF}
+read_lef {NANGATE_CELL_LEF}
+read_liberty {NANGATE_LIB}
+read_verilog /tmp/{design}_netlist.v
+link_design {design}
+set clk_ports [get_ports -quiet {{clk clock i_clk clk_i}}]
+if {{[llength $clk_ports] > 0}} {{
+    create_clock -name clk -period 1.0 $clk_ports
+}} else {{
+    create_clock -name virtual -period 1.0
+}}
+report_power
+exit
+"""
+    nan = float("nan")
+
+    async def score(state: TaskState, target: Target) -> Score:
+        pass_score = (state.scores or {}).get("rtllm_make_passes")
+        if pass_score is None or pass_score.value != CORRECT:
+            return Score(value=nan, explanation="testbench did not pass — power omitted")
+
+        sbox = sandbox("scorer")
+        synth = await sbox.exec(["yosys", "-q", "-p", yosys_script])
+        if not synth.success:
+            return Score(
+                value=nan,
+                explanation=f"yosys netlist gen failed (rc={synth.returncode}):\n{synth.stderr[-2000:]}",
+            )
+
+        await sbox.write_file("/tmp/openroad_power.tcl", openroad_tcl)
+        try:
+            power = await asyncio.wait_for(
+                sbox.exec(["openroad", "-no_init", "-exit", "/tmp/openroad_power.tcl"]),
+                timeout=120,
+            )
+        except asyncio.TimeoutError:
+            return Score(value=nan, explanation="openroad report_power timed out after 120s")
+
+        if not power.success:
+            return Score(
+                value=nan,
+                explanation=f"openroad failed (rc={power.returncode}):\n{power.stdout[-2000:]}",
+            )
+        matches = _POWER_TOTAL_RE.findall(power.stdout)
+        if not matches:
+            return Score(value=nan, explanation="could not parse power from openroad output")
+        try:
+            watts = float(matches[-1])
+        except ValueError:
+            return Score(
+                value=nan,
+                explanation=f"could not parse power value {matches[-1]!r} as float",
+            )
+        return Score(
+            value=watts,
+            answer=f"{watts:.3e}",
+            explanation=f"openroad reports {watts:.3e} W total power (nangate45, virtual 1 ns clock)",
+        )
+
+    return score
+
+
 @task
 def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
     folder = find_design(design)
@@ -371,7 +471,7 @@ def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
             tools=[rtl_wizard_mcp, web_search(), bash(), python(), bash_session(), text_editor(), code_execution(), update_plan(), memory(), think()],
             on_continue="Please proceed to the next step using your best judgement. If you believe you are done, please call the `submit()` tool."
         ),
-        scorer=[rtllm_make_passes(design, golden_testbench), yosys_cell_count(design), yosys_gate_depth(design)],
+        scorer=[rtllm_make_passes(design, golden_testbench), yosys_cell_count(design), yosys_gate_depth(design), openroad_power(design)],
         sandbox=("docker", str(SANDBOX_COMPOSE)),
         message_limit=message_limit,
     )

@@ -1,5 +1,19 @@
-# rtl-wizard
-RTL Wizard
+# RTL Wizard
 
-Running step 1:
-`git submodule update --init --recursive`
+MCP server with tools for generating high-quality PPA-optimised RTL. Includes full Verilog generation benchmarking suite.
+
+## Setup
+
+Requires `uv` and `docker`.
+
+```bash
+git submodule update --init --recursive
+```
+
+## Running
+
+Use `inspect` to run tests. Example:
+
+```bash
+uv run inspect eval generate_and_test.py -T design=adder_8bit
+```
