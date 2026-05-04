@@ -1,16 +1,17 @@
-"""Generate a Verilog design with Gemini CLI and score it against the RTLLM testbench.
+"""Scorers for the RTLLM generate-and-test benchmark.
 
-Run with:
-    inspect eval generate_and_test.py -T design=adder_8bit
+Four scorer factories run in this order (the latter three are gated on the
+first via `state.scores["rtllm_make_passes"]`):
+
+  1. `rtllm_make_passes` — correctness, runs hidden golden testbench
+  2. `yosys_cell_count` — area
+  3. `yosys_gate_depth` — speed (combinational depth)
+  4. `openroad_power`   — power (nangate45 @ virtual 1 ns clock)
 """
 import asyncio
-import fnmatch
 import re
-import sys
 from pathlib import Path
 
-from inspect_ai import Task, task
-from inspect_ai.dataset import Sample
 from inspect_ai.scorer import (
     CORRECT,
     INCORRECT,
@@ -23,30 +24,11 @@ from inspect_ai.scorer import (
     stderr,
 )
 from inspect_ai.solver import TaskState
-from inspect_ai.tool import MCPServerConfigStdio, mcp_server_sandbox, web_search, bash, python, bash_session, text_editor, code_execution, skill, update_plan, memory, think, Tool, tool
-from inspect_ai.tool._tools._execute import code_viewer
 from inspect_ai.util import sandbox
-from inspect_ai.agent import react
-from inspect_swe import codex_cli, gemini_cli, mini_swe_agent
 
-REPO_ROOT = Path(__file__).parent
-RTLLM_ROOT = REPO_ROOT / "external" / "RTLLM"
-SANDBOX_COMPOSE = REPO_ROOT / "sandbox" / "compose.yaml"
 # Name of the sibling sandbox service in compose.yaml that the scorer uses
 # to run the hidden golden testbench. The agent never has access to it.
 SCORER_SANDBOX = "scorer"
-
-# Files in the upstream RTLLM design folder that we never deliver to the
-# agent: ground-truth solutions, the upstream VCS makefile, and crucially
-# the golden testbench — the agent must write its own and only sees the
-# natural-language spec. The golden testbench is run separately at scoring
-# time in a fresh container.
-SKIP_COPY_PATTERNS = (
-    "verified_*.v",
-    "makefile",
-    "Makefile",
-    "testbench.v",
-)
 
 # Glob-based makefile used only at scoring time, after we've staged the
 # agent's design files alongside the golden testbench in the sibling
@@ -64,81 +46,6 @@ sim:
 clean:
 \trm -rf *.log simv simv.dSYM output.txt
 """
-
-SYSTEM_PROMPT_TEMPLATE = (
-    "You are an expert Verilog designer working in a sandbox directory. "
-    "The natural-language spec is in `design_description.txt`; that is the "
-    "only input file you are given. Write your synthesizable module to "
-    "`{design}.v` in the current directory, matching the module name and "
-    "I/O signals from the spec.\n\n"
-    "There is no testbench in your sandbox — you must write one yourself "
-    "to verify correctness. Put it in a *separate* file (e.g. `tb.v`); its "
-    "top-level module must be named `testbench`. Do NOT inline the "
-    "testbench into `{design}.v` — at grading time, files containing a "
-    "`module testbench` declaration are dropped, so an inlined testbench "
-    "would take the design with it. Make your testbench thorough — "
-    "exercise edge cases, randomized stimulus, and boundary conditions. "
-    "After you submit, your design files (everything except the file with "
-    "`module testbench`) are copied into a fresh container and a hidden "
-    "golden testbench is run against them; that grade is final. A weak "
-    "agent testbench that passes can still fail the golden one.\n\n"
-    "The `rtl-wizard` MCP server exposes a simulation tool that compiles "
-    "a list of Verilog files with iverilog and runs the resulting binary "
-    "with vvp, returning the output. Pass it `[{design}.v, <your "
-    "testbench>.v]` to iterate. Your testbench should print `Passed` on "
-    "success.\n\n"
-    "Then optimize the design — your primary objective is to minimize "
-    "**combinational depth** (the longest topological path through the "
-    "post-techmap netlist), since that sets the achievable clock period. "
-    "Secondary PPA goals: prefer fewer sequential cells, narrower "
-    "datapaths, and shared logic. The `rtl-wizard` MCP server also "
-    "exposes a synthesis tool that runs yosys on `{design}.v` and returns "
-    "the cell/wire stats, plus a tool that reconstructs the longest "
-    "combinational path as annotated RTL — call them (use whatever exact "
-    "names appear in your tool list), use the reconstructed critical path "
-    "to identify the depth bottleneck, and iterate to bring combinational "
-    "depth down (while also watching cell count as the area metric) and "
-    "keeping your testbench green. Do not change the module interface."
-)
-
-RTL_WIZARD_MCP = MCPServerConfigStdio(
-    name="rtl-wizard",
-    command="python3",
-    args=["/opt/rtl_wizard.py"],
-)
-
-rtl_wizard_mcp = mcp_server_sandbox(
-    name="rtl-wizard",
-    command="python3",
-    args=["/opt/rtl_wizard.py"],
-)
-
-def find_design(name: str) -> Path:
-    for path in RTLLM_ROOT.rglob(name):
-        if path.is_dir() and (path / "design_description.txt").exists():
-            return path
-    sys.exit(f"Design not found: {name}")
-
-
-def design_files(folder: Path, design: str) -> dict[str, str]:
-    """Map sandbox-relative path → host path for files the agent should see.
-
-    The agent only receives `design_description.txt`. The golden testbench,
-    ground-truth solutions, and the upstream VCS makefile are all withheld;
-    grading happens in a sibling sandbox at score time (see `rtllm_make_passes`).
-    """
-    skip_exact = {f"{design}.v"}
-    out: dict[str, str] = {}
-    for src in folder.iterdir():
-        if not src.is_file() or src.name in skip_exact:
-            continue
-        if any(fnmatch.fnmatch(src.name, pat) for pat in SKIP_COPY_PATTERNS):
-            continue
-        out[src.name] = str(src.resolve())
-    if "design_description.txt" not in out:
-        sys.exit("Design folder missing required file: design_description.txt")
-    return out
-
 
 # Top-level `module testbench` declaration — used to tell the agent's own
 # testbench file apart from the design files when copying out for scoring.
@@ -293,7 +200,7 @@ def yosys_cell_count(design: str) -> Scorer:
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=nan, explanation="testbench did not pass — cell count omitted")
 
-        sbox = sandbox("scorer")
+        sbox = sandbox(SCORER_SANDBOX)
         result = await sbox.exec(["yosys", "-p", script])
         if not result.success:
             return Score(
@@ -331,7 +238,7 @@ def yosys_gate_depth(design: str) -> Scorer:
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=nan, explanation="testbench did not pass — gate depth omitted")
 
-        sbox = sandbox("scorer")
+        sbox = sandbox(SCORER_SANDBOX)
         result = await sbox.exec(["yosys", "-p", script])
         if not result.success:
             return Score(
@@ -394,7 +301,7 @@ exit
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=nan, explanation="testbench did not pass — power omitted")
 
-        sbox = sandbox("scorer")
+        sbox = sandbox(SCORER_SANDBOX)
         synth = await sbox.exec(["yosys", "-q", "-p", yosys_script])
         if not synth.success:
             return Score(
@@ -433,45 +340,3 @@ exit
         )
 
     return score
-
-
-@task
-def rtllm_generate_and_test(design: str, message_limit: int = 40) -> Task:
-    folder = find_design(design)
-    description = (folder / "design_description.txt").read_text()
-    golden_testbench = folder / "testbench.v"
-    if not golden_testbench.is_file():
-        sys.exit(f"Golden testbench not found: {golden_testbench}")
-
-    sample = Sample(
-        id=design,
-        input=description,
-        target="testbench prints 'Passed'",
-        files=design_files(folder, design),
-    )
-
-    # Codex (broken for all tool-calling with gpt-oss-120b)
-    # return Task(
-    #     dataset=[sample],
-    #     solver=codex_cli(
-    #         system_prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
-    #         env={"GEMINI_CLI_TRUST_WORKSPACE": "true", "LD_LIBRARY_PATH": ""},
-    #         mcp_servers=[RTL_WIZARD_MCP],
-    #         version="0.110.0",
-    #     ),
-    #     scorer=rtllm_make_passes(),
-    #     sandbox=("docker", str(SANDBOX_COMPOSE)),
-    # )
-
-    # ReACT
-    return Task(
-        dataset=[sample],
-        solver=react(
-            prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
-            tools=[rtl_wizard_mcp, web_search(), bash(), python(), bash_session(), text_editor(), code_execution(), update_plan(), memory(), think()],
-            on_continue="Please proceed to the next step using your best judgement. If you believe you are done, please call the `submit()` tool."
-        ),
-        scorer=[rtllm_make_passes(design, golden_testbench), yosys_cell_count(design), yosys_gate_depth(design), openroad_power(design)],
-        sandbox=("docker", str(SANDBOX_COMPOSE)),
-        message_limit=message_limit,
-    )
