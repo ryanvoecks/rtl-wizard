@@ -1,9 +1,16 @@
+x-sandbox-base: &sandbox-base
+  image: rtl-wizard-sandbox:latest
+  command: "tail -f /dev/null"
+  init: true
+  stop_grace_period: 1s
+
 services:
-  default:
-    image: rtl-wizard-sandbox:latest
+  solver:
+    <<: *sandbox-base
+    x-default: true
     build:
       context: ../server
       dockerfile: ../sandbox/Dockerfile
-    command: "tail -f /dev/null"
-    init: true
-    stop_grace_period: 1s
+  scorer:
+    <<: *sandbox-base
+    x-local: true
