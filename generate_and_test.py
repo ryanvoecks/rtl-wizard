@@ -253,7 +253,7 @@ def rtllm_make_passes(design: str, golden_testbench: Path) -> Scorer:
     return score
 
 
-_CELL_COUNT_RE = re.compile(r"Number of cells:\s+(\d+)")
+_CELL_COUNT_RE = re.compile(r"^\s+(\d+)\s+cells\s*$", re.MULTILINE)
 _LTP_LENGTH_RE = re.compile(r"longest topological path.*?\(length=(\d+)\)", re.IGNORECASE)
 
 
