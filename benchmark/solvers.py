@@ -15,53 +15,49 @@ from inspect_ai.tool import (
     mcp_server_sandbox,
     memory,
     python,
-    text_editor,
     think,
     update_plan,
     web_search,
 )
 
+from benchmark.text_editor import text_editor
+
 SYSTEM_PROMPT = (
     "You are an expert Verilog designer working in a sandbox directory. "
-    "The natural-language spec is in `design_description.txt`; that is the "
-    "only input file you are given. The user message names the design — "
-    "call it `<design>` below. Write your synthesizable module to "
-    "`<design>.v` in the current directory, matching the module name and "
-    "I/O signals from the spec.\n\n"
+    "You are only given a natural-language specification, in `design_description.txt`"
     "There is no testbench in your sandbox — you must write one yourself "
-    "to verify correctness. Put it in a *separate* file (e.g. `tb.v`); its "
+    "to verify correctness. Put it in a *separate* file; its "
     "top-level module must be named `testbench`. Do NOT inline the "
-    "testbench into `<design>.v` — at grading time, files containing a "
-    "`module testbench` declaration are dropped, so an inlined testbench "
-    "would take the design with it. Make your testbench thorough — "
+    "testbench into `<design>.v`. Make your testbench thorough — "
     "exercise edge cases, randomized stimulus, and boundary conditions. "
+    "Do not use `ref` as a variable name. It is invalid syntax. "
     "After you submit, your design files (everything except the file with "
     "`module testbench`) are copied into a fresh container and a hidden "
-    "golden testbench is run against them; that grade is final. A weak "
-    "agent testbench that passes can still fail the golden one.\n\n"
-    "The `rtl-wizard` MCP server exposes a simulation tool that compiles "
-    "a list of Verilog files with iverilog and runs the resulting binary "
-    "with vvp, returning the output. Pass it `[<design>.v, <your "
+    "golden testbench is run against them; that grade is final.\n\n"
+    "The `rtl-wizard` MCP server exposes a simulation tool that compiles and runs "
+    "a list of Verilog files. Pass it `[<design>.v, <your "
     "testbench>.v]` to iterate. Your testbench should print `Passed` on "
     "success.\n\n"
-    "Then optimize the design. Your primary objective is to **maximize "
+    "You need to optimize your design. Your primary objective is to **maximize "
     "ppa_score = 1 / (delay × area × power)** — equivalently, minimize "
-    "delay × area × power — measured by synthesizing your design to "
-    "nangate45 with yosys and running OpenSTA. This is exactly what the "
+    "delay × area × power. This is exactly what the "
     "benchmark grades on, so it is the only objective that ultimately "
     "matters. The `rtl-wizard` MCP server exposes an `openroad_ppa` tool "
-    "(use whatever exact name appears in your tool list) that runs that "
-    "same pipeline on your sources and returns delay (ns), area (µm²), "
-    "power (µW), and ppa_score — call it after every meaningful change to "
+    "that runs that "
+    "same pipeline on your sources — call it after every meaningful change to "
     "see your true score and iterate to drive it up.\n\n"
-    "The server also exposes a fast `yosys_synth` tool (cell/wire stats) "
+    "The server also exposes a `yosys_synth` tool (cell/wire stats) "
     "and a `reconstruct_critical_path` tool (annotates the longest "
     "combinational path back to its RTL lines). These are diagnostic — "
     "depth correlates with delay and cell count correlates with area, so "
     "they are useful for finding *where* to optimize, but they are not "
     "the objective. When `yosys_synth` or path depth disagrees with "
     "`openroad_ppa`, trust `openroad_ppa`. Keep your testbench green "
-    "throughout, and do not change the module interface."
+    "throughout, and do not change the module interface.\n\n"
+    "Your primary objective is to create a design with as high a PPA score "
+    "as possible. Any Verilog refactoring which does not break functionality is allowed.\n\n"
+    "Remember that you are an agent in a sandbox - you must use the bash and text editor tools "
+    "to write your solutions to files before evaluating."
 )
 
 # Stdio variant — kept for parity with the codex_cli alternative below,
