@@ -74,6 +74,20 @@ def _detect_golden_top(text: str, design: str) -> str | None:
     return None
 
 
+# Matches the first `module <name>` declaration in a Verilog source. RTLLM
+# testbench files each declare exactly one module, so the first match is the
+# top. The names vary widely (`testbench`, `add16_tb`, `tb_RAM`, `main`, …),
+# so we can't pin a single name in the scorer's makefile.
+_MODULE_DECL_RE = re.compile(r"^\s*module\s+(\w+)", re.MULTILINE)
+
+
+def _detect_testbench_top(text: str) -> str | None:
+    """Return the module name declared in a testbench file, or None if no
+    `module` declaration is found."""
+    m = _MODULE_DECL_RE.search(text)
+    return m.group(1) if m else None
+
+
 def _build_sample(folder: Path) -> Sample | None:
     """Build a Sample for one design folder, or return None if the folder is
     missing the golden artifacts we need (testbench / verified reference /
@@ -91,6 +105,10 @@ def _build_sample(folder: Path) -> Sample | None:
     golden_top = _detect_golden_top(reference_text, design)
     if golden_top is None:
         return None
+    testbench_text = testbench.read_text()
+    testbench_top = _detect_testbench_top(testbench_text)
+    if testbench_top is None:
+        return None
 
     description = (folder / "design_description.txt").read_text()
 
@@ -101,7 +119,8 @@ def _build_sample(folder: Path) -> Sample | None:
         files=_design_files(folder, design),
         metadata={
             "design": design,
-            "golden_testbench_text": testbench.read_text(),
+            "golden_testbench_text": testbench_text,
+            "golden_testbench_top": testbench_top,
             "golden_reference_text": reference_text,
             "golden_top": golden_top,
         },

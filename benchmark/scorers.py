@@ -55,14 +55,16 @@ SCORER_SANDBOX = "scorer"
 # Glob-based makefile used only at scoring time, after we've staged the
 # agent's design files alongside the golden testbench in the sibling
 # 'scorer' sandbox. Globbing keeps it agnostic to how the agent split the
-# design across files. The golden testbench always declares `module testbench`
-# (RTLLM convention), so we pin it as the elaboration root to avoid Verilator
-# picking an arbitrary top when multiple unconnected roots are present.
-VERILATOR_MAKEFILE = """\
+# design across files. The golden testbench's top module name varies across
+# RTLLM (`testbench`, `add16_tb`, `tb_RAM`, `main`, …) — we detect it per
+# sample and pin it as the elaboration root to avoid Verilator picking an
+# arbitrary top when multiple unconnected roots are present.
+def _verilator_makefile(testbench_top: str) -> str:
+    return f"""\
 .PHONY: vcs sim clean
 
 vcs:
-\tverilator --binary --timing -Wno-fatal -j 0 --top-module testbench -o simv $(wildcard *.v *.sv)
+\tverilator --binary --timing -Wno-fatal -j 0 --top-module {testbench_top} -o simv $(wildcard *.v *.sv)
 
 sim:
 \t./obj_dir/simv | tee run.log
@@ -220,7 +222,9 @@ async def _collect_dut_files(design: str) -> tuple[dict[str, str], str | None]:
 
 
 async def _run_golden_in_sibling(
-    files: dict[str, str], golden_testbench_text: str
+    files: dict[str, str],
+    golden_testbench_text: str,
+    golden_testbench_top: str,
 ) -> tuple[int, str, str]:
     """Stage the agent's design files + golden testbench + makefile into the
     sibling 'scorer' sandbox container (defined in compose.yaml — Inspect
@@ -238,7 +242,7 @@ async def _run_golden_in_sibling(
     for name, content in files.items():
         await sbox.write_file(f"/workspace/{name}", content)
     await sbox.write_file("/workspace/testbench.v", golden_testbench_text)
-    await sbox.write_file("/workspace/makefile", VERILATOR_MAKEFILE)
+    await sbox.write_file("/workspace/makefile", _verilator_makefile(golden_testbench_top))
 
     result = await asyncio.wait_for(
         sbox.exec(
@@ -261,12 +265,15 @@ def rtllm_make_passes() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
         design = state.metadata["design"]
         golden_text = state.metadata["golden_testbench_text"]
+        golden_tb_top = state.metadata["golden_testbench_top"]
         files, err = await _collect_dut_files(design)
         if err:
             return Score(value=INCORRECT, explanation=err)
 
         try:
-            rc, stdout, stderr_out = await _run_golden_in_sibling(files, golden_text)
+            rc, stdout, stderr_out = await _run_golden_in_sibling(
+                files, golden_text, golden_tb_top
+            )
         except asyncio.TimeoutError:
             return Score(
                 value=INCORRECT,
