@@ -15,7 +15,6 @@ via `state.scores["rtllm_make_passes"]`):
 """
 import asyncio
 import re
-from pathlib import Path
 
 from inspect_ai.scorer import (
     CORRECT,
@@ -130,12 +129,17 @@ async def _run_golden_in_sibling(
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def rtllm_make_passes(design: str, golden_testbench: Path) -> Scorer:
+def rtllm_make_passes() -> Scorer:
     """Score by running the hidden golden testbench against the agent's design
-    in a sibling sandbox the agent never had access to."""
-    golden_text = golden_testbench.read_text()
+    in a sibling sandbox the agent never had access to.
+
+    Per-sample inputs (design name, golden testbench text) come from
+    `state.metadata` — see `_build_sample` in tasks.py.
+    """
 
     async def score(state: TaskState, target: Target) -> Score:
+        design = state.metadata["design"]
+        golden_text = state.metadata["golden_testbench_text"]
         files, err = await _collect_dut_files(design)
         if err:
             return Score(value=INCORRECT, explanation=err)
@@ -215,19 +219,6 @@ def _section(text: str, start_tag: str, end_tag: str) -> str:
 
 _PPA_KEYS = ("delay", "area", "power", "ppa_score", "relative_ppa_score")
 _NAN_PPA = {k: float("nan") for k in _PPA_KEYS}
-
-
-def _detect_golden_top(text: str, design: str) -> str | None:
-    """Return the top module name in a `verified_<design>.v` reference.
-
-    Naming in RTLLM golden references is inconsistent — some files use
-    `module <design>` and others `module verified_<design>`. We try both
-    in order and pick whichever the file actually declares.
-    """
-    for candidate in (design, f"verified_{design}"):
-        if re.search(rf"\bmodule\s+{re.escape(candidate)}\b", text):
-            return candidate
-    return None
 
 
 def _yosys_script(source_v: str, top: str, netlist_v: str) -> str:
@@ -317,7 +308,7 @@ async def _measure_ppa(
 
 
 @scorer(metrics={k: [mean(), stderr()] for k in _PPA_KEYS})
-def openroad_ppa(design: str, golden_reference: Path) -> Scorer:
+def openroad_ppa() -> Scorer:
     """Synthesize the agent's design AND the golden reference to nangate45,
     run OpenSTA on each, and report delay (ns), area (µm²), power (µW),
     `ppa_score = 1 / (delay·area·power)` (agent only — higher is better),
@@ -334,19 +325,19 @@ def openroad_ppa(design: str, golden_reference: Path) -> Scorer:
     Gated on the testbench passing — returns all-NaN otherwise so per-key
     means are computed only over correct runs (Inspect filters NaN per-key
     for dict-valued scores).
+
+    Per-sample inputs (design name, golden reference text, golden top
+    module) come from `state.metadata` — see `_build_sample` in tasks.py.
     """
-    golden_text = golden_reference.read_text()
-    golden_top = _detect_golden_top(golden_text, design)
-    if golden_top is None:
-        # Configuration error — fail at task-creation time, not silently per-sample.
-        raise ValueError(
-            f"Could not find module `{design}` or `verified_{design}` in {golden_reference}"
-        )
 
     async def score(state: TaskState, target: Target) -> Score:
         pass_score = (state.scores or {}).get("rtllm_make_passes")
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=_NAN_PPA, explanation="testbench did not pass — PPA omitted")
+
+        design = state.metadata["design"]
+        golden_text = state.metadata["golden_reference_text"]
+        golden_top = state.metadata["golden_top"]
 
         sbox = sandbox(SCORER_SANDBOX)
 

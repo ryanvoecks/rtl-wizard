@@ -21,16 +21,17 @@ from inspect_ai.tool import (
     web_search,
 )
 
-SYSTEM_PROMPT_TEMPLATE = (
+SYSTEM_PROMPT = (
     "You are an expert Verilog designer working in a sandbox directory. "
     "The natural-language spec is in `design_description.txt`; that is the "
-    "only input file you are given. Write your synthesizable module to "
-    "`{design}.v` in the current directory, matching the module name and "
+    "only input file you are given. The user message names the design — "
+    "call it `<design>` below. Write your synthesizable module to "
+    "`<design>.v` in the current directory, matching the module name and "
     "I/O signals from the spec.\n\n"
     "There is no testbench in your sandbox — you must write one yourself "
     "to verify correctness. Put it in a *separate* file (e.g. `tb.v`); its "
     "top-level module must be named `testbench`. Do NOT inline the "
-    "testbench into `{design}.v` — at grading time, files containing a "
+    "testbench into `<design>.v` — at grading time, files containing a "
     "`module testbench` declaration are dropped, so an inlined testbench "
     "would take the design with it. Make your testbench thorough — "
     "exercise edge cases, randomized stimulus, and boundary conditions. "
@@ -40,7 +41,7 @@ SYSTEM_PROMPT_TEMPLATE = (
     "agent testbench that passes can still fail the golden one.\n\n"
     "The `rtl-wizard` MCP server exposes a simulation tool that compiles "
     "a list of Verilog files with iverilog and runs the resulting binary "
-    "with vvp, returning the output. Pass it `[{design}.v, <your "
+    "with vvp, returning the output. Pass it `[<design>.v, <your "
     "testbench>.v]` to iterate. Your testbench should print `Passed` on "
     "success.\n\n"
     "Then optimize the design — your primary objective is to minimize "
@@ -48,7 +49,7 @@ SYSTEM_PROMPT_TEMPLATE = (
     "post-techmap netlist), since that sets the achievable clock period. "
     "Secondary PPA goals: prefer fewer sequential cells, narrower "
     "datapaths, and shared logic. The `rtl-wizard` MCP server also "
-    "exposes a synthesis tool that runs yosys on `{design}.v` and returns "
+    "exposes a synthesis tool that runs yosys on `<design>.v` and returns "
     "the cell/wire stats, plus a tool that reconstructs the longest "
     "combinational path as annotated RTL — call them (use whatever exact "
     "names appear in your tool list), use the reconstructed critical path "
@@ -72,14 +73,15 @@ rtl_wizard_mcp = mcp_server_sandbox(
 )
 
 
-def rtllm_react_solver(design: str):
-    """Build the active react agent for a given design.
+def rtllm_react_solver():
+    """Build the active react agent.
 
     Wires the rtl-wizard MCP server alongside the standard inspect_ai tool
-    set; the system prompt is parameterized on the design name.
+    set. The system prompt is design-agnostic — the per-sample design name
+    is delivered in the user message (see `_build_sample` in tasks.py).
     """
     return react(
-        prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
+        prompt=SYSTEM_PROMPT,
         tools=[
             rtl_wizard_mcp,
             web_search(),
@@ -101,9 +103,9 @@ def rtllm_react_solver(design: str):
 
 # Codex (broken for all tool-calling with gpt-oss-120b)
 # from inspect_swe import codex_cli
-# def rtllm_codex_solver(design: str):
+# def rtllm_codex_solver():
 #     return codex_cli(
-#         system_prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
+#         system_prompt=SYSTEM_PROMPT,
 #         env={"GEMINI_CLI_TRUST_WORKSPACE": "true", "LD_LIBRARY_PATH": ""},
 #         mcp_servers=[RTL_WIZARD_MCP],
 #         version="0.110.0",
