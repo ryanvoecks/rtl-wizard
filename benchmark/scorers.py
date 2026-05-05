@@ -55,18 +55,20 @@ SCORER_SANDBOX = "scorer"
 # Glob-based makefile used only at scoring time, after we've staged the
 # agent's design files alongside the golden testbench in the sibling
 # 'scorer' sandbox. Globbing keeps it agnostic to how the agent split the
-# design across files.
-IVERILOG_MAKEFILE = """\
+# design across files. The golden testbench always declares `module testbench`
+# (RTLLM convention), so we pin it as the elaboration root to avoid Verilator
+# picking an arbitrary top when multiple unconnected roots are present.
+VERILATOR_MAKEFILE = """\
 .PHONY: vcs sim clean
 
 vcs:
-\tiverilog -g2012 -o simv $(wildcard *.v *.sv)
+\tverilator --binary --timing -Wno-fatal -j 0 --top-module testbench -o simv $(wildcard *.v *.sv)
 
 sim:
-\tvvp simv | tee run.log
+\t./obj_dir/simv | tee run.log
 
 clean:
-\trm -rf *.log simv simv.dSYM output.txt
+\trm -rf obj_dir *.log run.log output.txt
 """
 
 # Top-level `module testbench` declaration — used to tell the agent's own
@@ -236,7 +238,7 @@ async def _run_golden_in_sibling(
     for name, content in files.items():
         await sbox.write_file(f"/workspace/{name}", content)
     await sbox.write_file("/workspace/testbench.v", golden_testbench_text)
-    await sbox.write_file("/workspace/makefile", IVERILOG_MAKEFILE)
+    await sbox.write_file("/workspace/makefile", VERILATOR_MAKEFILE)
 
     result = await asyncio.wait_for(
         sbox.exec(

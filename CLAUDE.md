@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rtl-wizard` is two things sharing one repo:
 
-1. An **MCP server** (`server/rtl_wizard.py`) that exposes RTL-design tools — Verilog simulation (iverilog+vvp), yosys synthesis stats, and longest-combinational-path reconstruction back to RTL.
+1. An **MCP server** (`server/rtl_wizard.py`) that exposes RTL-design tools — SystemVerilog simulation (Verilator `--binary --timing`), yosys synthesis stats, and longest-combinational-path reconstruction back to RTL.
 2. A **benchmark** (`benchmark/`) that drives an `inspect_ai` react agent against the RTLLM design suite, has the agent generate Verilog for each problem, and scores it for correctness *and* PPA (delay × area × power) against the golden reference.
 
 The MCP server is consumed by the benchmark's solver as one of its tools, but is intended to also be usable on its own.
@@ -43,7 +43,7 @@ Logs land in `./logs/` per Inspect's defaults; `tmp/` is scratch and gitignored.
 `sandbox/compose.yaml` defines two services that share the same image (`rtl-wizard-sandbox:latest`):
 
 - **`solver`** — where the agent works. Receives only `design_description.txt` (plus any auxiliary files RTLLM ships, but **not** `verified_*.v`, `testbench.v`, or the upstream `Makefile` — see `SKIP_COPY_PATTERNS` in `benchmark/tasks.py`). The agent must write its own testbench to verify itself.
-- **`scorer`** — a sibling container the agent never sees. At score time, the agent's design files are copied here, the *hidden golden testbench* is dropped in alongside them, and a glob-based makefile (`benchmark/scorers.py:IVERILOG_MAKEFILE`) runs `iverilog` over `*.v`.
+- **`scorer`** — a sibling container the agent never sees. At score time, the agent's design files are copied here, the *hidden golden testbench* is dropped in alongside them, and a glob-based makefile (`benchmark/scorers.py:VERILATOR_MAKEFILE`) runs `verilator --binary` over `*.v *.sv`.
 
 This split is load-bearing: it's why a working-but-overfit agent testbench can still fail grading. Don't merge the two sandboxes.
 
@@ -74,11 +74,11 @@ Section sentinels (`===PPA_DELAY===` etc.) scope each parser regex to one OpenST
 `server/rtl_wizard.py` registers four FastMCP tools:
 
 - `rtl_helper` — returns static RTL best-practice text. Cheap; the prompt instructs the agent to call it before generating RTL.
-- `simulate(verilog_paths)` — `iverilog -g2012` + `vvp`, returns combined stdout/stderr (truncated to 20 KB tail).
+- `simulate(verilog_paths)` — `verilator --binary --timing` (auto-picks `module testbench` as top when present), returns combined stdout/stderr (truncated to 20 KB tail).
 - `yosys_synth(verilog_path, top=None)` — synth + `stat`, returns the cell/wire breakdown (or yosys log tail on failure).
 - `reconstruct_critical_path(verilog_path)` — runs `ltp -noff` after techmap and maps each step back to the originating RTL line. Used to direct the agent at depth bottlenecks.
 
-All three EDA-tool wrappers (`server/iverilog_sim.py`, `server/yosys_synth.py`, `server/reconstruct_from_path.py`) shell out via `eda_env()` from `server/util.py`. **Don't skip `eda_env()`**: the inspect-tool-support PyInstaller bootstrap stashes the original `LD_LIBRARY_PATH` in `LD_LIBRARY_PATH_ORIG` and replaces it with paths to bundled venv libs that break system-linked EDA tools. `eda_env()` restores the original (or drops the var) so yosys/iverilog/openroad link correctly.
+All three EDA-tool wrappers (`server/verilator_sim.py`, `server/yosys_synth.py`, `server/reconstruct_from_path.py`) shell out via `eda_env()` from `server/util.py`. **Don't skip `eda_env()`**: the inspect-tool-support PyInstaller bootstrap stashes the original `LD_LIBRARY_PATH` in `LD_LIBRARY_PATH_ORIG` and replaces it with paths to bundled venv libs that break system-linked EDA tools. `eda_env()` restores the original (or drops the var) so yosys/verilator/openroad link correctly.
 
 The server is launched **inside the sandbox** by the solver via `mcp_server_sandbox(...)`; the `MCPServerConfigStdio` variant is kept around for a now-broken `codex_cli` solver path (see comment block at the bottom of `benchmark/solvers.py`).
 

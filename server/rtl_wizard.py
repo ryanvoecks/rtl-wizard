@@ -4,7 +4,7 @@ from mcp.server.fastmcp import FastMCP
 
 from yosys_synth import yosys_synth as _yosys_synth
 from reconstruct_from_path import emit, parse, run_yosys
-from iverilog_sim import iverilog_sim as _iverilog_sim
+from verilator_sim import verilator_sim as _verilator_sim
 from openroad_ppa import measure_ppa as _measure_ppa
 
 mcp = FastMCP("rtl-wizard")
@@ -118,23 +118,24 @@ def openroad_ppa(verilog_paths: list[str], top: str | None = None) -> str:
 
 @mcp.tool()
 def simulate(verilog_paths: list[str]) -> str:
-    """Compile and run a simulation with iverilog + vvp, returning the testbench output.
+    """Compile and run a simulation with Verilator, returning the testbench output.
 
-    Compiles the given Verilog/SystemVerilog files together with `iverilog -g2012`
-    and runs the resulting binary with `vvp`. The list should include the
+    Compiles the given Verilog/SystemVerilog files with `verilator --binary
+    --timing` and runs the resulting executable. The list should include the
     design under test, its testbench, and any additional sources needed to
-    elaborate the top module. The returned string contains everything the
-    testbench printed to stdout/stderr (e.g. `$display` output and the usual
-    `Passed` / `Failed` markers); on a compile failure it instead returns the
-    iverilog error log so the issue is visible.
+    elaborate the top module; if a `module testbench` is present it is used as
+    the elaboration root. The returned string contains everything the testbench
+    printed to stdout/stderr (e.g. `$display` output and the usual `Passed` /
+    `Failed` markers); on a compile failure it instead returns the verilator
+    error log so the issue is visible.
 
     Args:
         verilog_paths: list of absolute or cwd-relative paths to .v / .sv files
-            to pass to iverilog. Order does not matter.
+            to pass to verilator. Order does not matter.
 
     Returns the simulation output (or compile-error log on failure).
     """
-    return _iverilog_sim(verilog_paths)
+    return _verilator_sim(verilog_paths)
 
 
 if __name__ == "__main__":

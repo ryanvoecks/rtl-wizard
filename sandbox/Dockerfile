@@ -45,6 +45,29 @@ RUN git clone --recursive --depth 1 \
 
 ENV PATH="/OpenROAD-flow-scripts/tools/install/OpenROAD/bin:/OpenROAD-flow-scripts/tools/install/yosys/bin:${PATH}"
 
+# Build Verilator v5 from source for SystemVerilog simulation. Ubuntu 22.04's
+# apt verilator is 4.038, which lacks `--binary` and `--timing` (added in v5)
+# and has weaker SV2012/2017 coverage. Placed after the ORFS layer so the long
+# OpenROAD build stays cached.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      autoconf \
+      bison \
+      ccache \
+      flex \
+      help2man \
+      libfl-dev \
+      perl \
+      zlib1g-dev \
+    && git clone --depth 1 --branch stable \
+         https://github.com/verilator/verilator /tmp/verilator \
+    && cd /tmp/verilator \
+    && autoconf \
+    && ./configure --prefix=/usr/local \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/verilator \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # inspect-tool-support is the sandbox bridge inspect_ai talks to.
 RUN pip3 install --no-cache-dir inspect-tool-support mcp \
     && inspect-tool-support post-install
