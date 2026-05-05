@@ -18,6 +18,29 @@ SIM_TIMEOUT = 120
 _MODULE_RE = re.compile(r"^\s*module\s+(\w+)\b", re.MULTILINE)
 
 
+# Verilator's --main-generated wrapper prints an end-of-simulation banner
+# after $finish that we don't want bleeding into the testbench output the
+# agent sees. Lines look like:
+#   "S i m u l a t i o n   R e p o r t: Verilator 5.048 ..."
+#   "Verilator: $finish at 1ns; walltime ..."
+#   "Verilator: cpu 0.000 s on 1 threads; ..."
+# We also pass +verilator+quiet at runtime, but strip defensively in case
+# the runtime flag is ignored on the version we end up with.
+_FOOTER_PREFIXES = ("Verilator:", "S i m u l a t i o n")
+
+
+def _strip_verilator_footer(text: str) -> str:
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if any(s.startswith(p) for p in _FOOTER_PREFIXES):
+            continue
+        lines.append(ln)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines)
+
+
 def _pick_top(paths: list[str]) -> str | None:
     for p in paths:
         try:
@@ -78,7 +101,7 @@ def verilator_sim(verilog_paths: list[str]) -> str:
 
         simv = Path(tmp) / "obj_dir" / "simv"
         sim_result = subprocess.run(
-            [str(simv)],
+            [str(simv), "+verilator+quiet"],
             env=eda_env(),
             capture_output=True,
             text=True,
@@ -86,7 +109,7 @@ def verilator_sim(verilog_paths: list[str]) -> str:
             cwd=tmp,
         )
 
-    out = (sim_result.stdout + sim_result.stderr).strip()
+    out = _strip_verilator_footer(sim_result.stdout + sim_result.stderr).strip()
     header = f"[simv rc={sim_result.returncode}]\n"
     if len(out) > OUTPUT_LIMIT:
         out = out[-OUTPUT_LIMIT:]
