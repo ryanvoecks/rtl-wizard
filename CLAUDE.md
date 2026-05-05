@@ -27,8 +27,8 @@ The first benchmark run builds `sandbox/Dockerfile`, which clones and builds Ope
 # Run the full benchmark
 uv run inspect eval benchmark/tasks.py
 
-# Run a single design (sample id == folder name in external/RTLLM/**)
-uv run inspect eval benchmark/tasks.py --sample-id adder_8bit
+# Run a single design (sample id == folder name in external/RTLLM/**), always use --cache for speed
+uv run inspect eval benchmark/tasks.py --sample-id adder_8bit --cache
 
 # Pre-commit (matches CI)
 uv run pre-commit run --all-files

@@ -15,6 +15,10 @@ via `state.scores["rtllm_make_passes"]`):
 """
 import asyncio
 import re
+import tempfile
+from pathlib import Path
+
+import pyslang
 
 from inspect_ai.scorer import (
     CORRECT,
@@ -42,7 +46,7 @@ IVERILOG_MAKEFILE = """\
 .PHONY: vcs sim clean
 
 vcs:
-\tiverilog -g2012 -o simv $(wildcard *.v)
+\tiverilog -g2012 -o simv $(wildcard *.v *.sv)
 
 sim:
 \tvvp simv | tee run.log
@@ -56,6 +60,100 @@ clean:
 _TESTBENCH_MODULE_RE = re.compile(r"^\s*module\s+testbench\b", re.MULTILINE)
 
 _SCORING_TIMEOUT_S = 300
+
+
+def _files_in_hierarchy(
+    files: dict[str, str], top: str
+) -> tuple[set[str], str | None]:
+    r"""Return the subset of file names whose contents define a module,
+    package, or `\`include` source reachable from `top`'s elaborated hierarchy.
+
+    Files are written to a temp dir and parsed with pyslang so that
+    `\`include` resolution works against sibling files. The hierarchy walk
+    starts at the InstanceSymbol named `top`, recurses into instantiated
+    submodules and surviving generate blocks, and records the file each
+    DefinitionSymbol / imported PackageSymbol / IncludeMetadata came from.
+
+    Returns ({}, error) if `top` is not defined or cannot be elaborated.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        td_path = Path(td)
+        for name, text in files.items():
+            (td_path / name).write_text(text)
+
+        sm = pyslang.SourceManager()
+        sm.addUserDirectories(td)
+        comp = pyslang.Compilation()
+
+        # Map slang's per-file BufferID back to the agent's filename. Each
+        # registered SyntaxTree gets its own primary buffer; \`include
+        # processing creates additional buffers we map by basename below.
+        buf_to_name: dict[int, str] = {}
+        trees: list[tuple[str, "pyslang.SyntaxTree"]] = []
+        for name in files:
+            tree = pyslang.SyntaxTree.fromFile(str(td_path / name), sm)
+            comp.addSyntaxTree(tree)
+            trees.append((name, tree))
+            buf_to_name[tree.root.sourceRange.start.buffer.id] = name
+
+        if comp.tryGetDefinition(top, comp.getRoot()) is None:
+            return set(), f"slang: top module {top!r} not found in agent files"
+
+        root = comp.getRoot()
+        matched = [i for i in root.topInstances if i.name == top]
+        if not matched:
+            return set(), f"slang: could not elaborate {top!r} as a top instance"
+
+        kept_buffers: set[int] = set()
+
+        def _record(loc) -> None:
+            try:
+                kept_buffers.add(loc.buffer.id)
+            except Exception:
+                pass
+
+        def _visit(symbol) -> None:
+            kind = symbol.kind
+            if kind == pyslang.SymbolKind.Instance:
+                defn = symbol.definition
+                if defn is not None:
+                    _record(defn.location)
+                for child in symbol.body:
+                    _visit(child)
+            elif kind in (
+                pyslang.SymbolKind.ExplicitImport,
+                pyslang.SymbolKind.WildcardImport,
+            ):
+                pkg = getattr(symbol, "package", None)
+                if pkg is not None:
+                    _record(pkg.location)
+            elif kind in (
+                pyslang.SymbolKind.GenerateBlock,
+                pyslang.SymbolKind.GenerateBlockArray,
+            ):
+                for child in symbol:
+                    _visit(child)
+
+        for inst in matched:
+            _visit(inst)
+
+        # `\`include` directives in any reachable file pull in their target
+        # files too. Map by basename since slang's include buffer differs
+        # from the buffer assigned when we registered the included file
+        # standalone.
+        for name, tree in trees:
+            primary = tree.root.sourceRange.start.buffer.id
+            if primary not in kept_buffers:
+                continue
+            for inc in tree.getIncludeDirectives():
+                inc_basename = Path(inc.path).name
+                for fname in files:
+                    if Path(fname).name == inc_basename:
+                        kept_buffers.add(inc.buffer.id)
+                        buf_to_name[inc.buffer.id] = fname
+                        break
+
+        return {buf_to_name[b] for b in kept_buffers if b in buf_to_name}, None
 
 
 async def _collect_dut_files(design: str) -> tuple[dict[str, str], str | None]:
@@ -95,6 +193,13 @@ async def _collect_dut_files(design: str) -> tuple[dict[str, str], str | None]:
             f"(found design files: {sorted(files)}, "
             f"dropped as testbenches: {sorted(dropped_as_testbench)})"
         )
+
+    kept, err = _files_in_hierarchy(files, design)
+    if err is not None:
+        return {}, err
+    files = {n: c for n, c in files.items() if n in kept}
+    if f"{design}.v" not in files:
+        return {}, f"internal: {design}.v dropped by hierarchy filter"
     return files, None
 
 
@@ -221,9 +326,10 @@ _PPA_KEYS = ("delay", "area", "power", "ppa_score", "relative_ppa_score")
 _NAN_PPA = {k: float("nan") for k in _PPA_KEYS}
 
 
-def _yosys_script(source_v: str, top: str, netlist_v: str) -> str:
+def _yosys_script(sources: list[str], top: str, netlist_v: str) -> str:
+    sources_arg = " ".join(sources)
     return (
-        f"read_verilog -sv {source_v}; "
+        f"read_verilog -sv {sources_arg}; "
         f"hierarchy -check -top {top}; "
         "proc; opt; fsm; opt; memory; opt; "
         "techmap; opt; "
@@ -263,17 +369,18 @@ exit
 
 
 async def _measure_ppa(
-    sbox, source_v: str, top: str, label: str
+    sbox, sources: list[str], top: str, label: str
 ) -> tuple[dict[str, float] | None, str | None]:
-    """Synthesize source_v to nangate45 and run OpenSTA. Returns
-    ({delay_ns, area_um2, power_uw}, None) on success or (None, error_msg)
-    on any failure. `label` ("agent"/"golden") namespaces tmp files and
-    error messages so the two passes don't trip over each other.
+    """Synthesize the given Verilog sources to nangate45 and run OpenSTA.
+    Returns ({delay_ns, area_um2, power_uw}, None) on success or
+    (None, error_msg) on any failure. `label` ("agent"/"golden") namespaces
+    tmp files and error messages so the two passes don't trip over each
+    other.
     """
     netlist_v = f"/tmp/{label}_netlist.v"
     tcl_path = f"/tmp/openroad_ppa_{label}.tcl"
 
-    synth = await sbox.exec(["yosys", "-q", "-p", _yosys_script(source_v, top, netlist_v)])
+    synth = await sbox.exec(["yosys", "-q", "-p", _yosys_script(sources, top, netlist_v)])
     if not synth.success:
         return None, f"{label} yosys failed (rc={synth.returncode}):\n{synth.stderr[-2000:]}"
 
@@ -341,15 +448,22 @@ def openroad_ppa() -> Scorer:
 
         sbox = sandbox(SCORER_SANDBOX)
 
-        # Stage golden reference into sandbox /tmp (agent's design is already
-        # in cwd as `{design}.v`).
+        # Stage golden reference into sandbox /tmp. The agent's hierarchy
+        # files were already staged into `/workspace/` by `_run_golden_in_sibling`
+        # during `rtllm_make_passes` (which gates this scorer); re-discover
+        # the file set so multi-file designs reach yosys whole.
         golden_v_path = f"/tmp/golden_{design}.v"
         await sbox.write_file(golden_v_path, golden_text)
 
-        agent_m, err = await _measure_ppa(sbox, f"{design}.v", design, "agent")
+        agent_files, err = await _collect_dut_files(design)
         if err:
             return Score(value=_NAN_PPA, explanation=err)
-        golden_m, err = await _measure_ppa(sbox, golden_v_path, golden_top, "golden")
+        agent_sources = [f"/workspace/{n}" for n in agent_files]
+
+        agent_m, err = await _measure_ppa(sbox, agent_sources, design, "agent")
+        if err:
+            return Score(value=_NAN_PPA, explanation=err)
+        golden_m, err = await _measure_ppa(sbox, [golden_v_path], golden_top, "golden")
         if err:
             return Score(value=_NAN_PPA, explanation=err)
 

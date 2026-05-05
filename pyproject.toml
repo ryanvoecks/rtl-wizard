@@ -10,4 +10,10 @@ dependencies = [
     "inspect-swe>=0.2.47",
     "mcp>=1.27.0",
     "openai>=2.32.0",
+    "pyslang>=10",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
 ]
