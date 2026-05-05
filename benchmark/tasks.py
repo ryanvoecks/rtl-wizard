@@ -18,6 +18,7 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from benchmark.scorers import (
+    golden_ppa,
     openroad_ppa,
     rtllm_make_passes,
 )
@@ -122,6 +123,7 @@ def rtllm_generate_and_test(message_limit: int = 40) -> Task:
         solver=rtllm_react_solver(),
         scorer=[
             rtllm_make_passes(),
+            golden_ppa(),
             openroad_ppa(),
         ],
         sandbox=("docker", str(SANDBOX_COMPOSE)),

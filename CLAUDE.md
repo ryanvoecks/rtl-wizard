@@ -53,10 +53,11 @@ When copying the agent's work out of the solver sandbox, files containing `^\s*m
 
 ### Two-stage scoring
 
-`rtllm_generate_and_test` registers two scorers in order:
+`rtllm_generate_and_test` registers three scorers in order:
 
 1. `rtllm_make_passes` — boolean correctness. Stages files into the scorer sandbox and runs `make vcs && make sim`; CORRECT iff stdout contains `Passed`.
-2. `openroad_ppa` — runs only if `state.scores["rtllm_make_passes"]` is CORRECT (it's gated explicitly), else returns all-NaN per key so Inspect's per-key means only average over correct runs. Synthesizes both the agent's design and the golden reference to nangate45 via yosys, runs OpenSTA, and reports `delay`, `area`, `power`, `ppa_score = 1/(d·a·p)`, and `relative_ppa_score = ppa_score(agent) / ppa_score(golden)`.
+2. `golden_ppa` — synthesizes the golden reference to nangate45 and runs OpenSTA, reporting `golden_delay`, `golden_area`, `golden_power`, and `golden_ppa_score = 1/(d·a·p)`. Runs unconditionally — golden values are dataset metadata, independent of the agent.
+3. `openroad_ppa` — runs only if `state.scores["rtllm_make_passes"]` is CORRECT (it's gated explicitly), else returns all-NaN per key so Inspect's per-key means only average over correct runs. Synthesizes the agent's design to nangate45 via yosys, runs OpenSTA, and reports `delay`, `area`, `power`, `ppa_score = 1/(d·a·p)`, and `relative_ppa_score = ppa_score(agent) / ppa_score(golden)`. The golden product is read from `state.scores["golden_ppa"]` rather than re-synthesized, so `golden_ppa` must run first.
 
 The OpenSTA pass is **STA on the linked netlist** — there is no real placement or routing despite the "post-P&R" framing. Absolute numbers aren't physically meaningful; the relative score is the comparable metric.
 

@@ -1,17 +1,25 @@
 """Scorers for the RTLLM generate-and-test benchmark.
 
-Two scorer factories run in this order (the second is gated on the first
-via `state.scores["rtllm_make_passes"]`):
+Three scorer factories run in this order — each later one reads
+`state.scores` written by the earlier ones:
 
   1. `rtllm_make_passes` — correctness, runs hidden golden testbench
-  2. `openroad_ppa`      — delay (ns), area (µm²), power (µW), composite
+  2. `golden_ppa`        — golden_delay (ns), golden_area (µm²),
+                           golden_power (µW), golden_ppa_score =
+                           1 / (delay·area·power) for the golden
+                           reference. One yosys→nangate45 + OpenSTA pass
+                           per sample. Runs unconditionally — golden
+                           values are design metadata, independent of
+                           the agent.
+  3. `openroad_ppa`      — delay (ns), area (µm²), power (µW), composite
                            ppa_score = 1 / (delay·area·power), and
                            relative_ppa_score = ppa_score(agent) /
-                           ppa_score(golden). Two yosys→nangate45 +
-                           OpenSTA passes per sample (agent + golden),
-                           same setup. Despite the "post-P&R" framing,
-                           this is STA on the linked netlist — no real
-                           placement or routing.
+                           ppa_score(golden). Gated on the testbench
+                           passing; reads the golden product from
+                           `golden_ppa` instead of re-synthesizing.
+                           Despite the "post-P&R" framing, this is STA
+                           on the linked netlist — no real placement or
+                           routing.
 """
 import asyncio
 import re
@@ -325,6 +333,9 @@ def _section(text: str, start_tag: str, end_tag: str) -> str:
 _PPA_KEYS = ("delay", "area", "power", "ppa_score", "relative_ppa_score")
 _NAN_PPA = {k: float("nan") for k in _PPA_KEYS}
 
+_GOLDEN_PPA_KEYS = ("golden_delay", "golden_area", "golden_power", "golden_ppa_score")
+_NAN_GOLDEN_PPA = {k: float("nan") for k in _GOLDEN_PPA_KEYS}
+
 
 def _yosys_script(sources: list[str], top: str, netlist_v: str) -> str:
     sources_arg = " ".join(sources)
@@ -414,14 +425,67 @@ async def _measure_ppa(
         return None, f"{label}: non-numeric value: {e}"
 
 
+@scorer(metrics={k: [mean(), stderr()] for k in _GOLDEN_PPA_KEYS})
+def golden_ppa() -> Scorer:
+    """Synthesize the golden reference design to nangate45, run OpenSTA, and
+    report golden_delay (ns), golden_area (µm²), golden_power (µW), and
+    golden_ppa_score = 1 / (delay·area·power).
+
+    Runs unconditionally — the golden reference is a property of the dataset,
+    independent of the agent. `openroad_ppa` reads the result from
+    `state.scores["golden_ppa"]` to compute `relative_ppa_score` instead of
+    re-synthesizing the reference.
+
+    Per-sample inputs (design name, golden reference text, golden top module)
+    come from `state.metadata` — see `_build_sample` in tasks.py.
+    """
+
+    async def score(state: TaskState, target: Target) -> Score:
+        design = state.metadata["design"]
+        golden_text = state.metadata["golden_reference_text"]
+        golden_top = state.metadata["golden_top"]
+
+        sbox = sandbox(SCORER_SANDBOX)
+        golden_v_path = f"/tmp/golden_{design}.v"
+        await sbox.write_file(golden_v_path, golden_text)
+
+        golden_m, err = await _measure_ppa(sbox, [golden_v_path], golden_top, "golden")
+        if err:
+            return Score(value=_NAN_GOLDEN_PPA, explanation=err)
+
+        delay_ns, area_um2, power_uw = golden_m["delay"], golden_m["area"], golden_m["power"]
+        product = delay_ns * area_um2 * power_uw
+        ppa = 1.0 / product if product > 0 else float("nan")
+
+        return Score(
+            value={
+                "golden_delay": delay_ns,
+                "golden_area": area_um2,
+                "golden_power": power_uw,
+                "golden_ppa_score": ppa,
+            },
+            answer=(
+                f"golden_delay={delay_ns:.3f}ns golden_area={area_um2:.1f}um^2 "
+                f"golden_power={power_uw:.3f}uW golden_ppa_score={ppa:.3e}"
+            ),
+            explanation=(
+                f"golden: delay={delay_ns:.3f} ns, area={area_um2:.1f} µm², "
+                f"power={power_uw:.3f} µW, ppa_score={ppa:.3e} "
+                "(nangate45, 1 ns clock)"
+            ),
+        )
+
+    return score
+
+
 @scorer(metrics={k: [mean(), stderr()] for k in _PPA_KEYS})
 def openroad_ppa() -> Scorer:
-    """Synthesize the agent's design AND the golden reference to nangate45,
-    run OpenSTA on each, and report delay (ns), area (µm²), power (µW),
-    `ppa_score = 1 / (delay·area·power)` (agent only — higher is better),
-    and `relative_ppa_score = ppa_score(agent) / ppa_score(golden)` — i.e.
-    `(delay·area·power)_golden / (delay·area·power)_agent`. >1 means the
-    agent beat the reference on the composite metric.
+    """Synthesize the agent's design to nangate45, run OpenSTA, and report
+    delay (ns), area (µm²), power (µW), `ppa_score = 1 / (delay·area·power)`
+    (higher is better), and `relative_ppa_score = ppa_score(agent) /
+    ppa_score(golden)` — i.e. `(delay·area·power)_golden /
+    (delay·area·power)_agent`. >1 means the agent beat the reference on the
+    composite metric.
 
     The clock is the design's `clk`/`clock`/`i_clk`/`clk_i` port at 1 ns when
     one exists, else a virtual 1 ns clock. Input/output delays are pinned to
@@ -431,10 +495,11 @@ def openroad_ppa() -> Scorer:
 
     Gated on the testbench passing — returns all-NaN otherwise so per-key
     means are computed only over correct runs (Inspect filters NaN per-key
-    for dict-valued scores).
+    for dict-valued scores). Reads the golden reference's PPA from
+    `state.scores["golden_ppa"]`, so `golden_ppa` must run first.
 
-    Per-sample inputs (design name, golden reference text, golden top
-    module) come from `state.metadata` — see `_build_sample` in tasks.py.
+    Per-sample inputs come from `state.metadata` — see `_build_sample` in
+    tasks.py.
     """
 
     async def score(state: TaskState, target: Target) -> Score:
@@ -442,19 +507,25 @@ def openroad_ppa() -> Scorer:
         if pass_score is None or pass_score.value != CORRECT:
             return Score(value=_NAN_PPA, explanation="testbench did not pass — PPA omitted")
 
-        design = state.metadata["design"]
-        golden_text = state.metadata["golden_reference_text"]
-        golden_top = state.metadata["golden_top"]
+        golden_score = (state.scores or {}).get("golden_ppa")
+        if golden_score is None:
+            return Score(value=_NAN_PPA, explanation="golden_ppa scorer did not run")
+        golden_vals = golden_score.value
+        if not isinstance(golden_vals, dict) or any(
+            isinstance(v, float) and v != v for v in golden_vals.values()
+        ):
+            return Score(
+                value=_NAN_PPA,
+                explanation=f"golden ppa unavailable: {golden_score.explanation}",
+            )
 
+        design = state.metadata["design"]
         sbox = sandbox(SCORER_SANDBOX)
 
-        # Stage golden reference into sandbox /tmp. The agent's hierarchy
-        # files were already staged into `/workspace/` by `_run_golden_in_sibling`
-        # during `rtllm_make_passes` (which gates this scorer); re-discover
-        # the file set so multi-file designs reach yosys whole.
-        golden_v_path = f"/tmp/golden_{design}.v"
-        await sbox.write_file(golden_v_path, golden_text)
-
+        # The agent's hierarchy files were already staged into `/workspace/`
+        # by `_run_golden_in_sibling` during `rtllm_make_passes` (which gates
+        # this scorer); re-discover the file set so multi-file designs reach
+        # yosys whole.
         agent_files, err = await _collect_dut_files(design)
         if err:
             return Score(value=_NAN_PPA, explanation=err)
@@ -463,13 +534,14 @@ def openroad_ppa() -> Scorer:
         agent_m, err = await _measure_ppa(sbox, agent_sources, design, "agent")
         if err:
             return Score(value=_NAN_PPA, explanation=err)
-        golden_m, err = await _measure_ppa(sbox, [golden_v_path], golden_top, "golden")
-        if err:
-            return Score(value=_NAN_PPA, explanation=err)
 
         delay_ns, area_um2, power_uw = agent_m["delay"], agent_m["area"], agent_m["power"]
         agent_product = delay_ns * area_um2 * power_uw
-        golden_product = golden_m["delay"] * golden_m["area"] * golden_m["power"]
+        golden_product = (
+            golden_vals["golden_delay"]
+            * golden_vals["golden_area"]
+            * golden_vals["golden_power"]
+        )
         ppa_score = 1.0 / agent_product if agent_product > 0 else float("nan")
         relative = (
             golden_product / agent_product
@@ -492,8 +564,9 @@ def openroad_ppa() -> Scorer:
             ),
             explanation=(
                 f"agent: delay={delay_ns:.3f} ns, area={area_um2:.1f} µm², "
-                f"power={power_uw:.3f} µW. golden: delay={golden_m['delay']:.3f} ns, "
-                f"area={golden_m['area']:.1f} µm², power={golden_m['power']:.3f} µW. "
+                f"power={power_uw:.3f} µW. golden: delay={golden_vals['golden_delay']:.3f} ns, "
+                f"area={golden_vals['golden_area']:.1f} µm², "
+                f"power={golden_vals['golden_power']:.3f} µW. "
                 f"ppa_score={ppa_score:.3e}, relative_ppa_score={relative:.3f} "
                 "(nangate45, 1 ns clock)"
             ),
