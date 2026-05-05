@@ -5,6 +5,7 @@ from mcp.server.fastmcp import FastMCP
 from yosys_synth import yosys_synth as _yosys_synth
 from reconstruct_from_path import emit, parse, run_yosys
 from iverilog_sim import iverilog_sim as _iverilog_sim
+from openroad_ppa import measure_ppa as _measure_ppa
 
 mcp = FastMCP("rtl-wizard")
 
@@ -85,6 +86,34 @@ def reconstruct_critical_path(verilog_path: str) -> str:
         return emit(*parse(run_yosys(str(src))))
     except Exception as e:
         return f"error: {e}"
+
+
+@mcp.tool()
+def openroad_ppa(verilog_paths: list[str], top: str | None = None) -> str:
+    """Synthesize the design to nangate45 with yosys and run OpenSTA, returning
+    delay (ns), area (µm²), power (µW), and ppa_score = 1 / (delay·area·power).
+
+    This is the same pipeline the benchmark scorer uses to grade your design,
+    so the numbers it returns are the numbers you are graded on. Use it as
+    your primary feedback signal once your testbench passes — call it after
+    every meaningful change and iterate to drive ppa_score up (equivalently,
+    delay·area·power down). Higher ppa_score is better.
+
+    The clock is the design's `clk`/`clock`/`i_clk`/`clk_i` port at 1 ns when
+    one exists, else a virtual 1 ns clock. Absolute numbers are not physically
+    meaningful (no placement, no wire RC), but they are stable and comparable
+    across iterations on the same design.
+
+    Args:
+        verilog_paths: list of absolute or cwd-relative paths to .v / .sv files
+            to synthesize together. Pass every source needed to elaborate the
+            top module (e.g. `[<design>.v]` plus any submodule files).
+        top: top-module name. Defaults to the first file's stem.
+
+    Returns the formatted PPA block on success. On synth or STA failure,
+    returns the tail of the tool log so the error is visible.
+    """
+    return _measure_ppa(verilog_paths, top)
 
 
 @mcp.tool()

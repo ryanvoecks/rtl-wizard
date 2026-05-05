@@ -42,6 +42,12 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
+from server.openroad_ppa import (
+    build_openroad_tcl,
+    build_yosys_script,
+    parse_ppa_report,
+)
+
 # Name of the sibling sandbox service in compose.yaml that the scorer uses
 # to run the hidden golden testbench. The agent never has access to it.
 SCORER_SANDBOX = "scorer"
@@ -282,101 +288,11 @@ def rtllm_make_passes() -> Scorer:
     return score
 
 
-# nangate45 ships with the OpenROAD-flow-scripts build (see sandbox/Dockerfile).
-# Single-corner Liberty + matching tech/cell LEFs — OpenSTA needs all three
-# before `report_power` can model cells. ORFS bundles a TAPCELL with no LEF
-# master, which surfaces as a benign WARNING ORD-2056 we ignore.
-_NANGATE_DIR = "/OpenROAD-flow-scripts/flow/platforms/nangate45"
-NANGATE_LIB = f"{_NANGATE_DIR}/lib/NangateOpenCellLibrary_typical.lib"
-NANGATE_TECH_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.tech.lef"
-NANGATE_CELL_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.macro.lef"
-
-# Sentinels printed between OpenSTA reports so each parser's regex is scoped
-# to its own section — report-format drift in one command can't bleed into
-# another.
-_PPA_DELAY_TAG = "===PPA_DELAY==="
-_PPA_AREA_TAG = "===PPA_AREA==="
-_PPA_POWER_TAG = "===PPA_POWER==="
-_PPA_END_TAG = "===PPA_END==="
-
-# Critical-path delay in ns from a `report_checks -path_delay max` block.
-# The path-summary "data arrival time" line is just whitespace + the
-# cumulative arrival time + the label, e.g. `           0.36   data arrival
-# time`. The slack-section line below has the negated arrival, e.g.
-# `          -0.36   data arrival time`; the unsigned `[\d.]+` won't match
-# that, and `.search()` finds the positive (path-summary) line first anyway.
-_DELAY_ARRIVAL_RE = re.compile(
-    r"^\s+([\d.]+)\s+data arrival time\s*$", re.MULTILINE
-)
-# Total cell area in µm² from `report_design_area`, e.g.
-# `Design area 60 um^2 100% utilization.` (utilization is meaningless without
-# a floorplan but report_design_area still prints it).
-_AREA_RE = re.compile(r"Design area\s+([\d.eE+-]+)\s+um\^2")
-# Last column of OpenSTA's `report_power` summary `Total` row — total
-# power in Watts, e.g. `Total  8.01e-05  8.81e-06  1.78e-06  9.07e-05 100.0%`.
-_POWER_TOTAL_RE = re.compile(r"^\s*Total\s+\S+\s+\S+\s+\S+\s+(\S+)", re.MULTILINE)
-
-
-def _section(text: str, start_tag: str, end_tag: str) -> str:
-    """Slice OpenROAD stdout to the chunk between two sentinel tags.
-
-    Falls back to the empty string if either tag is missing — callers detect
-    the parse failure when their regex finds nothing.
-    """
-    s = text.find(start_tag)
-    if s < 0:
-        return ""
-    e = text.find(end_tag, s)
-    return text[s:e] if e >= 0 else text[s:]
-
-
 _PPA_KEYS = ("delay", "area", "power", "ppa_score", "relative_ppa_score")
 _NAN_PPA = {k: float("nan") for k in _PPA_KEYS}
 
 _GOLDEN_PPA_KEYS = ("golden_delay", "golden_area", "golden_power", "golden_ppa_score")
 _NAN_GOLDEN_PPA = {k: float("nan") for k in _GOLDEN_PPA_KEYS}
-
-
-def _yosys_script(sources: list[str], top: str, netlist_v: str) -> str:
-    sources_arg = " ".join(sources)
-    return (
-        f"read_verilog -sv {sources_arg}; "
-        f"hierarchy -check -top {top}; "
-        "proc; opt; fsm; opt; memory; opt; "
-        "techmap; opt; "
-        f"dfflibmap -liberty {NANGATE_LIB}; "
-        f"abc -liberty {NANGATE_LIB}; "
-        "clean; "
-        f"write_verilog -noattr -noexpr -nohex -nodec {netlist_v}"
-    )
-
-
-def _openroad_tcl(top: str, netlist_v: str) -> str:
-    return f"""\
-read_lef {NANGATE_TECH_LEF}
-read_lef {NANGATE_CELL_LEF}
-read_liberty {NANGATE_LIB}
-read_verilog {netlist_v}
-link_design {top}
-set clk_ports [get_ports -quiet {{clk clock i_clk clk_i}}]
-if {{[llength $clk_ports] > 0}} {{
-    create_clock -name clk -period 1.0 $clk_ports
-    set_input_delay -clock clk 0 [remove_from_collection [all_inputs] $clk_ports]
-    set_output_delay -clock clk 0 [all_outputs]
-}} else {{
-    create_clock -name virtual -period 1.0
-    set_input_delay -clock virtual 0 [all_inputs]
-    set_output_delay -clock virtual 0 [all_outputs]
-}}
-puts "{_PPA_DELAY_TAG}"
-report_checks -path_delay max
-puts "{_PPA_AREA_TAG}"
-report_design_area
-puts "{_PPA_POWER_TAG}"
-report_power
-puts "{_PPA_END_TAG}"
-exit
-"""
 
 
 async def _measure_ppa(
@@ -387,15 +303,21 @@ async def _measure_ppa(
     (None, error_msg) on any failure. `label` ("agent"/"golden") namespaces
     tmp files and error messages so the two passes don't trip over each
     other.
+
+    Synthesis recipe, OpenSTA TCL, and report parsing are imported from
+    `server.openroad_ppa` so the agent's `openroad_ppa` MCP tool measures
+    PPA the same way this scorer does.
     """
     netlist_v = f"/tmp/{label}_netlist.v"
     tcl_path = f"/tmp/openroad_ppa_{label}.tcl"
 
-    synth = await sbox.exec(["yosys", "-q", "-p", _yosys_script(sources, top, netlist_v)])
+    synth = await sbox.exec(
+        ["yosys", "-q", "-p", build_yosys_script(sources, top, netlist_v)]
+    )
     if not synth.success:
         return None, f"{label} yosys failed (rc={synth.returncode}):\n{synth.stderr[-2000:]}"
 
-    await sbox.write_file(tcl_path, _openroad_tcl(top, netlist_v))
+    await sbox.write_file(tcl_path, build_openroad_tcl(top, netlist_v))
     try:
         ord_run = await asyncio.wait_for(
             sbox.exec(["openroad", "-no_init", "-exit", tcl_path]),
@@ -407,22 +329,10 @@ async def _measure_ppa(
     if not ord_run.success:
         return None, f"{label} openroad failed (rc={ord_run.returncode}):\n{ord_run.stdout[-2000:]}"
 
-    out = ord_run.stdout
-    delay_m = _DELAY_ARRIVAL_RE.search(_section(out, _PPA_DELAY_TAG, _PPA_AREA_TAG))
-    area_m = _AREA_RE.search(_section(out, _PPA_AREA_TAG, _PPA_POWER_TAG))
-    power_m = _POWER_TOTAL_RE.search(_section(out, _PPA_POWER_TAG, _PPA_END_TAG))
-    missing = [n for n, m in (("delay", delay_m), ("area", area_m), ("power", power_m)) if m is None]
-    if missing:
-        return None, f"{label}: could not parse {', '.join(missing)} from openroad output:\n{out[-2000:]}"
-
-    try:
-        return {
-            "delay": float(delay_m.group(1)),
-            "area": float(area_m.group(1)),
-            "power": float(power_m.group(1)) * 1e6,
-        }, None
-    except ValueError as e:
-        return None, f"{label}: non-numeric value: {e}"
+    metrics, err = parse_ppa_report(ord_run.stdout)
+    if err:
+        return None, f"{label}: {err}"
+    return metrics, None
 
 
 @scorer(metrics={k: [mean(), stderr()] for k in _GOLDEN_PPA_KEYS})
