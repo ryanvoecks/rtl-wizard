@@ -84,7 +84,15 @@ link_design {top}
 set clk_ports [get_ports -quiet {{clk clock i_clk clk_i}}]
 if {{[llength $clk_ports] > 0}} {{
     create_clock -name clk -period 1.0 $clk_ports
-    set_input_delay -clock clk 0 [remove_from_collection [all_inputs] $clk_ports]
+    set non_clk_inputs {{}}
+    foreach p [all_inputs] {{
+        if {{[lsearch -exact $clk_ports $p] < 0}} {{
+            lappend non_clk_inputs $p
+        }}
+    }}
+    if {{[llength $non_clk_inputs] > 0}} {{
+        set_input_delay -clock clk 0 $non_clk_inputs
+    }}
     set_output_delay -clock clk 0 [all_outputs]
 }} else {{
     create_clock -name virtual -period 1.0
