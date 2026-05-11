@@ -15,5 +15,5 @@ git submodule update --init --recursive
 Use `inspect` to run tests. Example:
 
 ```bash
-uv run inspect eval benchmark/tasks.py -T design=adder_8bit
+uv run inspect eval benchmark/tasks.py --sample-id adder_8bit
 ```

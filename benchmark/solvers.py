@@ -15,46 +15,49 @@ from inspect_ai.tool import (
     mcp_server_sandbox,
     memory,
     python,
-    text_editor,
     think,
     update_plan,
     web_search,
 )
 
-SYSTEM_PROMPT_TEMPLATE = (
+from benchmark.text_editor import text_editor
+
+SYSTEM_PROMPT = (
     "You are an expert Verilog designer working in a sandbox directory. "
-    "The natural-language spec is in `design_description.txt`; that is the "
-    "only input file you are given. Write your synthesizable module to "
-    "`{design}.v` in the current directory, matching the module name and "
-    "I/O signals from the spec.\n\n"
+    "You are only given a natural-language specification, in `design_description.txt`"
     "There is no testbench in your sandbox — you must write one yourself "
-    "to verify correctness. Put it in a *separate* file (e.g. `tb.v`); its "
+    "to verify correctness. Put it in a *separate* file; its "
     "top-level module must be named `testbench`. Do NOT inline the "
-    "testbench into `{design}.v` — at grading time, files containing a "
-    "`module testbench` declaration are dropped, so an inlined testbench "
-    "would take the design with it. Make your testbench thorough — "
+    "testbench into `<design>.v`. Make your testbench thorough — "
     "exercise edge cases, randomized stimulus, and boundary conditions. "
+    "Do not use `ref` as a variable name. It is invalid syntax. "
     "After you submit, your design files (everything except the file with "
     "`module testbench`) are copied into a fresh container and a hidden "
-    "golden testbench is run against them; that grade is final. A weak "
-    "agent testbench that passes can still fail the golden one.\n\n"
-    "The `rtl-wizard` MCP server exposes a simulation tool that compiles "
-    "a list of Verilog files with iverilog and runs the resulting binary "
-    "with vvp, returning the output. Pass it `[{design}.v, <your "
+    "golden testbench is run against them; that grade is final.\n\n"
+    "The `rtl-wizard` MCP server exposes a simulation tool that compiles and runs "
+    "a list of Verilog files. Pass it `[<design>.v, <your "
     "testbench>.v]` to iterate. Your testbench should print `Passed` on "
     "success.\n\n"
-    "Then optimize the design — your primary objective is to minimize "
-    "**combinational depth** (the longest topological path through the "
-    "post-techmap netlist), since that sets the achievable clock period. "
-    "Secondary PPA goals: prefer fewer sequential cells, narrower "
-    "datapaths, and shared logic. The `rtl-wizard` MCP server also "
-    "exposes a synthesis tool that runs yosys on `{design}.v` and returns "
-    "the cell/wire stats, plus a tool that reconstructs the longest "
-    "combinational path as annotated RTL — call them (use whatever exact "
-    "names appear in your tool list), use the reconstructed critical path "
-    "to identify the depth bottleneck, and iterate to bring combinational "
-    "depth down (while also watching cell count as the area metric) and "
-    "keeping your testbench green. Do not change the module interface."
+    "You need to optimize your design. Your primary objective is to **maximize "
+    "ppa_score = 1 / (delay × area × power)** — equivalently, minimize "
+    "delay × area × power. This is exactly what the "
+    "benchmark grades on, so it is the only objective that ultimately "
+    "matters. The `rtl-wizard` MCP server exposes an `openroad_ppa` tool "
+    "that runs that "
+    "same pipeline on your sources — call it after every meaningful change to "
+    "see your true score and iterate to drive it up.\n\n"
+    "The server also exposes a `yosys_synth` tool (cell/wire stats) "
+    "and a `reconstruct_critical_path` tool (annotates the longest "
+    "combinational path back to its RTL lines). These are diagnostic — "
+    "depth correlates with delay and cell count correlates with area, so "
+    "they are useful for finding *where* to optimize, but they are not "
+    "the objective. When `yosys_synth` or path depth disagrees with "
+    "`openroad_ppa`, trust `openroad_ppa`. Keep your testbench green "
+    "throughout, and do not change the module interface.\n\n"
+    "Your primary objective is to create a design with as high a PPA score "
+    "as possible. Any Verilog refactoring which does not break functionality is allowed.\n\n"
+    "Remember that you are an agent in a sandbox - you must use the bash and text editor tools "
+    "to write your solutions to files before evaluating."
 )
 
 # Stdio variant — kept for parity with the codex_cli alternative below,
@@ -72,14 +75,15 @@ rtl_wizard_mcp = mcp_server_sandbox(
 )
 
 
-def rtllm_react_solver(design: str):
-    """Build the active react agent for a given design.
+def rtllm_react_solver():
+    """Build the active react agent.
 
     Wires the rtl-wizard MCP server alongside the standard inspect_ai tool
-    set; the system prompt is parameterized on the design name.
+    set. The system prompt is design-agnostic — the per-sample design name
+    is delivered in the user message (see `_build_sample` in tasks.py).
     """
     return react(
-        prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
+        prompt=SYSTEM_PROMPT,
         tools=[
             rtl_wizard_mcp,
             web_search(),
@@ -101,9 +105,9 @@ def rtllm_react_solver(design: str):
 
 # Codex (broken for all tool-calling with gpt-oss-120b)
 # from inspect_swe import codex_cli
-# def rtllm_codex_solver(design: str):
+# def rtllm_codex_solver():
 #     return codex_cli(
-#         system_prompt=SYSTEM_PROMPT_TEMPLATE.format(design=design),
+#         system_prompt=SYSTEM_PROMPT,
 #         env={"GEMINI_CLI_TRUST_WORKSPACE": "true", "LD_LIBRARY_PATH": ""},
 #         mcp_servers=[RTL_WIZARD_MCP],
 #         version="0.110.0",

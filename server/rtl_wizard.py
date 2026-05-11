@@ -4,7 +4,8 @@ from mcp.server.fastmcp import FastMCP
 
 from yosys_synth import yosys_synth as _yosys_synth
 from reconstruct_from_path import emit, parse, run_yosys
-from iverilog_sim import iverilog_sim as _iverilog_sim
+from verilator_sim import verilator_sim as _verilator_sim
+from openroad_ppa import measure_ppa as _measure_ppa
 
 mcp = FastMCP("rtl-wizard")
 
@@ -88,24 +89,53 @@ def reconstruct_critical_path(verilog_path: str) -> str:
 
 
 @mcp.tool()
-def simulate(verilog_paths: list[str]) -> str:
-    """Compile and run a simulation with iverilog + vvp, returning the testbench output.
+def openroad_ppa(verilog_paths: list[str], top: str | None = None) -> str:
+    """Synthesize the design to nangate45 with yosys and run OpenSTA, returning
+    delay (ns), area (µm²), power (µW), and ppa_score = 1 / (delay·area·power).
 
-    Compiles the given Verilog/SystemVerilog files together with `iverilog -g2012`
-    and runs the resulting binary with `vvp`. The list should include the
-    design under test, its testbench, and any additional sources needed to
-    elaborate the top module. The returned string contains everything the
-    testbench printed to stdout/stderr (e.g. `$display` output and the usual
-    `Passed` / `Failed` markers); on a compile failure it instead returns the
-    iverilog error log so the issue is visible.
+    This is the same pipeline the benchmark scorer uses to grade your design,
+    so the numbers it returns are the numbers you are graded on. Use it as
+    your primary feedback signal once your testbench passes — call it after
+    every meaningful change and iterate to drive ppa_score up (equivalently,
+    delay·area·power down). Higher ppa_score is better.
+
+    The clock is the design's `clk`/`clock`/`i_clk`/`clk_i` port at 1 ns when
+    one exists, else a virtual 1 ns clock. Absolute numbers are not physically
+    meaningful (no placement, no wire RC), but they are stable and comparable
+    across iterations on the same design.
 
     Args:
         verilog_paths: list of absolute or cwd-relative paths to .v / .sv files
-            to pass to iverilog. Order does not matter.
+            to synthesize together. Pass every source needed to elaborate the
+            top module (e.g. `[<design>.v]` plus any submodule files).
+        top: top-module name. Defaults to the first file's stem.
+
+    Returns the formatted PPA block on success. On synth or STA failure,
+    returns the tail of the tool log so the error is visible.
+    """
+    return _measure_ppa(verilog_paths, top)
+
+
+@mcp.tool()
+def simulate(verilog_paths: list[str]) -> str:
+    """Compile and run a simulation with Verilator, returning the testbench output.
+
+    Compiles the given Verilog/SystemVerilog files with `verilator --binary
+    --timing` and runs the resulting executable. The list should include the
+    design under test, its testbench, and any additional sources needed to
+    elaborate the top module; if a `module testbench` is present it is used as
+    the elaboration root. The returned string contains everything the testbench
+    printed to stdout/stderr (e.g. `$display` output and the usual `Passed` /
+    `Failed` markers); on a compile failure it instead returns the verilator
+    error log so the issue is visible.
+
+    Args:
+        verilog_paths: list of absolute or cwd-relative paths to .v / .sv files
+            to pass to verilator. Order does not matter.
 
     Returns the simulation output (or compile-error log on failure).
     """
-    return _iverilog_sim(verilog_paths)
+    return _verilator_sim(verilog_paths)
 
 
 if __name__ == "__main__":
