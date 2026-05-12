@@ -1,61 +1,15 @@
 #!/usr/bin/env python3
-"""Drive the ORFS make-based flow over every discovered design, or a subset
-selected by glob filters.
+"""Drive the ORFS flow over every discovered design (or a glob-filtered
+subset via --benchmark/--name/--variant).
 
-Designs come from `loader.CorpusLoader` (each corpus subfolder yields one
-`DesignConfig` whose `rtl_files` are its `*.v` sources). The CLI's
-`--benchmark`/`--name`/`--variant` flags filter that catalog: each is
-repeatable and accepts globs; a design matches a flag when *any* of its
-patterns hits, and must match every flag that's present. The shared SDC
-template (`templates/constraint.sdc.template`) and the rendered per-design
-Makefile (`templates/Makefile.template`) apply to every design — only the
-design name, source files, DESIGN_DIR, clock period, and floorplan
-dimensions vary per run.
+Each (benchmark, name) group first runs a shared `__calibration__` on the
+reference variant at a loose period and large die. The calibration's
+worst setup slack and cell area derive the period and floorplan used for
+the routed run of every variant in the group.
 
-All study parameters (platform, calibration setup, target utilization,
-floor, safety factors) live in `config.StudyConfig`, not on the CLI.
-
-Per-design clock period and die size are both derived from a single
-*calibration* phase that runs the design at a loose period
-(`StudyConfig.calibration_period_ns`) on a large square die
-(`StudyConfig.calibration_side_um`). From that run we read:
-
-  - the post-route worst setup slack -> tightened period for the final phase
-    via `target_period = (cal_period - cal_ws) * target_multiplier`
-  - the post-synth cell area -> floorplan side for the final phase via
-    `side = sqrt(cell_area / target_utilization) + 2*core_margin`,
-    clamped to a minimum of `minimum_side_um` so small designs hit a fixed
-    floor instead of an impractically tiny die.
-
-Both phases use the same SDC shape, so the final WNS is interpretable
-against the calibration's.
-
-Each (benchmark, name) group has one shared calibration that's always run
-on the `reference` variant; the derived period/floorplan are then used for
-the final routed run of every variant of that design (including the
-reference itself). Filtering out the reference still runs calibration on
-it under the hood — calibration is a hidden dependency, not a selectable
-unit.
-
-Each invocation is one *batch*: artifacts land under
-
-    <repo>/eda_runs/<timestamp>/<benchmark>/<name>/
-        __calibration__/   # shared calibration phase, fed by the reference
-        <variant>/         # one subdir per variant -- the final routed run
-
-Each phase dir is self-contained — its own `inputs/` snapshot (rtl +
-rendered constraint.sdc + rendered Makefile) sits next to ORFS's
-`logs/objects/reports/results/` trees and the make log.
-
-The flow always runs through `do-finish` (final routed STA/area/power
-report) rather than ORFS's `finish`, which additionally depends on GDS
-generation via KLayout — not installed in every sandbox.
-
-Usage:
-    uv run eda_eval/run.py                                # every discovered design
-    uv run eda_eval/run.py --name adder8                  # one design by name
-    uv run eda_eval/run.py --name 'adder*' --name 'mux*'  # multiple name globs
-    uv run eda_eval/run.py --benchmark corpus             # entire benchmark
+Per-batch artifacts land under
+`eda_runs/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
+plus a top-level `runs.csv` summarizing each run's error status.
 """
 from __future__ import annotations
 
