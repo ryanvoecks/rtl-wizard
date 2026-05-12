@@ -74,7 +74,14 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from config import EDA_RUNS, HERE, ORFS_HOME, DesignConfig, StudyConfig
+from config import (
+    EDA_RUNS,
+    HERE,
+    ORFS_HOME,
+    DesignConfig,
+    RunConfig,
+    StudyConfig,
+)
 from loader import CorpusLoader, DesignTree, RTLLMLoader
 
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
@@ -138,39 +145,33 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     return die_area, core_area
 
 
-def snapshot_inputs(
-    design: DesignConfig,
-    phase_dir: Path,
-    period_ns: float,
-    side_um: float,
-    cfg: StudyConfig,
-) -> Path:
-    """Materialize `<phase_dir>/inputs/` with an RTL copy, a rendered SDC at
-    `period_ns`, and a rendered per-design Makefile pinned to a square
-    `side_um` floorplan. Returns the path to the rendered Makefile."""
-    inputs = phase_dir / "inputs"
+def snapshot_inputs(run: RunConfig, cfg: StudyConfig) -> Path:
+    """Materialize `<run.output_dir>/inputs/` with an RTL copy, a rendered SDC
+    at `run.period_ns`, and a rendered per-design Makefile pinned to a square
+    `run.side_um` floorplan. Returns the path to the rendered Makefile."""
+    inputs = run.output_dir / "inputs"
     rtl_dst = inputs / "rtl"
     if rtl_dst.exists():
         shutil.rmtree(rtl_dst)
     rtl_dst.mkdir(parents=True)
     verilog_dsts: list[Path] = []
-    for src in design.rtl_files:
+    for src in run.design.rtl_files:
         dst = rtl_dst / src.name
         shutil.copy2(src, dst)
         verilog_dsts.append(dst)
     sdc_dst = inputs / "constraint.sdc"
     sdc_dst.write_text(SDC_TEMPLATE.read_text().format(
-        period_ns=period_ns, io_delay_ns=cfg.io_delay_ns,
+        period_ns=run.period_ns, io_delay_ns=cfg.io_delay_ns,
     ))
-    die_area, core_area = render_floorplan(side_um, cfg.core_margin_um)
+    die_area, core_area = render_floorplan(run.side_um, cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         MAKEFILE_TEMPLATE.read_text().format(
-            top_module=design.top_module,
+            top_module=run.design.top_module,
             design_dir=rtl_dst,
             verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
-            work_home=phase_dir,
+            work_home=run.output_dir,
             orfs_home=ORFS_HOME,
             platform=cfg.platform,
             place_density=cfg.place_density,
@@ -181,19 +182,12 @@ def snapshot_inputs(
     return makefile_dst
 
 
-def run_phase(
-    design: DesignConfig,
-    phase_dir: Path,
-    period_ns: float,
-    side_um: float,
-    cfg: StudyConfig,
-    phase_label: str,
-) -> int:
+def run_phase(run: RunConfig, cfg: StudyConfig) -> int:
     """Invoke the rendered per-design Makefile for one phase. Output is
-    captured to `<phase_dir>/flow_<design>_<phase_label>.log`."""
-    phase_dir.mkdir(parents=True, exist_ok=True)
-    makefile = snapshot_inputs(design, phase_dir, period_ns, side_um, cfg)
-    log_path = phase_dir / f"flow_{design.name}_{phase_label}.log"
+    captured to `<output_dir>/flow_<design>_<phase_label>.log`."""
+    run.output_dir.mkdir(parents=True, exist_ok=True)
+    makefile = snapshot_inputs(run, cfg)
+    log_path = run.output_dir / f"flow_{run.design.name}_{run.phase_label}.log"
     with log_path.open("w") as log:
         return subprocess.run(
             ["make", "-C", str(makefile.parent)],
@@ -287,10 +281,14 @@ def run_group(
     each variant; on calibration failure every variant is reported as
     failed since none can produce a meaningful final."""
     cal_dir = design_calibration_dir(reference, batch_dir)
-    rc = run_phase(
-        reference, cal_dir,
-        cfg.calibration_period_ns, cfg.calibration_side_um, cfg, "calibration",
+    cal_run = RunConfig(
+        design=reference,
+        output_dir=cal_dir,
+        period_ns=cfg.calibration_period_ns,
+        side_um=cfg.calibration_side_um,
+        phase_label="calibration",
     )
+    rc = run_phase(cal_run, cfg)
     if rc != 0:
         return [(d, rc, f"calibration FAIL (rc={rc})") for d in variants]
 
@@ -315,11 +313,14 @@ def run_group(
     )
     results: list[tuple[DesignConfig, int, str]] = []
     for d in variants:
-        variant_dir = design_variant_dir(d, batch_dir)
-        rc = run_phase(
-            d, variant_dir,
-            target_period_ns, final_side_um, cfg, "final",
+        final_run = RunConfig(
+            design=d,
+            output_dir=design_variant_dir(d, batch_dir),
+            period_ns=target_period_ns,
+            side_um=final_side_um,
+            phase_label="final",
         )
+        rc = run_phase(final_run, cfg)
         if rc != 0:
             results.append((d, rc, f"final FAIL (rc={rc}) [{detail}]"))
         else:

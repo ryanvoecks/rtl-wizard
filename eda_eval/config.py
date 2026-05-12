@@ -38,3 +38,14 @@ class DesignConfig:
     variant: str                 # distinguishes parameterizations sharing a name
     rtl_files: tuple[Path, ...]  # ordered RTL sources making up the design
     top_module: str              # Verilog top module
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    """Parameters that vary per phase invocation of the ORFS flow."""
+
+    design: DesignConfig  # design being driven through the flow
+    output_dir: Path      # where this phase's artifacts land
+    period_ns: float      # clock period rendered into the SDC
+    side_um: float        # square floorplan side -> DIE_AREA/CORE_AREA
+    phase_label: str      # tags the flow log: "calibration" or "final"
