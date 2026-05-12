@@ -9,13 +9,13 @@ export VERILOG_FILES  = {verilog_files}
 export SDC_FILE       = {sdc_file}
 export WORK_HOME      = {work_home}
 
-export PLATFORM           ?= nangate45
+export PLATFORM       ?= nangate45
 
-# The corpus designs are tiny, so we need a low utilization to give the
-# nangate45 PDN's M4 (28 um) and M7 (15 um) strap pitches room to land
-# inside the core.
-export CORE_UTILIZATION   ?= 1
-export PLACE_DENSITY      ?= 0.30
+# Explicit DIE_AREA / CORE_AREA take precedence over CORE_UTILIZATION
+export DIE_AREA       = {die_area}
+export CORE_AREA      = {core_area}
+
+export PLACE_DENSITY  ?= 0.30
 
 # Stages run for every design, in dependency order
 FLOW_TARGETS := synth synth-report floorplan place cts route do-finish
