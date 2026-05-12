@@ -3,8 +3,8 @@
 
 Each design folder must contain exactly one `*.v` file; its stem is used as
 DESIGN_NAME. The shared SDC (`constraint.sdc`) and the platform/utilization
-knobs in `config.mk` apply to every design — only the design name, source
-file, and DESIGN_DIR vary per run.
+knobs in `Makefile.template` apply to every design — only the design name,
+source file, and DESIGN_DIR vary per run.
 
 Each invocation is one *batch*: artifacts land under
 `<repo>/eda_runs/<timestamp>/<rel-corpus-path>/`, where `<rel-corpus-path>`
@@ -13,16 +13,13 @@ contains a snapshot of the `inputs/` actually fed to ORFS (rtl + config +
 constraints) so the run is self-contained, plus ORFS's own
 `logs/objects/reports/results/` trees and the make log.
 
-Default targets stop at `do-finish` (final routed STA/area/power report)
-rather than ORFS's `finish`, which additionally depends on GDS generation
-via KLayout — not installed in every sandbox. Pass `--targets finish` to
-get GDS.
+The flow always runs through `do-finish` (final routed STA/area/power
+report) rather than ORFS's `finish`, which additionally depends on GDS
+generation via KLayout — not installed in every sandbox.
 
 Usage:
-    uv run test_flow_orfs/run.py                                # every design under corpus/
-    uv run test_flow_orfs/run.py corpus/adder8                  # full flow on one design
-    uv run test_flow_orfs/run.py corpus/adder8 --targets synth  # stop after synthesis
-    uv run test_flow_orfs/run.py corpus/adder8 --targets clean  # ORFS clean
+    uv run test_flow_orfs/run.py                  # every design under corpus/
+    uv run test_flow_orfs/run.py corpus/adder8    # full flow on one design
 """
 from __future__ import annotations
 
@@ -41,19 +38,6 @@ HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
 CORPUS = REPO_ROOT / "corpus"
-
-DEFAULT_TARGETS = (
-    "synth",
-    # Post-synth timing report (1_Post_synthesis.rpt). Not strictly required by
-    # the PnR flow, but extract_metrics.py needs it for synth WNS/TNS.
-    "synth-report",
-    "floorplan",
-    "place",
-    "cts",
-    "route",
-    "do-finish",
-)
-
 
 def resolve_design(design_dir: Path) -> tuple[str, Path]:
     """Locate the single `*.v` file in `design_dir`. The corpus convention is
@@ -91,54 +75,48 @@ def design_out_dir(design_dir: Path, batch_dir: Path, corpus: Path) -> Path:
 
 
 def snapshot_inputs(
-    design_dir: Path, out_dir: Path, sdc_src: Path, config_mk_src: Path,
-) -> tuple[Path, Path, Path]:
-    """Copy the design RTL tree and the shared SDC/config into
-    `<out_dir>/inputs/` so the run is self-contained. Returns the paths
-    ORFS should consume: (verilog_file, sdc, config_mk)."""
+    design_dir: Path, out_dir: Path, sdc_src: Path, template_src: Path,
+) -> Path:
+    """Copy the design RTL tree and SDC into `<out_dir>/inputs/`, then render
+    the per-design Makefile from `template_src` into the same `inputs/` dir.
+    Returns the path to the rendered Makefile (also serves as DESIGN_CONFIG
+    when ORFS includes it)."""
     inputs = out_dir / "inputs"
     rtl_dst = inputs / "rtl"
     if rtl_dst.exists():
         shutil.rmtree(rtl_dst)
     shutil.copytree(design_dir, rtl_dst)
     sdc_dst = inputs / "constraint.sdc"
-    config_mk_dst = inputs / "config.mk"
     shutil.copy2(sdc_src, sdc_dst)
-    shutil.copy2(config_mk_src, config_mk_dst)
-    _, verilog_in_src = resolve_design(design_dir)
-    return rtl_dst / verilog_in_src.name, sdc_dst, config_mk_dst
+    design_name, verilog_in_src = resolve_design(design_dir)
+    verilog_dst = rtl_dst / verilog_in_src.name
+    makefile_dst = inputs / "Makefile"
+    makefile_dst.write_text(
+        template_src.read_text().format(
+            design_name=design_name,
+            design_dir=verilog_dst.parent,
+            verilog_files=verilog_dst,
+            sdc_file=sdc_dst,
+            work_home=out_dir,
+        )
+    )
+    return makefile_dst
 
 
 def run_flow(
     design_dir: Path,
-    targets: tuple[str, ...],
-    flow_home: Path,
     out_dir: Path,
     sdc_src: Path,
-    config_mk_src: Path,
+    template_src: Path,
 ) -> int:
-    """Invoke ORFS make for one design and return its exit code. All output is
-    redirected to a per-design log file so it doesn't fight with the progress
-    bar."""
+    """Invoke the rendered per-design Makefile and return its exit code. All
+    output is redirected to a per-design log file so it doesn't fight with
+    the progress bar."""
     design_name, _ = resolve_design(design_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    verilog, sdc_path, config_mk = snapshot_inputs(
-        design_dir, out_dir, sdc_src, config_mk_src,
-    )
+    makefile = snapshot_inputs(design_dir, out_dir, sdc_src, template_src)
 
-    # Per-design values override anything in config.mk; only the platform and
-    # utilization knobs come from the config file.
-    cmd = [
-        "make",
-        "-C", str(flow_home),
-        f"DESIGN_CONFIG={config_mk}",
-        f"DESIGN_NAME={design_name}",
-        f"DESIGN_DIR={verilog.parent}",
-        f"VERILOG_FILES={verilog}",
-        f"SDC_FILE={sdc_path}",
-        f"WORK_HOME={out_dir}",
-        *targets,
-    ]
+    cmd = ["make", "-C", str(makefile.parent)]
 
     log_path = out_dir / f"flow_{design_name}.log"
     with log_path.open("w") as log:
@@ -158,10 +136,6 @@ def main() -> int:
              "Default: run every design under <repo>/corpus/.",
     )
     ap.add_argument(
-        "--targets", nargs="+", default=None, metavar="TARGET",
-        help="ORFS make targets (default: full flow through do-finish).",
-    )
-    ap.add_argument(
         "--num-threads", type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
         help="Number of designs to run in parallel "
@@ -169,6 +143,9 @@ def main() -> int:
     )
     args = ap.parse_args()
 
+    # FLOW_HOME falls back to /OpenROAD-flow-scripts/flow inside the rendered
+    # Makefile; check here too so we fail fast with a clear message rather
+    # than deferring to a sub-make error.
     flow_home = Path(os.environ.get("FLOW_HOME", "/OpenROAD-flow-scripts/flow"))
     if not (flow_home / "Makefile").is_file():
         sys.stderr.write(
@@ -177,9 +154,8 @@ def main() -> int:
         )
         return 1
 
-    targets = tuple(args.targets) if args.targets else DEFAULT_TARGETS
     sdc_src = HERE / "constraint.sdc"
-    config_mk_src = HERE / "config.mk"
+    template_src = HERE / "Makefile.template"
 
     if args.design_dir is not None:
         design_dir = args.design_dir.resolve()
@@ -205,7 +181,7 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {
             executor.submit(
-                run_flow, d, targets, flow_home, out_dirs[d], sdc_src, config_mk_src,
+                run_flow, d, out_dirs[d], sdc_src, template_src,
             ): d
             for d in designs
         }

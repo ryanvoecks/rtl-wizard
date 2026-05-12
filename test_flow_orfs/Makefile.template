@@ -1,0 +1,26 @@
+# Per-design ORFS driver rendered by test_flow_orfs/run.py
+
+THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+FLOW_HOME     ?= /OpenROAD-flow-scripts/flow
+
+export DESIGN_NAME    = {design_name}
+export DESIGN_DIR     = {design_dir}
+export VERILOG_FILES  = {verilog_files}
+export SDC_FILE       = {sdc_file}
+export WORK_HOME      = {work_home}
+
+export PLATFORM           ?= nangate45
+
+# The corpus designs are tiny, so we need a low utilization to give the
+# nangate45 PDN's M4 (28 um) and M7 (15 um) strap pitches room to land
+# inside the core.
+export CORE_UTILIZATION   ?= 1
+export PLACE_DENSITY      ?= 0.30
+
+# Stages run for every design, in dependency order
+FLOW_TARGETS := synth synth-report floorplan place cts route do-finish
+
+.DEFAULT_GOAL := flow
+.PHONY: flow
+flow:
+	$(MAKE) -C $(FLOW_HOME) DESIGN_CONFIG=$(THIS_MAKEFILE) $(FLOW_TARGETS)
