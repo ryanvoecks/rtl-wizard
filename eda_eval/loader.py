@@ -9,6 +9,9 @@ import pyslang
 
 from config import DesignConfig
 
+# benchmark -> name -> variant -> DesignConfig.
+DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
+
 
 def detect_top_module(rtl_files: Iterable[Path]) -> str:
     """Top module name across one or more Verilog/SystemVerilog files."""
@@ -32,8 +35,9 @@ class DesignLoader(ABC):
     benchmark: str
 
     @abstractmethod
-    def designs(self) -> list[DesignConfig]:
-        """All `DesignConfig`s this loader can find on disk."""
+    def designs(self) -> DesignTree:
+        """All `DesignConfig`s this loader can find on disk, nested as
+        `{benchmark: {name: {variant: design}}}`."""
 
 
 class RTLLMLoader(DesignLoader):
@@ -50,29 +54,33 @@ class RTLLMLoader(DesignLoader):
     def __init__(self, rtllm_root: Path):
         self.rtllm_root = rtllm_root
 
-    def designs(self) -> list[DesignConfig]:
-        configs: list[DesignConfig] = []
+    def designs(self) -> DesignTree:
+        names: dict[str, dict[str, DesignConfig]] = {}
         for desc in sorted(self.rtllm_root.rglob("design_description.txt")):
             design_dir = desc.parent
             name = design_dir.name
             verified = sorted(design_dir.glob("verified_*.v"))
-            configs.append(DesignConfig(
-                benchmark=self.benchmark,
-                name=name,
-                variant="reference",
-                rtl_files=tuple(verified),
-                top_module=detect_top_module(verified),
-            ))
+            variants: dict[str, DesignConfig] = {
+                "reference": DesignConfig(
+                    benchmark=self.benchmark,
+                    name=name,
+                    variant="reference",
+                    rtl_files=tuple(verified),
+                    top_module=detect_top_module(verified),
+                ),
+            }
             for prefix, subdir in self.TRIAL_GROUPS:
                 for cand in sorted((self.rtllm_root / subdir).glob(f"t*/{name}.v")):
-                    configs.append(DesignConfig(
+                    variant = f"{prefix}_{cand.parent.name}"
+                    variants[variant] = DesignConfig(
                         benchmark=self.benchmark,
                         name=name,
-                        variant=f"{prefix}_{cand.parent.name}",
+                        variant=variant,
                         rtl_files=(cand,),
                         top_module=name,
-                    ))
-        return configs
+                    )
+            names[name] = variants
+        return {self.benchmark: names}
 
 
 class CorpusLoader(DesignLoader):
@@ -83,14 +91,16 @@ class CorpusLoader(DesignLoader):
     def __init__(self, corpus_dir: Path):
         self.corpus_dir = corpus_dir
 
-    def designs(self) -> list[DesignConfig]:
-        return [
-            DesignConfig(
-                benchmark=self.benchmark,
-                name=child.name,
-                variant="reference",
-                rtl_files=tuple(sorted(child.glob("*.v"))),
-                top_module=child.name,
-            )
+    def designs(self) -> DesignTree:
+        return {self.benchmark: {
+            child.name: {
+                "reference": DesignConfig(
+                    benchmark=self.benchmark,
+                    name=child.name,
+                    variant="reference",
+                    rtl_files=tuple(sorted(child.glob("*.v"))),
+                    top_module=child.name,
+                ),
+            }
             for child in sorted(self.corpus_dir.iterdir())
-        ]
+        }}

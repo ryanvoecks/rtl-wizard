@@ -75,7 +75,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from config import DesignConfig, StudyConfig
-from loader import CorpusLoader, RTLLMLoader
+from loader import CorpusLoader, DesignTree, RTLLMLoader
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
@@ -94,22 +94,27 @@ _CHIP_AREA_RE = re.compile(
 
 
 def filter_designs(
-    designs: list[DesignConfig],
+    designs: DesignTree,
     benchmark_globs: list[str] | None,
     name_globs: list[str] | None,
     variant_globs: list[str] | None,
-) -> list[DesignConfig]:
+) -> DesignTree:
     """Keep designs whose benchmark/name/variant match at least one glob in
     each non-empty filter list. A `None` filter means that field is
     unconstrained, so an unfiltered call returns `designs` unchanged."""
     def matches(value: str, patterns: list[str] | None) -> bool:
         return patterns is None or any(fnmatch.fnmatchcase(value, p) for p in patterns)
-    return [
-        d for d in designs
-        if matches(d.benchmark, benchmark_globs)
-        and matches(d.name, name_globs)
-        and matches(d.variant, variant_globs)
-    ]
+    out: DesignTree = {}
+    for b, names in designs.items():
+        if not matches(b, benchmark_globs):
+            continue
+        for n, variants in names.items():
+            if not matches(n, name_globs):
+                continue
+            for v, d in variants.items():
+                if matches(v, variant_globs):
+                    out.setdefault(b, {}).setdefault(n, {})[v] = d
+    return out
 
 
 def design_variant_dir(design: DesignConfig, batch_dir: Path) -> Path:
@@ -378,10 +383,7 @@ def main() -> int:
     sdc_template_src = HERE / "templates" / "constraint.sdc.template"
     makefile_template_src = HERE / "templates" / "Makefile.template"
 
-    all_designs = (
-        CorpusLoader(CORPUS).designs()
-        + RTLLMLoader(RTLLM).designs()
-    )
+    all_designs = CorpusLoader(CORPUS).designs() | RTLLMLoader(RTLLM).designs()
     designs = filter_designs(
         all_designs, args.benchmark, args.name, args.variant,
     )
@@ -392,25 +394,16 @@ def main() -> int:
         )
         return 1
 
-    # Group filtered variants by (benchmark, name) and resolve each group's
-    # reference from the *unfiltered* catalog, so filtering out the
-    # reference still produces a valid calibration source for the variants
-    # that did make it through.
+    # Group filtered designs and check for valid references
     references: dict[tuple[str, str], DesignConfig] = {}
-    for d in all_designs:
-        key = (d.benchmark, d.name)
-        if d.variant == "reference":
-            references[key] = d
     groups: dict[tuple[str, str], list[DesignConfig]] = {}
-    for d in designs:
-        groups.setdefault((d.benchmark, d.name), []).append(d)
-    missing = [k for k in groups if k not in references]
-    if missing:
-        joined = ", ".join(f"{b}/{n}" for b, n in missing)
-        sys.stderr.write(
-            f"error: no 'reference' variant available for: {joined}\n"
-        )
-        return 1
+    for b, names in designs.items():
+        for n, variants in names.items():
+            if "reference" not in all_designs[b][n]:
+                sys.stderr.write(f"error: no 'reference' variant available for {b}/{n}\n")
+                return 1
+            groups[(b, n)] = list(variants.values())
+            references[(b, n)] = all_designs[b][n]["reference"]
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
@@ -439,7 +432,8 @@ def main() -> int:
             ): key
             for key, variants in groups.items()
         }
-        with tqdm(total=len(designs), desc="Variants", unit="variant") as pbar:
+        total = sum(len(v) for v in groups.values())
+        with tqdm(total=total, desc="Variants", unit="variant") as pbar:
             for fut in as_completed(futures):
                 key = futures[fut]
                 try:
