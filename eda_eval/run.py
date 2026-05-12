@@ -60,8 +60,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import csv
 import fnmatch
-import json
 import math
 import os
 import shutil
@@ -134,25 +134,28 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     return die_area, core_area
 
 
-def snapshot_inputs(run: RunConfig, cfg: StudyConfig) -> Path:
-    """Materialize `<run.output_dir>/inputs/` with an RTL copy, a rendered SDC
-    at `run.period_ns`, and a rendered per-design Makefile pinned to a square
-    `run.side_um` floorplan. Returns the path to the rendered Makefile."""
+def snapshot_inputs(run: RunConfig) -> Path:
+    """Copy RTL, generate Makefile, generate constraints. Returns the path to
+    the rendered Makefile."""
     inputs = run.output_dir / "inputs"
+
+    # Copy RTL
     rtl_dst = inputs / "rtl"
-    if rtl_dst.exists():
-        shutil.rmtree(rtl_dst)
     rtl_dst.mkdir(parents=True)
     verilog_dsts: list[Path] = []
     for src in run.design.rtl_files:
         dst = rtl_dst / src.name
         shutil.copy2(src, dst)
         verilog_dsts.append(dst)
+
+    # Generate SDC with clock period
     sdc_dst = inputs / "constraint.sdc"
     sdc_dst.write_text(SDC_TEMPLATE.read_text().format(
-        period_ns=run.period_ns, io_delay_ns=cfg.io_delay_ns,
+        period_ns=run.period_ns, io_delay_ns=run.cfg.io_delay_ns,
     ))
-    die_area, core_area = render_floorplan(run.side_um, cfg.core_margin_um)
+
+    # Generate Makefile with design config
+    die_area, core_area = render_floorplan(run.side_um, run.cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         MAKEFILE_TEMPLATE.read_text().format(
@@ -162,8 +165,8 @@ def snapshot_inputs(run: RunConfig, cfg: StudyConfig) -> Path:
             sdc_file=sdc_dst,
             work_home=run.output_dir,
             orfs_home=ORFS_HOME,
-            platform=cfg.platform,
-            place_density=cfg.place_density,
+            platform=run.cfg.platform,
+            place_density=run.cfg.place_density,
             die_area=die_area,
             core_area=core_area,
         )
@@ -171,11 +174,10 @@ def snapshot_inputs(run: RunConfig, cfg: StudyConfig) -> Path:
     return makefile_dst
 
 
-def run_phase(run: RunConfig, cfg: StudyConfig) -> int:
-    """Invoke the rendered per-design Makefile for one phase. Output is
-    captured to `<output_dir>/flow.log`."""
+def run_job(run: RunConfig) -> int:
+    """Invoke the rendered per-design Makefile."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
-    makefile = snapshot_inputs(run, cfg)
+    makefile = snapshot_inputs(run)
     log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
         return subprocess.run(
@@ -185,36 +187,28 @@ def run_phase(run: RunConfig, cfg: StudyConfig) -> int:
 
 
 def derive_final_side_um(cell_area_um2: float, cfg: StudyConfig) -> float:
-    """Pick the final floorplan side. The calibration synth runs at a
-    loose period, which tends to pick smaller drive strengths than the
-    final tight-period synth — so the calibration cell area is multiplied
-    by `cfg.area_multiplier` before sizing the die, padding the budget for
-    the larger cells the final synth will likely pick. The natural side
-    dictated by `cfg.target_utilization` is clamped up to
-    `cfg.minimum_side_um` so small designs hit a fixed floor."""
+    """Take a multiple of the cell area, or the minimum area if too small."""
     effective_cell_area = cell_area_um2 * cfg.area_multiplier
     core_side = math.sqrt(effective_cell_area / cfg.target_utilization)
     natural_side = core_side + 2 * cfg.core_margin_um
     return max(natural_side, cfg.minimum_side_um)
 
 
-def run_phases(
+def run_jobs(
     runs: list[RunConfig],
-    cfg: StudyConfig,
     num_threads: int,
     desc: str,
 ) -> dict[RunConfig, int]:
-    """Drive each `RunConfig` through `run_phase` on a thread pool, with a
-    progress bar whose postfix tracks running pass/fail counts. Returns
-    `{run: returncode}`; a non-zero rc is a make failure, and any
-    unexpected exception is mapped to rc=1."""
+    """Drive each `RunConfig` through `run_job` on a thread pool, with a
+    progress bar."""
     if not runs:
-        return {}
+        raise ValueError("No jobs to run")
     workers = max(1, min(num_threads, len(runs)))
     rcs: dict[RunConfig, int] = {}
     passed = failed = 0
+
     with ThreadPoolExecutor(max_workers=workers) as executor:
-        futures = {executor.submit(run_phase, r, cfg): r for r in runs}
+        futures = {executor.submit(run_job, r): r for r in runs}
         with tqdm(total=len(runs), desc=desc, unit="run") as pbar:
             pbar.set_postfix(passed=passed, failed=failed)
             for fut in as_completed(futures):
@@ -296,18 +290,19 @@ def main() -> int:
             output_dir=design_calibration_dir(references[key], batch_dir),
             period_ns=cfg.calibration_period_ns,
             side_um=cfg.calibration_side_um,
+            cfg=cfg,
         )
         for key in groups
     }
-    cal_rcs = run_phases(
-        list(cal_runs.values()), cfg, args.num_threads, "Calibration",
+    cal_rcs = run_jobs(
+        list(cal_runs.values()), args.num_threads, "Calibration",
     )
 
     # Build one RunJob per variant, and record each group's calibration as
     # its own synthetic `__calibration__` row. Calibration failures (rc != 0
     # or unparseable outputs) attach as `error` on every variant in the
     # group and skip execution, but the RunJob still carries the design so
-    # the row shows in runs.json.
+    # the row shows in runs.csv.
     final_runs: dict[DesignConfig, RunJob] = {}
     runs_report: list[dict] = []
     for key, variants in groups.items():
@@ -341,13 +336,13 @@ def main() -> int:
                     output_dir=design_variant_dir(d, batch_dir),
                     period_ns=period_ns,
                     side_um=side_um,
+                    cfg=cfg,
                 ),
                 error=error,
             )
 
     runnable = [job.run for job in final_runs.values() if job.error is None]
-    skipped = len(final_runs) - len(runnable)
-    final_rcs = run_phases(runnable, cfg, args.num_threads, "Eval")
+    final_rcs = run_jobs(runnable, args.num_threads, "Eval       ")
 
     for d, job in final_runs.items():
         if job.error is not None:
@@ -362,7 +357,10 @@ def main() -> int:
             "error": error,
         })
     runs_report.sort(key=lambda e: (e["benchmark"], e["name"], e["variant"]))
-    (batch_dir / "runs.json").write_text(json.dumps(runs_report, indent=2))
+    with (batch_dir / "runs.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["benchmark", "name", "variant", "error"])
+        writer.writeheader()
+        writer.writerows(runs_report)
 
 
 if __name__ == "__main__":

@@ -48,6 +48,7 @@ class RunConfig:
     output_dir: Path      # where this phase's artifacts land
     period_ns: float      # clock period rendered into the SDC
     side_um: float        # square floorplan side -> DIE_AREA/CORE_AREA
+    cfg: StudyConfig      # shared study-wide knobs
 
 
 @dataclass(frozen=True)
