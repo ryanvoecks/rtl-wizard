@@ -1,18 +1,13 @@
-# ORFS design config for the counter test. Consumed by /OpenROAD-flow-scripts/flow/Makefile.
+# Shared ORFS knobs for designs under `corpus/`. Consumed by
+# /OpenROAD-flow-scripts/flow/Makefile via DESIGN_CONFIG.
 #
-# `run.sh` is the canonical entry point — it sets DESIGN_DIR to this directory
-# and WORK_HOME to ./out so the standard ORFS make targets (synth, floorplan,
-# place, cts, route, finish) drop their artifacts next to this config rather
-# than into the upstream tree.
+# Per-design values (DESIGN_NAME, VERILOG_FILES, SDC_FILE, DESIGN_DIR) are
+# passed by run.py on the make command line and override anything set here.
 
-export DESIGN_NAME = counter
-export PLATFORM    = nangate45
+export PLATFORM    ?= nangate45
 
-export VERILOG_FILES = $(DESIGN_DIR)/counter.v
-export SDC_FILE      = $(DESIGN_DIR)/constraint.sdc
-
-# Match the geometry of the hand-written flow: the 32-bit counter is tiny, so
-# we need a low utilization to give the nangate45 PDN's M4 (28 um) and M7
-# (15 um) strap pitches room to land inside the core.
+# The corpus designs are tiny, so we need a low utilization to give the
+# nangate45 PDN's M4 (28 um) and M7 (15 um) strap pitches room to land
+# inside the core.
 export CORE_UTILIZATION   ?= 15
 export PLACE_DENSITY      ?= 0.30
