@@ -1,30 +1,25 @@
-# Yosys synthesis script for the counter test design.
-# Targets nangate45 (the only PDK installed in this container) and writes a
-# gate-level netlist ready for OpenROAD to floorplan/place/route.
-#
-# Paths are hardcoded — yosys -s scripts don't do env-var expansion.
-# Run via run.sh, which `cd`s into this directory first.
+# Generic Yosys synthesis script. Configured by config.tcl.
 
 # Source config
 source config.tcl
 
 yosys -import
 
-read_verilog -sv counter.v
-hierarchy -check -top counter
+read_verilog -sv $DESIGN_V
+hierarchy -check -top $DESIGN_NAME
 
-# Generic synthesis pipeline.
+# Generic synthesis pipeline
 procs; opt
 fsm; opt
 memory; opt
 techmap; opt
 
-# Map flops and combinational cells to nangate45.
+# Map flops and combinational cells to PDK
 dfflibmap -liberty $PDK_LIB
-abc        -liberty $PDK_LIB
+abc -liberty $PDK_LIB -D $PERIOD_PS
 clean
 
-# Sanity report so the run log shows the post-synth cell mix.
+# Sanity report so the run log shows the post-synth cell mix
 stat -liberty $PDK_LIB
 
-write_verilog -noattr -noexpr -nohex -nodec out/counter.synth.v
+write_verilog -noexpr -nohex -nodec $SYNTH_V
