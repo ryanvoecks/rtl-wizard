@@ -67,7 +67,6 @@ import os
 import re
 import shutil
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -268,64 +267,38 @@ def derive_final_side_um(
     return natural_side, natural_side, effective_cell_area, False
 
 
-def run_group(
-    reference: DesignConfig,
-    variants: list[DesignConfig],
-    batch_dir: Path,
+def run_phases(
+    runs: list[RunConfig],
     cfg: StudyConfig,
-) -> list[tuple[DesignConfig, int, str]]:
-    """Run one shared calibration on `reference` (at a loose period on a
-    large die), then a final run per entry in `variants` at the
-    calibration-derived period and floorplan. All `variants` must share the
-    `(benchmark, name)` of `reference`. Returns `(design, rc, detail)` for
-    each variant; on calibration failure every variant is reported as
-    failed since none can produce a meaningful final."""
-    cal_dir = design_calibration_dir(reference, batch_dir)
-    cal_run = RunConfig(
-        design=reference,
-        output_dir=cal_dir,
-        period_ns=cfg.calibration_period_ns,
-        side_um=cfg.calibration_side_um,
-        phase_label="calibration",
-    )
-    rc = run_phase(cal_run, cfg)
-    if rc != 0:
-        return [(d, rc, f"calibration FAIL (rc={rc})") for d in variants]
-
-    try:
-        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, reference.top_module)
-        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, reference.top_module)
-    except Exception as exc:
-        return [(d, 1, f"calibration parse FAIL: {exc}") for d in variants]
-
-    target_period_ns = (cfg.calibration_period_ns - cal_ws_ns) * cfg.target_multiplier
-    final_side_um, _natural_side_um, _effective_cell_area_um2, at_floor = (
-        derive_final_side_um(
-            cal_cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
-            cfg.core_margin_um, cfg.area_multiplier,
-        )
-    )
-
-    floor_tag = " (floor)" if at_floor else ""
-    detail = (
-        f"T={target_period_ns:.3f}ns side={final_side_um:.1f}um{floor_tag} "
-        f"(cal_ws={cal_ws_ns:.3f}ns cal_area={cal_cell_area_um2:.1f}um2)"
-    )
-    results: list[tuple[DesignConfig, int, str]] = []
-    for d in variants:
-        final_run = RunConfig(
-            design=d,
-            output_dir=design_variant_dir(d, batch_dir),
-            period_ns=target_period_ns,
-            side_um=final_side_um,
-            phase_label="final",
-        )
-        rc = run_phase(final_run, cfg)
-        if rc != 0:
-            results.append((d, rc, f"final FAIL (rc={rc}) [{detail}]"))
-        else:
-            results.append((d, 0, detail))
-    return results
+    num_threads: int,
+    desc: str,
+) -> dict[RunConfig, int]:
+    """Drive each `RunConfig` through `run_phase` on a thread pool, showing
+    a progress bar labeled `desc`. Returns `{run: returncode}`; a non-zero
+    rc is a make failure, and any unexpected exception is mapped to rc=1
+    with an error line written above the bar."""
+    if not runs:
+        return {}
+    workers = max(1, min(num_threads, len(runs)))
+    rcs: dict[RunConfig, int] = {}
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(run_phase, r, cfg): r for r in runs}
+        with tqdm(total=len(runs), desc=desc, unit="run") as pbar:
+            for fut in as_completed(futures):
+                r = futures[fut]
+                d = r.design
+                label = f"{d.benchmark}/{d.name}/{d.variant} {r.phase_label}"
+                try:
+                    rc = fut.result()
+                except Exception as exc:
+                    rc = 1
+                    pbar.write(f"  {label:<50} ERROR: {exc}")
+                else:
+                    status = "OK" if rc == 0 else f"FAIL (rc={rc})"
+                    pbar.write(f"  {label:<50} {status}")
+                rcs[r] = rc
+                pbar.update(1)
+    return rcs
 
 
 def main() -> int:
@@ -351,9 +324,9 @@ def main() -> int:
     parser.add_argument(
         "--num-threads", type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
-        help="Number of (benchmark, name) groups to run in parallel "
-             "(default: half of host CPU count). Within a group, the shared "
-             "calibration plus each variant's final phase run sequentially.",
+        help="Worker count for each parallel phase (default: half of host "
+             "CPU count). All calibrations run as one batch, then all finals "
+             "run as a second batch.",
     )
     args = parser.parse_args()
 
@@ -375,8 +348,7 @@ def main() -> int:
     for b, names in designs.items():
         for n, variants in names.items():
             if "reference" not in all_designs[b][n]:
-                sys.stderr.write(f"error: no 'reference' variant available for {b}/{n}\n")
-                return 1
+                raise ValueError(f"no 'reference' variant available for {b}/{n}")
             groups[(b, n)] = list(variants.values())
             references[(b, n)] = all_designs[b][n]["reference"]
 
@@ -397,34 +369,87 @@ def main() -> int:
         f"core_margin={cfg.core_margin_um} um"
     )
 
-    num_threads = max(1, min(args.num_threads, len(groups)))
+    # Phase 1: run every group's calibration (on the reference variant).
+    cal_runs: dict[tuple[str, str], RunConfig] = {
+        key: RunConfig(
+            design=references[key],
+            output_dir=design_calibration_dir(references[key], batch_dir),
+            period_ns=cfg.calibration_period_ns,
+            side_um=cfg.calibration_side_um,
+            phase_label="calibration",
+        )
+        for key in groups
+    }
+    print(f"\nPhase 1: {len(cal_runs)} calibration runs")
+    cal_rcs = run_phases(
+        list(cal_runs.values()), cfg, args.num_threads, "Calibrations",
+    )
+
+    # Parse each successful calibration into a target period/side. Failures
+    # propagate as a per-group reason that gets attached to each variant.
+    targets: dict[tuple[str, str], tuple[float, float, str]] = {}
+    cal_failures: dict[tuple[str, str], str] = {}
+    for key, cal_run in cal_runs.items():
+        rc = cal_rcs[cal_run]
+        if rc != 0:
+            cal_failures[key] = f"calibration FAIL (rc={rc})"
+            continue
+        try:
+            ws_ns = read_worst_setup_slack_ns(
+                cal_run.output_dir, cal_run.design.top_module,
+            )
+            cell_area_um2 = read_synth_cell_area_um2(
+                cal_run.output_dir, cal_run.design.top_module,
+            )
+        except Exception as exc:
+            cal_failures[key] = f"calibration parse FAIL: {exc}"
+            continue
+        target_period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
+        final_side_um, _natural, _eff_area, at_floor = derive_final_side_um(
+            cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
+            cfg.core_margin_um, cfg.area_multiplier,
+        )
+        floor_tag = " (floor)" if at_floor else ""
+        detail = (
+            f"T={target_period_ns:.3f}ns side={final_side_um:.1f}um{floor_tag} "
+            f"(cal_ws={ws_ns:.3f}ns cal_area={cell_area_um2:.1f}um2)"
+        )
+        targets[key] = (target_period_ns, final_side_um, detail)
+
+    # Phase 2: run every variant whose group's calibration produced a target.
+    final_runs: dict[DesignConfig, RunConfig] = {}
+    for key, variants in groups.items():
+        if key not in targets:
+            continue
+        period_ns, side_um, _detail = targets[key]
+        for d in variants:
+            final_runs[d] = RunConfig(
+                design=d,
+                output_dir=design_variant_dir(d, batch_dir),
+                period_ns=period_ns,
+                side_um=side_um,
+                phase_label="final",
+            )
+    print(f"\nPhase 2: {len(final_runs)} final runs")
+    final_rcs = run_phases(
+        list(final_runs.values()), cfg, args.num_threads, "Finals",
+    )
+
+    # Stitch each variant's outcome together from the calibration and final
+    # phases — calibration failures cascade to every variant in the group.
     results: list[tuple[str, int, str]] = []
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {
-            executor.submit(
-                run_group, references[key], variants, batch_dir, cfg,
-            ): key
-            for key, variants in groups.items()
-        }
-        total = sum(len(v) for v in groups.values())
-        with tqdm(total=total, desc="Variants", unit="variant") as pbar:
-            for fut in as_completed(futures):
-                key = futures[fut]
-                try:
-                    group_results = fut.result()
-                except Exception as exc:
-                    group_results = [
-                        (d, 1, f"ERROR: {exc}") for d in groups[key]
-                    ]
-                for d, rc, detail in group_results:
-                    status = "OK" if rc == 0 else "FAIL"
-                    label = f"{d.benchmark}/{d.name}/{d.variant}"
-                    pbar.write(
-                        f"  {label:<40} {status:<4} {detail}  "
-                        f"(out: {design_variant_dir(d, batch_dir)})"
-                    )
-                    results.append((label, rc, detail))
-                    pbar.update(1)
+    for key, variants in groups.items():
+        for d in variants:
+            label = f"{d.benchmark}/{d.name}/{d.variant}"
+            if key in cal_failures:
+                results.append((label, 1, cal_failures[key]))
+                continue
+            _, _, detail = targets[key]
+            rc = final_rcs[final_runs[d]]
+            if rc != 0:
+                results.append((label, rc, f"final FAIL (rc={rc}) [{detail}]"))
+            else:
+                results.append((label, 0, detail))
 
     if len(results) > 1:
         print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
@@ -436,4 +461,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
