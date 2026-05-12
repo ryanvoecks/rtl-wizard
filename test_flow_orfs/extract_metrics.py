@@ -163,14 +163,24 @@ def main(argv: list[str] | None = None) -> int:
         help="Folder containing the design's .v file (default: this directory). "
              "Used to derive --design when --design is not given.",
     )
-    ap.add_argument("--work-home", type=Path, default=here.parent / "eda_runs")
+    ap.add_argument(
+        "--work-home", type=Path, default=here.parent / "eda_runs",
+        help="Phase dir from a run.py batch — typically "
+             "`eda_runs/<ts>/<rel>/final/` — containing inputs/, logs/, "
+             "reports/, etc. for the run to extract metrics from.",
+    )
     ap.add_argument(
         "--design", default=None,
         help="Override the design name (default: stem of the *.v in --design-dir).",
     )
     ap.add_argument("--platform", default=default_platform)
     ap.add_argument("--variant", default="base")
-    ap.add_argument("--sdc", type=Path, default=here / "constraint.sdc")
+    ap.add_argument(
+        "--sdc", type=Path, default=None,
+        help="Rendered SDC to read the target period from "
+             "(default: <work-home>/inputs/constraint.sdc, which run.py "
+             "drops next to the flow outputs for that phase).",
+    )
     ap.add_argument("--system", required=True,
                     help="Upstream RTL-generation system name (e.g. rtlcoder).")
     ap.add_argument("--sample-id", type=int, required=True)
@@ -186,7 +196,8 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     design_name = args.design or resolve_design_name(args.design_dir.resolve())
-    period_ps = args.target_period_ps or parse_period_ps(args.sdc)
+    sdc_path = args.sdc or (args.work_home / "inputs" / "constraint.sdc")
+    period_ps = args.target_period_ps or parse_period_ps(sdc_path)
 
     row = {
         "system": args.system,
