@@ -1,54 +1,52 @@
 #!/usr/bin/env python3
-"""Extract a flat PPA metrics row from an ORFS flow run.
+"""Extract PPA metrics from the non-calibration phases of an ORFS batch.
 
-Run `./run.py [design_dir]` first; this reads its outputs and emits one JSON
-dict with post-synth + post-route metrics joined together, suitable for
-appending to a results table.
+Run `./run.py` first to populate `eda_runs/<batch>/`; this walks every
+`final/` phase dir under that batch (one per design) and emits a CSV row
+per design with the post-synth and post-route metrics joined together.
 
-Most values are pulled straight from ORFS-emitted JSON; the synth-side area /
-cell / FF count come from yosys's `synth_stat.txt` because ORFS's
-`1_synth.json` doesn't record them.
+Most values are pulled straight from ORFS-emitted JSON; the synth-side
+area / cell / FF count come from yosys's `synth_stat.txt` because
+ORFS's `1_synth.json` doesn't record them.
 
 Usage:
-    ./extract_metrics.py --system rtlcoder --sample-id 2 --seed 1
-    ./extract_metrics.py --design-dir ../corpus/adder8 \\
-        --system rtlcoder --sample-id 2 --seed 1
+    ./extract_metrics.py 2026-05-12_17-29-08
+    ./extract_metrics.py 2026-05-12_17-29-08 -o metrics.csv
 """
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import re
 import sys
 from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+EDA_RUNS = REPO_ROOT / "eda_runs"
 
 # Cell-name prefixes that count as flip-flops/latches in the standard-cell
 # libraries we use (nangate45 primarily; the prefix list is intentionally
 # broad so it also works on sky130/asap7 without per-platform tweaking).
 SEQUENTIAL_PREFIXES = ("DFF", "SDFF", "EDFF", "TDFF", "DLH", "DLL", "LATCH")
 
+# Full-precision total stdcell area from yosys `stat`. The `cells` totals
+# row uses %g formatting and flips to scientific notation (e.g.
+# `1.32E+03`) past ~1000 um^2; the `Chip area for module '<top>'` line
+# yosys prints below the per-cell breakdown carries the same number to
+# full precision.
+_CHIP_AREA_RE = re.compile(
+    r"^\s*Chip area for module\s+'[^']+'\s*:\s*([\d.eE+-]+)\s*$", re.MULTILINE,
+)
 
-def parse_config_mk(path: Path) -> dict[str, str]:
-    """Pull `export KEY = VALUE` lines out of a config.mk. Good enough for
-    PLATFORM — we don't try to expand `$(...)`."""
-    out: dict[str, str] = {}
-    for line in path.read_text().splitlines():
-        m = re.match(r"^\s*export\s+(\w+)\s*[:?]?=\s*(.*?)\s*$", line)
-        if m:
-            out[m.group(1)] = m.group(2)
-    return out
-
-
-def resolve_design_name(design_dir: Path) -> str:
-    """Stem of the single `*.v` in `design_dir`. Mirrors run.py's rule so the
-    same folder argument gives the same DESIGN_NAME on both sides."""
-    candidates = sorted(design_dir.glob("*.v"))
-    if not candidates:
-        raise SystemExit(f"error: no *.v file in {design_dir}")
-    if len(candidates) > 1:
-        names = ", ".join(p.name for p in candidates)
-        raise SystemExit(f"error: multiple *.v files in {design_dir}: {names}")
-    return candidates[0].stem
+COLUMNS = [
+    "batch", "design", "target_period_ps",
+    "synth_area_um2", "synth_cell_count", "synth_ff_count",
+    "synth_wns_ns", "synth_tns_ns",
+    "route_area_um2", "route_cell_count",
+    "route_wns_ns", "route_tns_ns",
+    "route_wirelength_um", "route_power_mw", "route_drc_count",
+]
 
 
 def parse_period_ps(sdc_path: Path) -> int:
@@ -71,23 +69,31 @@ def parse_synth_stat(path: Path) -> tuple[float, int, int]:
                 ...
               K        area      K        area   CELL_NAME
                 ...
+        Chip area for module '<top>': <area>             <-- below the block
     The totals row ends in `cells`; each cell-type row has the library cell
     name in the trailing column. Anything starting with one of
-    SEQUENTIAL_PREFIXES is counted as a flop/latch.
+    SEQUENTIAL_PREFIXES is counted as a flop/latch. We take the total cell
+    area from the `Chip area` line (full precision) rather than the totals
+    row, which prints in scientific notation past ~1000 um^2.
     """
-    total_area: float | None = None
+    text = path.read_text()
+    chip_m = _CHIP_AREA_RE.search(text)
+    if not chip_m:
+        raise ValueError(f"no 'Chip area for module' line in {path}")
+    total_area = float(chip_m.group(1))
+
     total_cells: int | None = None
     ff_count = 0
     in_cells_section = False
+    # Area columns are matched loosely (`\S+`) so scientific notation in the
+    # totals row doesn't break parsing; only the integer cell counts matter.
+    totals_re = re.compile(r"^\s*(\d+)\s+\S+\s+\d+\s+\S+\s+cells\s*$")
+    cell_re = re.compile(r"^\s*(\d+)\s+\S+\s+\d+\s+\S+\s+(\S+)\s*$")
 
-    totals_re = re.compile(r"^\s*(\d+)\s+([\d.]+)\s+\d+\s+[\d.]+\s+cells\s*$")
-    cell_re = re.compile(r"^\s*(\d+)\s+[\d.]+\s+\d+\s+[\d.]+\s+(\S+)\s*$")
-
-    for line in path.read_text().splitlines():
+    for line in text.splitlines():
         m = totals_re.match(line)
         if m:
             total_cells = int(m.group(1))
-            total_area = float(m.group(2))
             in_cells_section = True
             continue
         if in_cells_section:
@@ -98,8 +104,8 @@ def parse_synth_stat(path: Path) -> tuple[float, int, int]:
             if m and any(m.group(2).startswith(p) for p in SEQUENTIAL_PREFIXES):
                 ff_count += int(m.group(1))
 
-    if total_area is None or total_cells is None:
-        raise ValueError(f"could not find cell totals in {path}")
+    if total_cells is None:
+        raise ValueError(f"could not find cells totals row in {path}")
     return total_area, total_cells, ff_count
 
 
@@ -115,16 +121,52 @@ def parse_post_synth_timing(rpt_path: Path) -> tuple[float, float]:
     return float(wns_m.group(1)), float(tns_m.group(1))
 
 
-def extract(work_home: Path, platform: str, design: str, variant: str) -> dict:
-    base = work_home
-    logs = base / "logs" / platform / design / variant
-    reports = base / "reports" / platform / design / variant
+def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
+    """Return the single match for `glob_pat` under `phase_dir`. The
+    platform/variant segments are glob-discovered rather than hardcoded so
+    changing `PLATFORM` in Makefile.template doesn't require code edits."""
+    matches = list(phase_dir.glob(glob_pat))
+    if not matches:
+        raise FileNotFoundError(f"no {label} under {phase_dir}/{glob_pat}")
+    if len(matches) > 1:
+        joined = ", ".join(str(m) for m in matches)
+        raise RuntimeError(f"multiple {label} matches: {joined}")
+    return matches[0]
 
-    synth_area, synth_cells, synth_ff = parse_synth_stat(reports / "synth_stat.txt")
-    synth_wns, synth_tns = parse_post_synth_timing(reports / "1_Post_synthesis.rpt")
 
-    finish = json.loads((logs / "6_report.json").read_text())
-    route = json.loads((logs / "5_2_route.json").read_text())
+def resolve_design_name(phase_dir: Path) -> str:
+    """Stem of the single `*.v` under `<phase_dir>/inputs/rtl/`. Mirrors
+    run.py's `resolve_design` rule so the same folder convention drives
+    DESIGN_NAME on both sides."""
+    rtl_dir = phase_dir / "inputs" / "rtl"
+    candidates = sorted(rtl_dir.glob("*.v"))
+    if not candidates:
+        raise ValueError(f"no *.v file under {rtl_dir}")
+    if len(candidates) > 1:
+        names = ", ".join(p.name for p in candidates)
+        raise ValueError(f"multiple *.v files under {rtl_dir}: {names}")
+    return candidates[0].stem
+
+
+def extract(phase_dir: Path, design: str) -> dict:
+    synth_stat = find_unique(
+        phase_dir, f"reports/*/{design}/*/synth_stat.txt", "synth_stat.txt",
+    )
+    post_synth = find_unique(
+        phase_dir, f"reports/*/{design}/*/1_Post_synthesis.rpt",
+        "1_Post_synthesis.rpt",
+    )
+    finish_log = find_unique(
+        phase_dir, f"logs/*/{design}/*/6_report.json", "6_report.json",
+    )
+    route_log = find_unique(
+        phase_dir, f"logs/*/{design}/*/5_2_route.json", "5_2_route.json",
+    )
+
+    synth_area, synth_cells, synth_ff = parse_synth_stat(synth_stat)
+    synth_wns, synth_tns = parse_post_synth_timing(post_synth)
+    finish = json.loads(finish_log.read_text())
+    route = json.loads(route_log.read_text())
 
     # `finish__timing__setup__ws` is the worst SLACK (positive when met).
     # WNS is the conventional "0 if met, otherwise the negative slack".
@@ -152,66 +194,75 @@ def extract(work_home: Path, platform: str, design: str, variant: str) -> dict:
     }
 
 
-def main(argv: list[str] | None = None) -> int:
-    here = Path(__file__).resolve().parent
-    config_defaults = parse_config_mk(here / "templates" / "Makefile.template")
-    default_platform = config_defaults.get("PLATFORM", "nangate45")
+def resolve_batch(arg: str) -> Path:
+    """Accept either a batch name (resolved under <repo>/eda_runs/) or a
+    direct path to a batch dir."""
+    p = Path(arg)
+    if p.is_dir():
+        return p.resolve()
+    candidate = EDA_RUNS / arg
+    if candidate.is_dir():
+        return candidate
+    raise SystemExit(f"error: batch not found as path or under {EDA_RUNS}: {arg}")
 
+
+def iter_final_phases(batch_dir: Path) -> list[Path]:
+    """Every `final/` phase dir under the batch, sorted for deterministic
+    CSV order. Skips anything without a rendered SDC — that catches both
+    spurious matches and phases that aborted before snapshot_inputs ran."""
+    return sorted(
+        p for p in batch_dir.rglob("final")
+        if p.is_dir() and (p / "inputs" / "constraint.sdc").is_file()
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
-        "--design-dir", type=Path, default=here,
-        help="Folder containing the design's .v file (default: this directory). "
-             "Used to derive --design when --design is not given.",
-    )
-    ap.add_argument(
-        "--work-home", type=Path, default=here.parent / "eda_runs",
-        help="Phase dir from a run.py batch — typically "
-             "`eda_runs/<ts>/<rel>/final/` — containing inputs/, logs/, "
-             "reports/, etc. for the run to extract metrics from.",
-    )
-    ap.add_argument(
-        "--design", default=None,
-        help="Override the design name (default: stem of the *.v in --design-dir).",
-    )
-    ap.add_argument("--platform", default=default_platform)
-    ap.add_argument("--variant", default="base")
-    ap.add_argument(
-        "--sdc", type=Path, default=None,
-        help="Rendered SDC to read the target period from "
-             "(default: <work-home>/inputs/constraint.sdc, which run.py "
-             "drops next to the flow outputs for that phase).",
-    )
-    ap.add_argument("--system", required=True,
-                    help="Upstream RTL-generation system name (e.g. rtlcoder).")
-    ap.add_argument("--sample-id", type=int, required=True)
-    ap.add_argument("--seed", type=int, required=True)
-    ap.add_argument(
-        "--target-period-ps", type=int, default=None,
-        help="Override; otherwise derived from the first `-period` in --sdc.",
+        "batch",
+        help="Batch identifier — either a name under <repo>/eda_runs/ "
+             "(e.g. 2026-05-12_17-29-08) or a direct path to a batch dir.",
     )
     ap.add_argument(
         "--output", "-o", type=Path, default=None,
-        help="Write JSON here as well as to stdout.",
+        help="Write CSV here in addition to stdout.",
     )
     args = ap.parse_args(argv)
 
-    design_name = args.design or resolve_design_name(args.design_dir.resolve())
-    sdc_path = args.sdc or (args.work_home / "inputs" / "constraint.sdc")
-    period_ps = args.target_period_ps or parse_period_ps(sdc_path)
+    batch_dir = resolve_batch(args.batch)
+    finals = iter_final_phases(batch_dir)
+    if not finals:
+        sys.stderr.write(f"error: no final/ phase dirs under {batch_dir}\n")
+        return 1
 
-    row = {
-        "system": args.system,
-        "design": design_name,
-        "sample_id": args.sample_id,
-        "seed": args.seed,
-        "target_period_ps": period_ps,
-        **extract(args.work_home, args.platform, design_name, args.variant),
-    }
+    rows: list[dict] = []
+    for phase_dir in finals:
+        try:
+            design = resolve_design_name(phase_dir)
+            period_ps = parse_period_ps(phase_dir / "inputs" / "constraint.sdc")
+            metrics = extract(phase_dir, design)
+        except Exception as exc:
+            sys.stderr.write(
+                f"warning: skipping {phase_dir.relative_to(batch_dir)}: {exc}\n"
+            )
+            continue
+        rows.append({
+            "batch": batch_dir.name,
+            "design": design,
+            "target_period_ps": period_ps,
+            **metrics,
+        })
 
-    text = json.dumps(row, indent=2)
-    print(text)
+    writer = csv.DictWriter(sys.stdout, fieldnames=COLUMNS)
+    writer.writeheader()
+    writer.writerows(rows)
+
     if args.output is not None:
-        args.output.write_text(text + "\n")
+        with args.output.open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=COLUMNS)
+            w.writeheader()
+            w.writerows(rows)
+
     return 0
 
 

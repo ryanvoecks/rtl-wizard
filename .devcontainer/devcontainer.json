@@ -9,6 +9,7 @@
       "extensions": [
         "anthropic.claude-code",
         "eamodio.gitlens",
+        "mechatroner.rainbow-csv",
         "ms-azuretools.vscode-docker",
         "ms-python.python"
       ]
