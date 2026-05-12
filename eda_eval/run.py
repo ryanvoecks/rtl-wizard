@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import json
 import math
 import os
 import shutil
@@ -112,14 +113,12 @@ def filter_designs(
 
 
 def design_variant_dir(design: DesignConfig, batch_dir: Path) -> Path:
-    """Output dir for this variant's final (target-period) run."""
+    """Output dir for this variant's run."""
     return batch_dir / design.benchmark / design.name / design.variant
 
 
 def design_calibration_dir(design: DesignConfig, batch_dir: Path) -> Path:
-    """Output dir for the calibration phase shared by every variant of this
-    (benchmark, name). Named `__calibration__` so it can't collide with a
-    real variant name."""
+    """Output dir for the calibration step."""
     return batch_dir / design.benchmark / design.name / "__calibration__"
 
 
@@ -205,30 +204,31 @@ def run_phases(
     num_threads: int,
     desc: str,
 ) -> dict[RunConfig, int]:
-    """Drive each `RunConfig` through `run_phase` on a thread pool, showing
-    a progress bar labeled `desc`. Returns `{run: returncode}`; a non-zero
-    rc is a make failure, and any unexpected exception is mapped to rc=1
-    with an error line written above the bar."""
+    """Drive each `RunConfig` through `run_phase` on a thread pool, with a
+    progress bar whose postfix tracks running pass/fail counts. Returns
+    `{run: returncode}`; a non-zero rc is a make failure, and any
+    unexpected exception is mapped to rc=1."""
     if not runs:
         return {}
     workers = max(1, min(num_threads, len(runs)))
     rcs: dict[RunConfig, int] = {}
+    passed = failed = 0
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {executor.submit(run_phase, r, cfg): r for r in runs}
         with tqdm(total=len(runs), desc=desc, unit="run") as pbar:
+            pbar.set_postfix(passed=passed, failed=failed)
             for fut in as_completed(futures):
                 r = futures[fut]
-                d = r.design
-                label = f"{d.benchmark}/{d.name}/{d.variant}"
                 try:
                     rc = fut.result()
-                except Exception as exc:
+                except Exception:
                     rc = 1
-                    pbar.write(f"  {label:<50} ERROR: {exc}")
+                if rc == 0:
+                    passed += 1
                 else:
-                    status = "OK" if rc == 0 else f"FAIL (rc={rc})"
-                    pbar.write(f"  {label:<50} {status}")
+                    failed += 1
                 rcs[r] = rc
+                pbar.set_postfix(passed=passed, failed=failed)
                 pbar.update(1)
     return rcs
 
@@ -287,19 +287,7 @@ def main() -> int:
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
     batch_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Batch output: {batch_dir}")
-    print(
-        f"Platform: {cfg.platform}  "
-        f"Calibration: period={cfg.calibration_period_ns} ns, "
-        f"side={cfg.calibration_side_um} um"
-    )
-    print(
-        f"Final: target_mult={cfg.target_multiplier}, "
-        f"target_util={cfg.target_utilization}, "
-        f"area_mult={cfg.area_multiplier}, "
-        f"min_side={cfg.minimum_side_um} um, "
-        f"core_margin={cfg.core_margin_um} um"
-    )
+    print(f"Output dir: {batch_dir}")
 
     # Phase 1: run every group's calibration (on the reference variant).
     cal_runs: dict[tuple[str, str], RunConfig] = {
@@ -311,23 +299,24 @@ def main() -> int:
         )
         for key in groups
     }
-    print(f"\nPhase 1: {len(cal_runs)} calibration runs")
     cal_rcs = run_phases(
-        list(cal_runs.values()), cfg, args.num_threads, "Calibrations",
+        list(cal_runs.values()), cfg, args.num_threads, "Calibration",
     )
 
-    # Build one RunJob per variant. Calibration failures (rc != 0 or
-    # unparseable outputs) attach as `error` and skip execution, but the
-    # RunJob still carries the design so its row shows in the summary.
+    # Build one RunJob per variant, and record each group's calibration as
+    # its own synthetic `__calibration__` row. Calibration failures (rc != 0
+    # or unparseable outputs) attach as `error` on every variant in the
+    # group and skip execution, but the RunJob still carries the design so
+    # the row shows in runs.json.
     final_runs: dict[DesignConfig, RunJob] = {}
-    group_detail: dict[tuple[str, str], str] = {}
+    runs_report: list[dict] = []
     for key, variants in groups.items():
+        b, n = key
         cal_run = cal_runs[key]
         cal_rc = cal_rcs[cal_run]
         error: str | None = None
         period_ns = cfg.calibration_period_ns
         side_um = cfg.calibration_side_um
-        detail = ""
         if cal_rc != 0:
             error = f"calibration FAIL (rc={cal_rc})"
         else:
@@ -337,14 +326,14 @@ def main() -> int:
                 cell_area_um2 = metrics["synth_area_um2"]
                 period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
                 side_um = derive_final_side_um(cell_area_um2, cfg)
-                floor_tag = " (floor)" if side_um == cfg.minimum_side_um else ""
-                detail = (
-                    f"T={period_ns:.3f}ns side={side_um:.1f}um{floor_tag} "
-                    f"(cal_ws={ws_ns:.3f}ns cal_area={cell_area_um2:.1f}um2)"
-                )
             except Exception as exc:
                 error = f"calibration parse FAIL: {exc}"
-        group_detail[key] = detail
+        runs_report.append({
+            "benchmark": b,
+            "name": n,
+            "variant": "__calibration__",
+            "error": error,
+        })
         for d in variants:
             final_runs[d] = RunJob(
                 run=RunConfig(
@@ -358,29 +347,22 @@ def main() -> int:
 
     runnable = [job.run for job in final_runs.values() if job.error is None]
     skipped = len(final_runs) - len(runnable)
-    print(f"\nPhase 2: {len(runnable)} final runs ({skipped} skipped)")
-    final_rcs = run_phases(runnable, cfg, args.num_threads, "Finals")
+    final_rcs = run_phases(runnable, cfg, args.num_threads, "Eval")
 
-    results: list[tuple[str, int, str]] = []
     for d, job in final_runs.items():
-        label = f"{d.benchmark}/{d.name}/{d.variant}"
         if job.error is not None:
-            results.append((label, 1, job.error))
-            continue
-        rc = final_rcs[job.run]
-        detail = group_detail[(d.benchmark, d.name)]
-        if rc != 0:
-            results.append((label, rc, f"final FAIL (rc={rc}) [{detail}]"))
+            error = job.error
         else:
-            results.append((label, 0, detail))
-
-    if len(results) > 1:
-        print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
-        for label, rc, detail in sorted(results):
-            status = "OK" if rc == 0 else "FAIL"
-            print(f"  {label:<40} {status:<4} {detail}")
-
-    return 0 if all(rc == 0 for _, rc, _ in results) else 1
+            rc = final_rcs[job.run]
+            error = f"final FAIL (rc={rc})" if rc != 0 else None
+        runs_report.append({
+            "benchmark": d.benchmark,
+            "name": d.name,
+            "variant": d.variant,
+            "error": error,
+        })
+    runs_report.sort(key=lambda e: (e["benchmark"], e["name"], e["variant"]))
+    (batch_dir / "runs.json").write_text(json.dumps(runs_report, indent=2))
 
 
 if __name__ == "__main__":
