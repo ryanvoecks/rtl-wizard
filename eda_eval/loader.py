@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pyslang
 
-from config import CORPUS, RTLLM, DesignConfig
+from config import RTL_OPT, RTLLM, DesignConfig
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -83,24 +83,58 @@ class RTLLMLoader(DesignLoader):
         return {self.benchmark: names}
 
 
-class CorpusLoader(DesignLoader):
-    """Small corpus of example files."""
+class RTLOPTLoader(DesignLoader):
+    """Get designs from the RTL-OPT benchmark."""
 
-    benchmark = "corpus"
+    benchmark = "rtl-opt"
 
-    def __init__(self, corpus_dir: Path = CORPUS):
-        self.corpus_dir = corpus_dir
+    # LLM-generated optimization attempts shipped alongside the benchmark
+    LLM_VARIANTS = ("ds", "dsr", "gpt", "mini")
+
+    def __init__(self, rtl_opt_root: Path = RTL_OPT):
+        self.rtl_opt_root = rtl_opt_root
+
+    @staticmethod
+    def _rtl_in(d: Path) -> list[Path]:
+        return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
 
     def designs(self) -> DesignTree:
-        return {self.benchmark: {
-            child.name: {
+        bench_dir = self.rtl_opt_root / "benchmark"
+        llm_dir = self.rtl_opt_root / "Results" / "LLM_Test_result" / "Code"
+        names: dict[str, dict[str, DesignConfig]] = {}
+        for ref_dir in sorted(bench_dir.glob("*_ref")):
+            name = ref_dir.name[: -len("_ref")]
+            sub_dir = bench_dir / name
+            ref_files = self._rtl_in(ref_dir)
+            sub_files = self._rtl_in(sub_dir)
+
+            # Add hand-written variants
+            variants: dict[str, DesignConfig] = {
                 "reference": DesignConfig(
                     benchmark=self.benchmark,
-                    name=child.name,
+                    name=name,
                     variant="reference",
-                    rtl_files=tuple(sorted(child.glob("*.v"))),
-                    top_module=child.name,
+                    rtl_files=tuple(ref_files),
+                    top_module=detect_top_module(ref_files),
+                ),
+                "suboptimal": DesignConfig(
+                    benchmark=self.benchmark,
+                    name=name,
+                    variant="suboptimal",
+                    rtl_files=tuple(sub_files),
+                    top_module=detect_top_module(sub_files),
                 ),
             }
-            for child in sorted(self.corpus_dir.iterdir())
-        }}
+
+            # Add LLM-generated variants
+            for suffix in self.LLM_VARIANTS:
+                llm_files = self._rtl_in(llm_dir / f"{name}_{suffix}")
+                variants[suffix] = DesignConfig(
+                    benchmark=self.benchmark,
+                    name=name,
+                    variant=suffix,
+                    rtl_files=tuple(llm_files),
+                    top_module=detect_top_module(llm_files),
+                )
+            names[name] = variants
+        return {self.benchmark: names}

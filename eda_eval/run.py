@@ -36,7 +36,7 @@ from config import (
     StudyConfig,
 )
 from extract_metrics import extract
-from loader import CorpusLoader, DesignTree, RTLLMLoader
+from loader import DesignTree, RTLLMLoader, RTLOPTLoader
 
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
@@ -215,7 +215,7 @@ def main() -> int:
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    all_designs = CorpusLoader().designs() | RTLLMLoader().designs()
+    all_designs = RTLLMLoader().designs() | RTLOPTLoader().designs()
     designs = filter_designs(
         all_designs, args.benchmark, args.name, args.variant,
     )
