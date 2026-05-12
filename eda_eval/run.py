@@ -3,22 +3,24 @@
 
 Each design folder must contain exactly one `*.v` file; its stem is used as
 DESIGN_NAME. The shared SDC template (`templates/constraint.sdc.template`)
-and the platform/utilization knobs in `templates/Makefile.template` apply to
-every design — only the design name, source file, DESIGN_DIR, clock period,
-and floorplan dimensions vary per run.
+and the rendered per-design Makefile (`templates/Makefile.template`) apply
+to every design — only the design name, source file, DESIGN_DIR, clock
+period, and floorplan dimensions vary per run.
+
+All study parameters (platform, calibration setup, target utilization,
+floor, safety factors) live in `config.StudyConfig`, not on the CLI.
 
 Per-design clock period and die size are both derived from a single
 *calibration* phase that runs the design at a loose period
-(`--calibration-period-ns`, default 10 ns) on a large square die
-(`--calibration-side-um`, default 1000 um). From that run we read:
+(`StudyConfig.calibration_period_ns`) on a large square die
+(`StudyConfig.calibration_side_um`). From that run we read:
 
   - the post-route worst setup slack -> tightened period for the final phase
-    via `target_period = (cal_period - cal_ws) * --target-multiplier`
-    (default 1.1)
+    via `target_period = (cal_period - cal_ws) * target_multiplier`
   - the post-synth cell area -> floorplan side for the final phase via
-    `side = sqrt(cell_area / --target-utilization) + 2*core_margin`,
-    clamped to a minimum of `--minimum-side-um` (default 50 um) so small
-    designs hit a fixed floor instead of an impractically tiny die.
+    `side = sqrt(cell_area / target_utilization) + 2*core_margin`,
+    clamped to a minimum of `minimum_side_um` so small designs hit a fixed
+    floor instead of an impractically tiny die.
 
 Both phases use the same SDC shape, so the final WNS is interpretable
 against the calibration's.
@@ -55,16 +57,12 @@ from pathlib import Path
 
 from tqdm import tqdm
 
+from config import StudyConfig
+
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
 CORPUS = REPO_ROOT / "corpus"
-
-# nangate45 die-to-core margin. Small enough not to dominate floorplan side
-# at the 50 um floor, large enough to leave room for IO pin placement and
-# the routing track grid. ORFS doesn't expose a portable default for this,
-# so we bake it in here and let users override via --core-margin-um.
-DEFAULT_CORE_MARGIN_UM = 2.0
 
 # Full-precision total stdcell area from yosys `stat`. The `cells` totals
 # row uses %g formatting and flips to scientific notation (e.g.
@@ -130,7 +128,7 @@ def snapshot_inputs(
     makefile_template_src: Path,
     period_ns: float,
     side_um: float,
-    core_margin_um: float,
+    cfg: StudyConfig,
 ) -> Path:
     """Materialize `<phase_dir>/inputs/` with an RTL copy, a rendered SDC at
     `period_ns`, and a rendered per-design Makefile pinned to a square
@@ -141,10 +139,12 @@ def snapshot_inputs(
         shutil.rmtree(rtl_dst)
     shutil.copytree(design_dir, rtl_dst)
     sdc_dst = inputs / "constraint.sdc"
-    sdc_dst.write_text(sdc_template_src.read_text().format(period_ns=period_ns))
+    sdc_dst.write_text(sdc_template_src.read_text().format(
+        period_ns=period_ns, io_delay_ns=cfg.io_delay_ns,
+    ))
     design_name, verilog_in_src = resolve_design(design_dir)
     verilog_dst = rtl_dst / verilog_in_src.name
-    die_area, core_area = render_floorplan(side_um, core_margin_um)
+    die_area, core_area = render_floorplan(side_um, cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         makefile_template_src.read_text().format(
@@ -153,6 +153,9 @@ def snapshot_inputs(
             verilog_files=verilog_dst,
             sdc_file=sdc_dst,
             work_home=phase_dir,
+            flow_home=cfg.flow_home,
+            platform=cfg.platform,
+            place_density=cfg.place_density,
             die_area=die_area,
             core_area=core_area,
         )
@@ -167,7 +170,7 @@ def run_phase(
     makefile_template_src: Path,
     period_ns: float,
     side_um: float,
-    core_margin_um: float,
+    cfg: StudyConfig,
     phase_label: str,
 ) -> int:
     """Invoke the rendered per-design Makefile for one phase. Output is
@@ -176,7 +179,7 @@ def run_phase(
     phase_dir.mkdir(parents=True, exist_ok=True)
     makefile = snapshot_inputs(
         design_dir, phase_dir, sdc_template_src, makefile_template_src,
-        period_ns, side_um, core_margin_um,
+        period_ns, side_um, cfg,
     )
     log_path = phase_dir / f"flow_{design_name}_{phase_label}.log"
     with log_path.open("w") as log:
@@ -270,25 +273,19 @@ def run_flow(
     out_dir: Path,
     sdc_template_src: Path,
     makefile_template_src: Path,
-    calibration_period_ns: float,
-    calibration_side_um: float,
-    target_multiplier: float,
-    target_utilization: float,
-    minimum_side_um: float,
-    core_margin_um: float,
-    area_multiplier: float,
+    cfg: StudyConfig,
 ) -> tuple[int, str]:
     """Two-phase flow: a calibration run at a loose period on a large die,
-    then a final run at `(cal_period - cal_ws) * target_multiplier` with a
-    floorplan sized to hit `target_utilization` against `cal_cell_area *
-    area_multiplier` (subject to the `minimum_side_um` floor). Returns
-    `(returncode, status_detail)`."""
+    then a final run at `(cal_period - cal_ws) * cfg.target_multiplier` with
+    a floorplan sized to hit `cfg.target_utilization` against
+    `cal_cell_area * cfg.area_multiplier` (subject to the
+    `cfg.minimum_side_um` floor). Returns `(returncode, status_detail)`."""
     design_name, _ = resolve_design(design_dir)
 
     cal_dir = out_dir / "calibration"
     rc = run_phase(
         design_dir, cal_dir, sdc_template_src, makefile_template_src,
-        calibration_period_ns, calibration_side_um, core_margin_um, "calibration",
+        cfg.calibration_period_ns, cfg.calibration_side_um, cfg, "calibration",
     )
     if rc != 0:
         return rc, f"calibration FAIL (rc={rc})"
@@ -299,25 +296,26 @@ def run_flow(
     except Exception as exc:
         return 1, f"calibration parse FAIL: {exc}"
 
-    target_period_ns = (calibration_period_ns - cal_ws_ns) * target_multiplier
+    target_period_ns = (cfg.calibration_period_ns - cal_ws_ns) * cfg.target_multiplier
     (
         final_side_um, natural_side_um, effective_cell_area_um2, at_floor,
     ) = derive_final_side_um(
-        cal_cell_area_um2, target_utilization, minimum_side_um, core_margin_um,
-        area_multiplier,
+        cal_cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
+        cfg.core_margin_um, cfg.area_multiplier,
     )
 
     write_calibration_summary(out_dir, {
-        "calibration_period_ns": calibration_period_ns,
-        "calibration_side_um": calibration_side_um,
+        "platform": cfg.platform,
+        "calibration_period_ns": cfg.calibration_period_ns,
+        "calibration_side_um": cfg.calibration_side_um,
         "calibration_ws_ns": cal_ws_ns,
         "calibration_cell_area_um2": cal_cell_area_um2,
-        "target_multiplier": target_multiplier,
+        "target_multiplier": cfg.target_multiplier,
         "target_period_ns": target_period_ns,
-        "target_utilization": target_utilization,
-        "minimum_side_um": minimum_side_um,
-        "core_margin_um": core_margin_um,
-        "area_multiplier": area_multiplier,
+        "target_utilization": cfg.target_utilization,
+        "minimum_side_um": cfg.minimum_side_um,
+        "core_margin_um": cfg.core_margin_um,
+        "area_multiplier": cfg.area_multiplier,
         "effective_cell_area_um2": effective_cell_area_um2,
         "natural_side_um": natural_side_um,
         "final_side_um": final_side_um,
@@ -327,7 +325,7 @@ def run_flow(
     final_dir = out_dir / "final"
     rc = run_phase(
         design_dir, final_dir, sdc_template_src, makefile_template_src,
-        target_period_ns, final_side_um, core_margin_um, "final",
+        target_period_ns, final_side_um, cfg, "final",
     )
     floor_tag = " (floor)" if at_floor else ""
     detail = (
@@ -356,69 +354,17 @@ def main() -> int:
              "(default: half of host CPU count). Each design runs its "
              "calibration and final phases sequentially within its thread.",
     )
-    ap.add_argument(
-        "--calibration-period-ns", type=float, default=10.0,
-        help="Clock period used for the calibration phase. Should be loose "
-             "enough that even the slowest design in the corpus meets timing.",
-    )
-    ap.add_argument(
-        "--calibration-side-um", type=float, default=1000.0,
-        help="Side of the square die used for the calibration phase. Should "
-             "be large enough that even the largest design in the corpus "
-             "fits comfortably so synth area is measured unconstrained.",
-    )
-    ap.add_argument(
-        "--target-multiplier", type=float, default=1.1,
-        help="Safety factor on the calibration-derived minimum period. "
-             "1.0 = run at the achievable minimum; >1 gives the final flow "
-             "headroom to absorb optimization differences between phases.",
-    )
-    ap.add_argument(
-        "--target-utilization", type=float, default=0.4,
-        help="Target core utilization for the final phase. The floorplan "
-             "side is derived to hit this density against the calibration "
-             "cell area, unless --minimum-side-um is binding.",
-    )
-    ap.add_argument(
-        "--area-multiplier", type=float, default=1.1,
-        help="Safety factor on the calibration cell area before sizing. "
-             "Tight-period synth tends to pick larger drive strengths than "
-             "the loose calibration synth, so the floorplan is built for "
-             "`cal_cell_area * --area-multiplier` rather than the raw value.",
-    )
-    ap.add_argument(
-        "--minimum-side-um", type=float, default=50.0,
-        help="Floor on the final floorplan side. Designs whose natural "
-             "(utilization-derived) size would fall below this get padded "
-             "out to a fixed minimum die instead.",
-    )
-    ap.add_argument(
-        "--core-margin-um", type=float, default=DEFAULT_CORE_MARGIN_UM,
-        help="Die-to-core boundary applied on each edge of the square die.",
-    )
     args = ap.parse_args()
 
-    if not 0.0 < args.target_utilization <= 1.0:
-        sys.stderr.write(
-            f"error: --target-utilization must be in (0, 1], got "
-            f"{args.target_utilization}\n"
-        )
-        return 1
-    if args.area_multiplier < 1.0:
-        sys.stderr.write(
-            f"error: --area-multiplier must be >= 1.0 (a safety factor), "
-            f"got {args.area_multiplier}\n"
-        )
-        return 1
+    cfg = StudyConfig()
 
-    # FLOW_HOME falls back to /OpenROAD-flow-scripts/flow inside the rendered
-    # Makefile; check here too so we fail fast with a clear message rather
-    # than deferring to a sub-make error.
-    flow_home = Path(os.environ.get("FLOW_HOME", "/OpenROAD-flow-scripts/flow"))
+    # Fail fast with a clear message rather than deferring to a sub-make error.
+    flow_home = Path(cfg.flow_home)
     if not (flow_home / "Makefile").is_file():
         sys.stderr.write(
             f"error: ORFS flow Makefile not found at {flow_home / 'Makefile'}\n"
-            "       set FLOW_HOME to your OpenROAD-flow-scripts/flow checkout.\n"
+            f"       point StudyConfig.flow_home at your "
+            f"OpenROAD-flow-scripts/flow checkout.\n"
         )
         return 1
 
@@ -442,15 +388,16 @@ def main() -> int:
     batch_dir.mkdir(parents=True, exist_ok=True)
     print(f"Batch output: {batch_dir}")
     print(
-        f"Calibration: period={args.calibration_period_ns} ns, "
-        f"side={args.calibration_side_um} um"
+        f"Platform: {cfg.platform}  "
+        f"Calibration: period={cfg.calibration_period_ns} ns, "
+        f"side={cfg.calibration_side_um} um"
     )
     print(
-        f"Final: target_mult={args.target_multiplier}, "
-        f"target_util={args.target_utilization}, "
-        f"area_mult={args.area_multiplier}, "
-        f"min_side={args.minimum_side_um} um, "
-        f"core_margin={args.core_margin_um} um"
+        f"Final: target_mult={cfg.target_multiplier}, "
+        f"target_util={cfg.target_utilization}, "
+        f"area_mult={cfg.area_multiplier}, "
+        f"min_side={cfg.minimum_side_um} um, "
+        f"core_margin={cfg.core_margin_um} um"
     )
 
     out_dirs = {d: design_out_dir(d, batch_dir, CORPUS) for d in designs}
@@ -461,11 +408,7 @@ def main() -> int:
         futures = {
             executor.submit(
                 run_flow, d, out_dirs[d],
-                sdc_template_src, makefile_template_src,
-                args.calibration_period_ns, args.calibration_side_um,
-                args.target_multiplier, args.target_utilization,
-                args.minimum_side_um, args.core_margin_um,
-                args.area_multiplier,
+                sdc_template_src, makefile_template_src, cfg,
             ): d
             for d in designs
         }
