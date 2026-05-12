@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Drive the ORFS make-based flow over the corpus, or a single design folder.
+"""Drive the ORFS make-based flow over every discovered design, or a subset
+selected by glob filters.
 
-Each design folder must contain exactly one `*.v` file; its stem is used as
-DESIGN_NAME. The shared SDC template (`templates/constraint.sdc.template`)
-and the rendered per-design Makefile (`templates/Makefile.template`) apply
-to every design — only the design name, source file, DESIGN_DIR, clock
-period, and floorplan dimensions vary per run.
+Designs come from `loader.CorpusLoader` (each corpus subfolder yields one
+`DesignConfig` whose `rtl_files` are its `*.v` sources). The CLI's
+`--benchmark`/`--name`/`--variant` flags filter that catalog: each is
+repeatable and accepts globs; a design matches a flag when *any* of its
+patterns hits, and must match every flag that's present. The shared SDC
+template (`templates/constraint.sdc.template`) and the rendered per-design
+Makefile (`templates/Makefile.template`) apply to every design — only the
+design name, source files, DESIGN_DIR, clock period, and floorplan
+dimensions vary per run.
 
 All study parameters (platform, calibration setup, target utilization,
 floor, safety factors) live in `config.StudyConfig`, not on the CLI.
@@ -26,24 +31,25 @@ Both phases use the same SDC shape, so the final WNS is interpretable
 against the calibration's.
 
 Each invocation is one *batch*: artifacts land under
-`<repo>/eda_runs/<timestamp>/<rel-corpus-path>/{calibration,final}/`, where
-`<rel-corpus-path>` mirrors the design's location inside `corpus/`. Each
-phase dir is self-contained — its own `inputs/` snapshot (rtl + rendered
-constraint.sdc + rendered Makefile) sits next to ORFS's
-`logs/objects/reports/results/` trees and the make log. A
-`calibration_summary.json` at the parent records the derivation.
+`<repo>/eda_runs/<timestamp>/<benchmark>/<name>/<variant>/{calibration,final}/`.
+Each phase dir is self-contained — its own `inputs/` snapshot (rtl +
+rendered constraint.sdc + rendered Makefile) sits next to ORFS's
+`logs/objects/reports/results/` trees and the make log.
 
 The flow always runs through `do-finish` (final routed STA/area/power
 report) rather than ORFS's `finish`, which additionally depends on GDS
 generation via KLayout — not installed in every sandbox.
 
 Usage:
-    uv run eda_eval/run.py                  # every design under corpus/
-    uv run eda_eval/run.py corpus/adder8    # full flow on one design
+    uv run eda_eval/run.py                                # every discovered design
+    uv run eda_eval/run.py --name adder8                  # one design by name
+    uv run eda_eval/run.py --name 'adder*' --name 'mux*'  # multiple name globs
+    uv run eda_eval/run.py --benchmark corpus             # entire benchmark
 """
 from __future__ import annotations
 
 import argparse
+import fnmatch
 import json
 import math
 import os
@@ -57,7 +63,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from config import StudyConfig
+from config import DesignConfig, StudyConfig
+from loader import CorpusLoader
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
@@ -74,39 +81,30 @@ _CHIP_AREA_RE = re.compile(
 )
 
 
-def resolve_design(design_dir: Path) -> tuple[str, Path]:
-    """Locate the single `*.v` file in `design_dir`. The corpus convention is
-    one design per folder; if that ever stops holding we want to fail loudly
-    rather than guess."""
-    candidates = sorted(design_dir.glob("*.v"))
-    if not candidates:
-        raise SystemExit(f"error: no *.v file in {design_dir}")
-    if len(candidates) > 1:
-        names = ", ".join(p.name for p in candidates)
-        raise SystemExit(f"error: multiple *.v files in {design_dir}: {names}")
-    verilog = candidates[0]
-    return verilog.stem, verilog
-
-
-def list_corpus_designs(corpus_dir: Path) -> list[Path]:
-    """All subfolders of `corpus_dir` that contain at least one `.v` file."""
-    if not corpus_dir.is_dir():
-        return []
+def filter_designs(
+    designs: list[DesignConfig],
+    benchmark_globs: list[str] | None,
+    name_globs: list[str] | None,
+    variant_globs: list[str] | None,
+) -> list[DesignConfig]:
+    """Keep designs whose benchmark/name/variant match at least one glob in
+    each non-empty filter list. A `None` filter means that field is
+    unconstrained, so an unfiltered call returns `designs` unchanged."""
+    def matches(value: str, patterns: list[str] | None) -> bool:
+        return patterns is None or any(fnmatch.fnmatchcase(value, p) for p in patterns)
     return [
-        child for child in sorted(corpus_dir.iterdir())
-        if child.is_dir() and any(child.glob("*.v"))
+        d for d in designs
+        if matches(d.benchmark, benchmark_globs)
+        and matches(d.name, name_globs)
+        and matches(d.variant, variant_globs)
     ]
 
 
-def design_out_dir(design_dir: Path, batch_dir: Path, corpus: Path) -> Path:
-    """Per-design output dir under `batch_dir`, mirroring the design's path
-    relative to `corpus/`. Falls back to just the folder name for designs
-    passed from outside the corpus tree."""
-    try:
-        rel = design_dir.resolve().relative_to(corpus.resolve())
-    except ValueError:
-        rel = Path(design_dir.name)
-    return batch_dir / rel
+def design_out_dir(design: DesignConfig, batch_dir: Path) -> Path:
+    """Per-design output dir under `batch_dir`, namespaced by the loader's
+    benchmark/name/variant tuple so different benchmarks (and future
+    parameterized variants) never collide on disk."""
+    return batch_dir / design.benchmark / design.name / design.variant
 
 
 def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
@@ -122,7 +120,7 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
 
 
 def snapshot_inputs(
-    design_dir: Path,
+    design: DesignConfig,
     phase_dir: Path,
     sdc_template_src: Path,
     makefile_template_src: Path,
@@ -137,20 +135,23 @@ def snapshot_inputs(
     rtl_dst = inputs / "rtl"
     if rtl_dst.exists():
         shutil.rmtree(rtl_dst)
-    shutil.copytree(design_dir, rtl_dst)
+    rtl_dst.mkdir(parents=True)
+    verilog_dsts: list[Path] = []
+    for src in design.rtl_files:
+        dst = rtl_dst / src.name
+        shutil.copy2(src, dst)
+        verilog_dsts.append(dst)
     sdc_dst = inputs / "constraint.sdc"
     sdc_dst.write_text(sdc_template_src.read_text().format(
         period_ns=period_ns, io_delay_ns=cfg.io_delay_ns,
     ))
-    design_name, verilog_in_src = resolve_design(design_dir)
-    verilog_dst = rtl_dst / verilog_in_src.name
     die_area, core_area = render_floorplan(side_um, cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         makefile_template_src.read_text().format(
-            design_name=design_name,
-            design_dir=verilog_dst.parent,
-            verilog_files=verilog_dst,
+            design_name=design.name,
+            design_dir=rtl_dst,
+            verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
             work_home=phase_dir,
             flow_home=cfg.flow_home,
@@ -164,7 +165,7 @@ def snapshot_inputs(
 
 
 def run_phase(
-    design_dir: Path,
+    design: DesignConfig,
     phase_dir: Path,
     sdc_template_src: Path,
     makefile_template_src: Path,
@@ -175,13 +176,12 @@ def run_phase(
 ) -> int:
     """Invoke the rendered per-design Makefile for one phase. Output is
     captured to `<phase_dir>/flow_<design>_<phase_label>.log`."""
-    design_name, _ = resolve_design(design_dir)
     phase_dir.mkdir(parents=True, exist_ok=True)
     makefile = snapshot_inputs(
-        design_dir, phase_dir, sdc_template_src, makefile_template_src,
+        design, phase_dir, sdc_template_src, makefile_template_src,
         period_ns, side_um, cfg,
     )
-    log_path = phase_dir / f"flow_{design_name}_{phase_label}.log"
+    log_path = phase_dir / f"flow_{design.name}_{phase_label}.log"
     with log_path.open("w") as log:
         return subprocess.run(
             ["make", "-C", str(makefile.parent)],
@@ -260,16 +260,8 @@ def derive_final_side_um(
     return natural_side, natural_side, effective_cell_area, False
 
 
-def write_calibration_summary(out_dir: Path, payload: dict) -> None:
-    """Drop a tiny JSON next to the phase dirs so the derivation is easy to
-    inspect after the fact."""
-    (out_dir / "calibration_summary.json").write_text(
-        json.dumps(payload, indent=2) + "\n"
-    )
-
-
 def run_flow(
-    design_dir: Path,
+    design: DesignConfig,
     out_dir: Path,
     sdc_template_src: Path,
     makefile_template_src: Path,
@@ -280,51 +272,31 @@ def run_flow(
     a floorplan sized to hit `cfg.target_utilization` against
     `cal_cell_area * cfg.area_multiplier` (subject to the
     `cfg.minimum_side_um` floor). Returns `(returncode, status_detail)`."""
-    design_name, _ = resolve_design(design_dir)
-
     cal_dir = out_dir / "calibration"
     rc = run_phase(
-        design_dir, cal_dir, sdc_template_src, makefile_template_src,
+        design, cal_dir, sdc_template_src, makefile_template_src,
         cfg.calibration_period_ns, cfg.calibration_side_um, cfg, "calibration",
     )
     if rc != 0:
         return rc, f"calibration FAIL (rc={rc})"
 
     try:
-        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, design_name)
-        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, design_name)
+        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, design.name)
+        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, design.name)
     except Exception as exc:
         return 1, f"calibration parse FAIL: {exc}"
 
     target_period_ns = (cfg.calibration_period_ns - cal_ws_ns) * cfg.target_multiplier
-    (
-        final_side_um, natural_side_um, effective_cell_area_um2, at_floor,
-    ) = derive_final_side_um(
-        cal_cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
-        cfg.core_margin_um, cfg.area_multiplier,
+    final_side_um, _natural_side_um, _effective_cell_area_um2, at_floor = (
+        derive_final_side_um(
+            cal_cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
+            cfg.core_margin_um, cfg.area_multiplier,
+        )
     )
-
-    write_calibration_summary(out_dir, {
-        "platform": cfg.platform,
-        "calibration_period_ns": cfg.calibration_period_ns,
-        "calibration_side_um": cfg.calibration_side_um,
-        "calibration_ws_ns": cal_ws_ns,
-        "calibration_cell_area_um2": cal_cell_area_um2,
-        "target_multiplier": cfg.target_multiplier,
-        "target_period_ns": target_period_ns,
-        "target_utilization": cfg.target_utilization,
-        "minimum_side_um": cfg.minimum_side_um,
-        "core_margin_um": cfg.core_margin_um,
-        "area_multiplier": cfg.area_multiplier,
-        "effective_cell_area_um2": effective_cell_area_um2,
-        "natural_side_um": natural_side_um,
-        "final_side_um": final_side_um,
-        "final_side_at_floor": at_floor,
-    })
 
     final_dir = out_dir / "final"
     rc = run_phase(
-        design_dir, final_dir, sdc_template_src, makefile_template_src,
+        design, final_dir, sdc_template_src, makefile_template_src,
         target_period_ns, final_side_um, cfg, "final",
     )
     floor_tag = " (floor)" if at_floor else ""
@@ -343,9 +315,19 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     ap.add_argument(
-        "design_dir", nargs="?", type=Path, default=None,
-        help="Folder containing the design's .v file. "
-             "Default: run every design under <repo>/corpus/.",
+        "--benchmark", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose benchmark matches one of these globs. "
+             "Repeatable; a design matches if *any* given glob hits.",
+    )
+    ap.add_argument(
+        "--name", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose name matches one of these globs. "
+             "Repeatable.",
+    )
+    ap.add_argument(
+        "--variant", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose variant matches one of these globs. "
+             "Repeatable.",
     )
     ap.add_argument(
         "--num-threads", type=int,
@@ -371,17 +353,16 @@ def main() -> int:
     sdc_template_src = HERE / "templates" / "constraint.sdc.template"
     makefile_template_src = HERE / "templates" / "Makefile.template"
 
-    if args.design_dir is not None:
-        design_dir = args.design_dir.resolve()
-        if not design_dir.is_dir():
-            sys.stderr.write(f"error: design dir not found: {design_dir}\n")
-            return 1
-        designs = [design_dir]
-    else:
-        designs = list_corpus_designs(CORPUS)
-        if not designs:
-            sys.stderr.write(f"error: no designs found under {CORPUS}\n")
-            return 1
+    all_designs = CorpusLoader(CORPUS).designs()
+    designs = filter_designs(
+        all_designs, args.benchmark, args.name, args.variant,
+    )
+    if not designs:
+        sys.stderr.write(
+            "error: no designs matched filters "
+            f"benchmark={args.benchmark} name={args.name} variant={args.variant}\n"
+        )
+        return 1
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
@@ -400,7 +381,7 @@ def main() -> int:
         f"core_margin={cfg.core_margin_um} um"
     )
 
-    out_dirs = {d: design_out_dir(d, batch_dir, CORPUS) for d in designs}
+    out_dirs = {d: design_out_dir(d, batch_dir) for d in designs}
 
     num_threads = max(1, min(args.num_threads, len(designs)))
     results: list[tuple[str, int, str]] = []
