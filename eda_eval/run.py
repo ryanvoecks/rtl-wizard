@@ -61,10 +61,8 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
-import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import time
@@ -79,21 +77,14 @@ from config import (
     ORFS_HOME,
     DesignConfig,
     RunConfig,
+    RunJob,
     StudyConfig,
 )
+from extract_metrics import extract
 from loader import CorpusLoader, DesignTree, RTLLMLoader
 
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
-
-# Full-precision total stdcell area from yosys `stat`. The `cells` totals
-# row uses %g formatting and flips to scientific notation (e.g.
-# `1.32E+03`) for designs over ~1000 um^2, which is both fragile to parse
-# and lossy. The `Chip area for module '<top>'` line yosys prints below
-# the per-cell breakdown carries the same number to full precision.
-_CHIP_AREA_RE = re.compile(
-    r"^\s*Chip area for module\s+'[^']+'\s*:\s*([\d.eE+-]+)\s*$", re.MULTILINE,
-)
 
 
 def filter_designs(
@@ -183,10 +174,10 @@ def snapshot_inputs(run: RunConfig, cfg: StudyConfig) -> Path:
 
 def run_phase(run: RunConfig, cfg: StudyConfig) -> int:
     """Invoke the rendered per-design Makefile for one phase. Output is
-    captured to `<output_dir>/flow_<design>_<phase_label>.log`."""
+    captured to `<output_dir>/flow.log`."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
     makefile = snapshot_inputs(run, cfg)
-    log_path = run.output_dir / f"flow_{run.design.name}_{run.phase_label}.log"
+    log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
         return subprocess.run(
             ["make", "-C", str(makefile.parent)],
@@ -194,77 +185,18 @@ def run_phase(run: RunConfig, cfg: StudyConfig) -> int:
         ).returncode
 
 
-def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
-    """Return the single match for `glob_pat` under `phase_dir`. The
-    platform/variant segments are glob-discovered rather than hardcoded so
-    changing `PLATFORM` in Makefile.template doesn't require code edits."""
-    matches = list(phase_dir.glob(glob_pat))
-    if not matches:
-        raise FileNotFoundError(
-            f"no {label} under {phase_dir}/{glob_pat} — "
-            "calibration flow likely failed before producing it"
-        )
-    if len(matches) > 1:
-        joined = ", ".join(str(m) for m in matches)
-        raise RuntimeError(f"multiple {label} matches: {joined}")
-    return matches[0]
-
-
-def read_worst_setup_slack_ns(phase_dir: Path, top_module: str) -> float:
-    """Post-route worst setup slack in ns (positive when timing is met with
-    margin; negative when violated). ORFS keys output paths off DESIGN_NAME,
-    which we set to the design's `top_module`."""
-    report = find_unique(
-        phase_dir, f"logs/*/{top_module}/*/6_report.json", "6_report.json",
-    )
-    return float(json.loads(report.read_text())["finish__timing__setup__ws"])
-
-
-def read_synth_cell_area_um2(phase_dir: Path, top_module: str) -> float:
-    """Top-module stdcell area in um^2 from yosys's synth_stat.txt
-    `Chip area for module '<top>'` line. ORFS keys output paths off
-    DESIGN_NAME, which we set to the design's `top_module`."""
-    report = find_unique(
-        phase_dir, f"reports/*/{top_module}/*/synth_stat.txt", "synth_stat.txt",
-    )
-    m = _CHIP_AREA_RE.search(report.read_text())
-    if not m:
-        raise ValueError(
-            f"could not parse 'Chip area for module' line from {report}"
-        )
-    return float(m.group(1))
-
-
-def derive_final_side_um(
-    cell_area_um2: float,
-    target_utilization: float,
-    minimum_side_um: float,
-    core_margin_um: float,
-    area_multiplier: float,
-) -> tuple[float, float, float, bool]:
-    """Pick the final floorplan side.
-
-    The calibration synth runs at a loose period, which tends to pick
-    smaller drive strengths than the final tight-period synth — so the
-    calibration cell area is multiplied by `area_multiplier` before sizing
-    the die, padding the budget for the larger cells the final synth will
-    likely pick.
-
-    Returns `(side_um, natural_side_um, effective_cell_area_um2, at_floor)`:
-      - `effective_cell_area_um2` is the inflated area used for sizing.
-      - `natural_side_um` is what `target_utilization` alone would dictate
-        against `effective_cell_area_um2` (core side derived from area, plus
-        die margin on each edge).
-      - `side_um` is the value actually used — `natural_side_um` unless that
-        would fall below `minimum_side_um`, in which case the floor wins.
-      - `at_floor` is True when the floor was applied.
-    """
-    effective_cell_area = cell_area_um2 * area_multiplier
-    core_side = math.sqrt(effective_cell_area / target_utilization)
-    natural_side = core_side + 2 * core_margin_um
-    if natural_side < minimum_side_um:
-        return minimum_side_um, natural_side, effective_cell_area, True
-    return natural_side, natural_side, effective_cell_area, False
+def derive_final_side_um(cell_area_um2: float, cfg: StudyConfig) -> float:
+    """Pick the final floorplan side. The calibration synth runs at a
+    loose period, which tends to pick smaller drive strengths than the
+    final tight-period synth — so the calibration cell area is multiplied
+    by `cfg.area_multiplier` before sizing the die, padding the budget for
+    the larger cells the final synth will likely pick. The natural side
+    dictated by `cfg.target_utilization` is clamped up to
+    `cfg.minimum_side_um` so small designs hit a fixed floor."""
+    effective_cell_area = cell_area_um2 * cfg.area_multiplier
+    core_side = math.sqrt(effective_cell_area / cfg.target_utilization)
+    natural_side = core_side + 2 * cfg.core_margin_um
+    return max(natural_side, cfg.minimum_side_um)
 
 
 def run_phases(
@@ -287,7 +219,7 @@ def run_phases(
             for fut in as_completed(futures):
                 r = futures[fut]
                 d = r.design
-                label = f"{d.benchmark}/{d.name}/{d.variant} {r.phase_label}"
+                label = f"{d.benchmark}/{d.name}/{d.variant}"
                 try:
                     rc = fut.result()
                 except Exception as exc:
@@ -376,7 +308,6 @@ def main() -> int:
             output_dir=design_calibration_dir(references[key], batch_dir),
             period_ns=cfg.calibration_period_ns,
             side_um=cfg.calibration_side_um,
-            phase_label="calibration",
         )
         for key in groups
     }
@@ -385,71 +316,63 @@ def main() -> int:
         list(cal_runs.values()), cfg, args.num_threads, "Calibrations",
     )
 
-    # Parse each successful calibration into a target period/side. Failures
-    # propagate as a per-group reason that gets attached to each variant.
-    targets: dict[tuple[str, str], tuple[float, float, str]] = {}
-    cal_failures: dict[tuple[str, str], str] = {}
-    for key, cal_run in cal_runs.items():
-        rc = cal_rcs[cal_run]
-        if rc != 0:
-            cal_failures[key] = f"calibration FAIL (rc={rc})"
-            continue
-        try:
-            ws_ns = read_worst_setup_slack_ns(
-                cal_run.output_dir, cal_run.design.top_module,
-            )
-            cell_area_um2 = read_synth_cell_area_um2(
-                cal_run.output_dir, cal_run.design.top_module,
-            )
-        except Exception as exc:
-            cal_failures[key] = f"calibration parse FAIL: {exc}"
-            continue
-        target_period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
-        final_side_um, _natural, _eff_area, at_floor = derive_final_side_um(
-            cell_area_um2, cfg.target_utilization, cfg.minimum_side_um,
-            cfg.core_margin_um, cfg.area_multiplier,
-        )
-        floor_tag = " (floor)" if at_floor else ""
-        detail = (
-            f"T={target_period_ns:.3f}ns side={final_side_um:.1f}um{floor_tag} "
-            f"(cal_ws={ws_ns:.3f}ns cal_area={cell_area_um2:.1f}um2)"
-        )
-        targets[key] = (target_period_ns, final_side_um, detail)
-
-    # Phase 2: run every variant whose group's calibration produced a target.
-    final_runs: dict[DesignConfig, RunConfig] = {}
+    # Build one RunJob per variant. Calibration failures (rc != 0 or
+    # unparseable outputs) attach as `error` and skip execution, but the
+    # RunJob still carries the design so its row shows in the summary.
+    final_runs: dict[DesignConfig, RunJob] = {}
+    group_detail: dict[tuple[str, str], str] = {}
     for key, variants in groups.items():
-        if key not in targets:
-            continue
-        period_ns, side_um, _detail = targets[key]
+        cal_run = cal_runs[key]
+        cal_rc = cal_rcs[cal_run]
+        error: str | None = None
+        period_ns = cfg.calibration_period_ns
+        side_um = cfg.calibration_side_um
+        detail = ""
+        if cal_rc != 0:
+            error = f"calibration FAIL (rc={cal_rc})"
+        else:
+            try:
+                metrics = extract(cal_run.output_dir, cal_run.design.top_module)
+                ws_ns = metrics["route_ws_ns"]
+                cell_area_um2 = metrics["synth_area_um2"]
+                period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
+                side_um = derive_final_side_um(cell_area_um2, cfg)
+                floor_tag = " (floor)" if side_um == cfg.minimum_side_um else ""
+                detail = (
+                    f"T={period_ns:.3f}ns side={side_um:.1f}um{floor_tag} "
+                    f"(cal_ws={ws_ns:.3f}ns cal_area={cell_area_um2:.1f}um2)"
+                )
+            except Exception as exc:
+                error = f"calibration parse FAIL: {exc}"
+        group_detail[key] = detail
         for d in variants:
-            final_runs[d] = RunConfig(
-                design=d,
-                output_dir=design_variant_dir(d, batch_dir),
-                period_ns=period_ns,
-                side_um=side_um,
-                phase_label="final",
+            final_runs[d] = RunJob(
+                run=RunConfig(
+                    design=d,
+                    output_dir=design_variant_dir(d, batch_dir),
+                    period_ns=period_ns,
+                    side_um=side_um,
+                ),
+                error=error,
             )
-    print(f"\nPhase 2: {len(final_runs)} final runs")
-    final_rcs = run_phases(
-        list(final_runs.values()), cfg, args.num_threads, "Finals",
-    )
 
-    # Stitch each variant's outcome together from the calibration and final
-    # phases — calibration failures cascade to every variant in the group.
+    runnable = [job.run for job in final_runs.values() if job.error is None]
+    skipped = len(final_runs) - len(runnable)
+    print(f"\nPhase 2: {len(runnable)} final runs ({skipped} skipped)")
+    final_rcs = run_phases(runnable, cfg, args.num_threads, "Finals")
+
     results: list[tuple[str, int, str]] = []
-    for key, variants in groups.items():
-        for d in variants:
-            label = f"{d.benchmark}/{d.name}/{d.variant}"
-            if key in cal_failures:
-                results.append((label, 1, cal_failures[key]))
-                continue
-            _, _, detail = targets[key]
-            rc = final_rcs[final_runs[d]]
-            if rc != 0:
-                results.append((label, rc, f"final FAIL (rc={rc}) [{detail}]"))
-            else:
-                results.append((label, 0, detail))
+    for d, job in final_runs.items():
+        label = f"{d.benchmark}/{d.name}/{d.variant}"
+        if job.error is not None:
+            results.append((label, 1, job.error))
+            continue
+        rc = final_rcs[job.run]
+        detail = group_detail[(d.benchmark, d.name)]
+        if rc != 0:
+            results.append((label, rc, f"final FAIL (rc={rc}) [{detail}]"))
+        else:
+            results.append((label, 0, detail))
 
     if len(results) > 1:
         print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")

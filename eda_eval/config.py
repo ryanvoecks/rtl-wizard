@@ -48,4 +48,13 @@ class RunConfig:
     output_dir: Path      # where this phase's artifacts land
     period_ns: float      # clock period rendered into the SDC
     side_um: float        # square floorplan side -> DIE_AREA/CORE_AREA
-    phase_label: str      # tags the flow log: "calibration" or "final"
+
+
+@dataclass(frozen=True)
+class RunJob:
+    """A pending run paired with an optional upstream error. When `error`
+    is None the run is executed; otherwise it's skipped and the message
+    propagates to the final summary."""
+
+    run: RunConfig
+    error: str | None = None

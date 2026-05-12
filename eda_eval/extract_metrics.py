@@ -43,7 +43,7 @@ COLUMNS = [
     "synth_area_um2", "synth_cell_count", "synth_ff_count",
     "synth_wns_ns", "synth_tns_ns",
     "route_area_um2", "route_cell_count",
-    "route_wns_ns", "route_tns_ns",
+    "route_ws_ns", "route_wns_ns", "route_tns_ns",
     "route_wirelength_um", "route_power_mw", "route_drc_count",
 ]
 
@@ -184,6 +184,7 @@ def extract(phase_dir: Path, design: str) -> dict:
         # are included; physical-only fill is not).
         "route_area_um2": finish["finish__design__instance__area__stdcell"],
         "route_cell_count": finish["finish__design__instance__count__stdcell"],
+        "route_ws_ns": route_ws,
         "route_wns_ns": route_wns,
         "route_tns_ns": finish["finish__timing__setup__tns"],
         "route_wirelength_um": route["detailedroute__route__wirelength"],
