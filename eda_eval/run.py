@@ -30,8 +30,19 @@ Per-design clock period and die size are both derived from a single
 Both phases use the same SDC shape, so the final WNS is interpretable
 against the calibration's.
 
+Each (benchmark, name) group has one shared calibration that's always run
+on the `reference` variant; the derived period/floorplan are then used for
+the final routed run of every variant of that design (including the
+reference itself). Filtering out the reference still runs calibration on
+it under the hood — calibration is a hidden dependency, not a selectable
+unit.
+
 Each invocation is one *batch*: artifacts land under
-`<repo>/eda_runs/<timestamp>/<benchmark>/<name>/<variant>/{calibration,final}/`.
+
+    <repo>/eda_runs/<timestamp>/<benchmark>/<name>/
+        __calibration__/   # shared calibration phase, fed by the reference
+        <variant>/         # one subdir per variant -- the final routed run
+
 Each phase dir is self-contained — its own `inputs/` snapshot (rtl +
 rendered constraint.sdc + rendered Makefile) sits next to ORFS's
 `logs/objects/reports/results/` trees and the make log.
@@ -64,12 +75,13 @@ from pathlib import Path
 from tqdm import tqdm
 
 from config import DesignConfig, StudyConfig
-from loader import CorpusLoader
+from loader import CorpusLoader, RTLLMLoader
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
 CORPUS = REPO_ROOT / "corpus"
+RTLLM = REPO_ROOT / "external" / "RTLLM"
 
 # Full-precision total stdcell area from yosys `stat`. The `cells` totals
 # row uses %g formatting and flips to scientific notation (e.g.
@@ -100,11 +112,16 @@ def filter_designs(
     ]
 
 
-def design_out_dir(design: DesignConfig, batch_dir: Path) -> Path:
-    """Per-design output dir under `batch_dir`, namespaced by the loader's
-    benchmark/name/variant tuple so different benchmarks (and future
-    parameterized variants) never collide on disk."""
+def design_variant_dir(design: DesignConfig, batch_dir: Path) -> Path:
+    """Output dir for this variant's final (target-period) run."""
     return batch_dir / design.benchmark / design.name / design.variant
+
+
+def design_calibration_dir(design: DesignConfig, batch_dir: Path) -> Path:
+    """Output dir for the calibration phase shared by every variant of this
+    (benchmark, name). Named `__calibration__` so it can't collide with a
+    real variant name."""
+    return batch_dir / design.benchmark / design.name / "__calibration__"
 
 
 def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
@@ -260,31 +277,33 @@ def derive_final_side_um(
     return natural_side, natural_side, effective_cell_area, False
 
 
-def run_flow(
-    design: DesignConfig,
-    out_dir: Path,
+def run_group(
+    reference: DesignConfig,
+    variants: list[DesignConfig],
+    batch_dir: Path,
     sdc_template_src: Path,
     makefile_template_src: Path,
     cfg: StudyConfig,
-) -> tuple[int, str]:
-    """Two-phase flow: a calibration run at a loose period on a large die,
-    then a final run at `(cal_period - cal_ws) * cfg.target_multiplier` with
-    a floorplan sized to hit `cfg.target_utilization` against
-    `cal_cell_area * cfg.area_multiplier` (subject to the
-    `cfg.minimum_side_um` floor). Returns `(returncode, status_detail)`."""
-    cal_dir = out_dir / "calibration"
+) -> list[tuple[DesignConfig, int, str]]:
+    """Run one shared calibration on `reference` (at a loose period on a
+    large die), then a final run per entry in `variants` at the
+    calibration-derived period and floorplan. All `variants` must share the
+    `(benchmark, name)` of `reference`. Returns `(design, rc, detail)` for
+    each variant; on calibration failure every variant is reported as
+    failed since none can produce a meaningful final."""
+    cal_dir = design_calibration_dir(reference, batch_dir)
     rc = run_phase(
-        design, cal_dir, sdc_template_src, makefile_template_src,
+        reference, cal_dir, sdc_template_src, makefile_template_src,
         cfg.calibration_period_ns, cfg.calibration_side_um, cfg, "calibration",
     )
     if rc != 0:
-        return rc, f"calibration FAIL (rc={rc})"
+        return [(d, rc, f"calibration FAIL (rc={rc})") for d in variants]
 
     try:
-        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, design.name)
-        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, design.name)
+        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, reference.name)
+        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, reference.name)
     except Exception as exc:
-        return 1, f"calibration parse FAIL: {exc}"
+        return [(d, 1, f"calibration parse FAIL: {exc}") for d in variants]
 
     target_period_ns = (cfg.calibration_period_ns - cal_ws_ns) * cfg.target_multiplier
     final_side_um, _natural_side_um, _effective_cell_area_um2, at_floor = (
@@ -294,19 +313,23 @@ def run_flow(
         )
     )
 
-    final_dir = out_dir / "final"
-    rc = run_phase(
-        design, final_dir, sdc_template_src, makefile_template_src,
-        target_period_ns, final_side_um, cfg, "final",
-    )
     floor_tag = " (floor)" if at_floor else ""
     detail = (
         f"T={target_period_ns:.3f}ns side={final_side_um:.1f}um{floor_tag} "
         f"(cal_ws={cal_ws_ns:.3f}ns cal_area={cal_cell_area_um2:.1f}um2)"
     )
-    if rc != 0:
-        return rc, f"final FAIL (rc={rc}) [{detail}]"
-    return 0, detail
+    results: list[tuple[DesignConfig, int, str]] = []
+    for d in variants:
+        variant_dir = design_variant_dir(d, batch_dir)
+        rc = run_phase(
+            d, variant_dir, sdc_template_src, makefile_template_src,
+            target_period_ns, final_side_um, cfg, "final",
+        )
+        if rc != 0:
+            results.append((d, rc, f"final FAIL (rc={rc}) [{detail}]"))
+        else:
+            results.append((d, 0, detail))
+    return results
 
 
 def main() -> int:
@@ -332,9 +355,9 @@ def main() -> int:
     ap.add_argument(
         "--num-threads", type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
-        help="Number of designs to run in parallel "
-             "(default: half of host CPU count). Each design runs its "
-             "calibration and final phases sequentially within its thread.",
+        help="Number of (benchmark, name) groups to run in parallel "
+             "(default: half of host CPU count). Within a group, the shared "
+             "calibration plus each variant's final phase run sequentially.",
     )
     args = ap.parse_args()
 
@@ -353,7 +376,10 @@ def main() -> int:
     sdc_template_src = HERE / "templates" / "constraint.sdc.template"
     makefile_template_src = HERE / "templates" / "Makefile.template"
 
-    all_designs = CorpusLoader(CORPUS).designs()
+    all_designs = (
+        CorpusLoader(CORPUS).designs()
+        + RTLLMLoader(RTLLM).designs()
+    )
     designs = filter_designs(
         all_designs, args.benchmark, args.name, args.variant,
     )
@@ -361,6 +387,26 @@ def main() -> int:
         sys.stderr.write(
             "error: no designs matched filters "
             f"benchmark={args.benchmark} name={args.name} variant={args.variant}\n"
+        )
+        return 1
+
+    # Group filtered variants by (benchmark, name) and resolve each group's
+    # reference from the *unfiltered* catalog, so filtering out the
+    # reference still produces a valid calibration source for the variants
+    # that did make it through.
+    references: dict[tuple[str, str], DesignConfig] = {}
+    for d in all_designs:
+        key = (d.benchmark, d.name)
+        if d.variant == "reference":
+            references[key] = d
+    groups: dict[tuple[str, str], list[DesignConfig]] = {}
+    for d in designs:
+        groups.setdefault((d.benchmark, d.name), []).append(d)
+    missing = [k for k in groups if k not in references]
+    if missing:
+        joined = ", ".join(f"{b}/{n}" for b, n in missing)
+        sys.stderr.write(
+            f"error: no 'reference' variant available for: {joined}\n"
         )
         return 1
 
@@ -381,38 +427,40 @@ def main() -> int:
         f"core_margin={cfg.core_margin_um} um"
     )
 
-    out_dirs = {d: design_out_dir(d, batch_dir) for d in designs}
-
-    num_threads = max(1, min(args.num_threads, len(designs)))
+    num_threads = max(1, min(args.num_threads, len(groups)))
     results: list[tuple[str, int, str]] = []
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {
             executor.submit(
-                run_flow, d, out_dirs[d],
+                run_group, references[key], variants, batch_dir,
                 sdc_template_src, makefile_template_src, cfg,
-            ): d
-            for d in designs
+            ): key
+            for key, variants in groups.items()
         }
-        with tqdm(total=len(designs), desc="Designs", unit="design") as pbar:
+        with tqdm(total=len(designs), desc="Variants", unit="variant") as pbar:
             for fut in as_completed(futures):
-                d = futures[fut]
+                key = futures[fut]
                 try:
-                    rc, detail = fut.result()
+                    group_results = fut.result()
                 except Exception as exc:
-                    rc, detail = 1, f"ERROR: {exc}"
-                status = "OK" if rc == 0 else "FAIL"
-                pbar.write(
-                    f"  {d.name:<30} {status:<4} {detail}  "
-                    f"(out: {out_dirs[d]})"
-                )
-                results.append((d.name, rc, detail))
-                pbar.update(1)
+                    group_results = [
+                        (d, 1, f"ERROR: {exc}") for d in groups[key]
+                    ]
+                for d, rc, detail in group_results:
+                    status = "OK" if rc == 0 else "FAIL"
+                    label = f"{d.benchmark}/{d.name}/{d.variant}"
+                    pbar.write(
+                        f"  {label:<40} {status:<4} {detail}  "
+                        f"(out: {design_variant_dir(d, batch_dir)})"
+                    )
+                    results.append((label, rc, detail))
+                    pbar.update(1)
 
     if len(results) > 1:
         print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
-        for name, rc, detail in sorted(results):
+        for label, rc, detail in sorted(results):
             status = "OK" if rc == 0 else "FAIL"
-            print(f"  {name:<30} {status:<4} {detail}")
+            print(f"  {label:<40} {status:<4} {detail}")
 
     return 0 if all(rc == 0 for _, rc, _ in results) else 1
 

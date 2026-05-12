@@ -17,8 +17,76 @@ class DesignLoader(ABC):
         """All `DesignConfig`s this loader can find on disk."""
 
 
+class RTLLMLoader(DesignLoader):
+    """RTLLM benchmark.
+
+    Each design folder lives under `<root>/<Category>/<Subcategory>/<name>/`
+    and is identified by its `design_description.txt`. The human-written
+    reference is the folder's `verified_*.v` file — globbed rather than
+    constructed because the upstream naming is inconsistent (e.g.
+    `adder_pipe_64bit/verified_adder_64bit.v`).
+
+    Per-trial GPT outputs live at `<root>/_chatgpt35/t<N>/<name>.v` and
+    `<root>/_chatgpt4/t<N>/<name>.v`. Trials that did not produce a file
+    for a given design simply don't yield a variant; designs without a
+    `verified_*.v` are skipped entirely (no reference -> no calibration).
+    """
+
+    benchmark = "rtllm"
+
+    # Mapping of variant-name prefix to subdir under the RTLLM root holding
+    # that prefix's per-trial output trees.
+    TRIAL_GROUPS = (
+        ("chatgpt35", "_chatgpt35"),
+        ("chatgpt4", "_chatgpt4"),
+    )
+
+    def __init__(self, rtllm_root: Path):
+        self.rtllm_root = rtllm_root
+
+    def designs(self) -> list[DesignConfig]:
+        if not self.rtllm_root.is_dir():
+            return []
+        configs: list[DesignConfig] = []
+        for desc in sorted(self.rtllm_root.rglob("design_description.txt")):
+            design_dir = desc.parent
+            name = design_dir.name
+            verified = sorted(design_dir.glob("verified_*.v"))
+            if not verified:
+                continue
+            configs.append(DesignConfig(
+                benchmark=self.benchmark,
+                name=name,
+                variant="reference",
+                rtl_files=tuple(verified),
+            ))
+            for prefix, subdir in self.TRIAL_GROUPS:
+                trial_root = self.rtllm_root / subdir
+                if not trial_root.is_dir():
+                    continue
+                for trial_dir in sorted(trial_root.glob("t*")):
+                    if not trial_dir.is_dir():
+                        continue
+                    cand = trial_dir / f"{name}.v"
+                    if not cand.is_file():
+                        continue
+                    configs.append(DesignConfig(
+                        benchmark=self.benchmark,
+                        name=name,
+                        variant=f"{prefix}_{trial_dir.name}",
+                        rtl_files=(cand,),
+                    ))
+        return configs
+
+
 class CorpusLoader(DesignLoader):
-    """Each subfolder under the corpus root is one design with one .v file."""
+    """Each subfolder under the corpus root is one design with one .v file.
+
+    The single `.v` is the canonical human-written implementation, so it's
+    tagged `variant="reference"` to satisfy the calibration contract that
+    every (benchmark, name) group has a `reference` variant to calibrate
+    against.
+    """
 
     benchmark = "corpus"
 
@@ -38,7 +106,7 @@ class CorpusLoader(DesignLoader):
             configs.append(DesignConfig(
                 benchmark=self.benchmark,
                 name=child.name,
-                variant="default",
+                variant="reference",
                 rtl_files=rtl_files,
             ))
         return configs
