@@ -109,6 +109,13 @@ services:
       - ..:/workspace:delegated
       - claude-code-bashhistory:/commandhistory
       - claude-code-config:/home/wizard/.claude
+      # Track the host's wall-clock zone so `date`, file mtimes, and tool logs
+      # match what the user sees outside the container. Without this, the image
+      # falls back to UTC (the ARG TZ in Dockerfile is never wired up). Only
+      # /etc/localtime is mounted — /etc/timezone is Linux-specific and absent
+      # on macOS hosts, where Docker Desktop would create a directory in its
+      # place and break things. glibc reads zone info from /etc/localtime alone.
+      - /etc/localtime:/etc/localtime:ro
     networks:
       # policy-bus reaches policy-proxy only. The default bridge
       # provides general internet egress (further restricted by

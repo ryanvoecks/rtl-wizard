@@ -18,14 +18,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Build OpenROAD-flow-scripts from source. ORFS supports aarch64 natively as of
 # OpenROAD PR #4613 (Aug 2024); DependencyInstaller.sh detects `uname -m` and
-# builds OR-Tools from source on arm64 (no prebuilt archive exists upstream).
+# builds OR-Tools and KLayout from source on arm64 (no prebuilt archive exists
+# upstream).
 #
 # Memory note: KLayout's heavy template files (e.g. dbHierProcessor2.cc) can use
-# 4+ GB per cc1plus, so unrestricted parallelism OOMs Docker hosts <16 GB. Cap
-# parallelism via a `nproc` shim that returns BUILD_JOBS (default 2). Override
-# at build time with `--build-arg BUILD_JOBS=N` if you have more memory.
+# 4+ GB per cc1plus. KLayout's build.sh is the one ORFS step with no explicit
+# thread flag — it just reads `nproc` — so we shim `nproc` to BUILD_JOBS
+# (default 2) to keep that compile from OOM-ing Docker hosts <16 GB. The cap
+# only bites on aarch64; on x86_64 ORFS installs a prebuilt KLayout .deb.
+#
+# Everything else (OpenROAD, yosys, yosys-slang, kepler-formal, Verilator) takes
+# an explicit threads/-j argument and doesn't have the per-job memory pressure,
+# so we capture the real host core count into /etc/host_cores *before* the shim
+# is installed and pass it through to those builds. Override the KLayout cap
+# with `--build-arg BUILD_JOBS=N` if you have more memory.
 ARG BUILD_JOBS=2
-RUN printf '#!/bin/sh\necho %s\n' "${BUILD_JOBS}" > /usr/local/bin/nproc \
+RUN nproc > /etc/host_cores \
+    && printf '#!/bin/sh\necho %s\n' "${BUILD_JOBS}" > /usr/local/bin/nproc \
     && chmod +x /usr/local/bin/nproc \
     && ln -sf /usr/local/bin/nproc /usr/bin/nproc
 
@@ -38,7 +47,7 @@ RUN git clone --recursive --depth 1 \
       /OpenROAD-flow-scripts \
     && cd /OpenROAD-flow-scripts \
     && SUDO_USER=root ./setup.sh \
-    && ./build_openroad.sh --local --threads $(nproc) \
+    && ./build_openroad.sh --local --threads "$(cat /etc/host_cores)" \
     && rm -rf /OpenROAD-flow-scripts/tools/OpenROAD/build \
               /OpenROAD-flow-scripts/tools/yosys/build \
               /root/.cache
@@ -63,7 +72,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && cd /tmp/verilator \
     && autoconf \
     && ./configure --prefix=/usr/local \
-    && make -j$(nproc) \
+    && make -j"$(cat /etc/host_cores)" \
     && make install \
     && rm -rf /tmp/verilator \
     && apt-get clean && rm -rf /var/lib/apt/lists/*

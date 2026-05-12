@@ -1,0 +1,26 @@
+# Per-design ORFS driver rendered by test_flow_orfs/run.py
+
+THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+FLOW_HOME     ?= /OpenROAD-flow-scripts/flow
+
+export DESIGN_NAME    = {design_name}
+export DESIGN_DIR     = {design_dir}
+export VERILOG_FILES  = {verilog_files}
+export SDC_FILE       = {sdc_file}
+export WORK_HOME      = {work_home}
+
+export PLATFORM       ?= nangate45
+
+# Explicit DIE_AREA / CORE_AREA take precedence over CORE_UTILIZATION
+export DIE_AREA       = {die_area}
+export CORE_AREA      = {core_area}
+
+export PLACE_DENSITY  ?= 0.30
+
+# Stages run for every design, in dependency order
+FLOW_TARGETS := synth synth-report floorplan place cts route do-finish
+
+.DEFAULT_GOAL := flow
+.PHONY: flow
+flow:
+	$(MAKE) -C $(FLOW_HOME) DESIGN_CONFIG=$(THIS_MAKEFILE) $(FLOW_TARGETS)

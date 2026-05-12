@@ -21,6 +21,8 @@ Requires `uv` and `docker`. Python is pinned to 3.12 (`.python-version`); depend
 
 The first benchmark run builds `sandbox/Dockerfile`, which clones and builds OpenROAD-flow-scripts from source (yosys, OpenROAD/OpenSTA, nangate45 PDK). Expect a long first build; subsequent runs reuse the image.
 
+The same EDA stack is also installed in `.devcontainer/Dockerfile` so the tools (`yosys`, `openroad`, `klayout`, `verilator`) are usable interactively inside the devcontainer, outside Inspect's sandbox. The two install blocks are intentional duplicates — keep them in sync.
+
 ## Commands
 
 ```bash
@@ -90,4 +92,4 @@ The server is launched **inside the sandbox** by the solver via `mcp_server_sand
 
 - The `benchmark/` directory is loaded by `inspect_ai` via `SourceFileLoader`, which does **not** put the repo root on `sys.path`. `benchmark/tasks.py` does the `sys.path.insert` itself before importing siblings — preserve that prelude if you add new top-level imports there.
 - Per-key NaN is the signal for "scoring skipped/failed"; Inspect filters NaN out of per-key dict-score means automatically. Don't return zeros when a measurement is unavailable.
-- The sandbox image build caps `make` parallelism via a `nproc` shim (`BUILD_JOBS`, default 2) — KLayout templates can use 4+ GB per cc1plus and OOM hosts <16 GB. Override with `--build-arg BUILD_JOBS=N` if you have memory.
+- The sandbox image build caps **KLayout's** parallelism via a `nproc` shim (`BUILD_JOBS`, default 2) — its templates can use 4+ GB per cc1plus and OOM hosts <16 GB, and its `build.sh` is the one ORFS step with no explicit thread flag. Everything else (OpenROAD, yosys, Verilator) reads the real host core count from `/etc/host_cores` (captured before the shim is installed) and runs at full parallelism. Override the KLayout cap with `--build-arg BUILD_JOBS=N` if you have memory. The cap is a no-op on x86_64, where ORFS installs a prebuilt KLayout .deb instead of building from source.
