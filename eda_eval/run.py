@@ -166,7 +166,7 @@ def snapshot_inputs(
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         makefile_template_src.read_text().format(
-            design_name=design.name,
+            top_module=design.top_module,
             design_dir=rtl_dst,
             verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
@@ -222,20 +222,22 @@ def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
     return matches[0]
 
 
-def read_worst_setup_slack_ns(phase_dir: Path, design_name: str) -> float:
+def read_worst_setup_slack_ns(phase_dir: Path, top_module: str) -> float:
     """Post-route worst setup slack in ns (positive when timing is met with
-    margin; negative when violated)."""
+    margin; negative when violated). ORFS keys output paths off DESIGN_NAME,
+    which we set to the design's `top_module`."""
     report = find_unique(
-        phase_dir, f"logs/*/{design_name}/*/6_report.json", "6_report.json",
+        phase_dir, f"logs/*/{top_module}/*/6_report.json", "6_report.json",
     )
     return float(json.loads(report.read_text())["finish__timing__setup__ws"])
 
 
-def read_synth_cell_area_um2(phase_dir: Path, design_name: str) -> float:
+def read_synth_cell_area_um2(phase_dir: Path, top_module: str) -> float:
     """Top-module stdcell area in um^2 from yosys's synth_stat.txt
-    `Chip area for module '<top>'` line."""
+    `Chip area for module '<top>'` line. ORFS keys output paths off
+    DESIGN_NAME, which we set to the design's `top_module`."""
     report = find_unique(
-        phase_dir, f"reports/*/{design_name}/*/synth_stat.txt", "synth_stat.txt",
+        phase_dir, f"reports/*/{top_module}/*/synth_stat.txt", "synth_stat.txt",
     )
     m = _CHIP_AREA_RE.search(report.read_text())
     if not m:
@@ -300,8 +302,8 @@ def run_group(
         return [(d, rc, f"calibration FAIL (rc={rc})") for d in variants]
 
     try:
-        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, reference.name)
-        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, reference.name)
+        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, reference.top_module)
+        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, reference.top_module)
     except Exception as exc:
         return [(d, 1, f"calibration parse FAIL: {exc}") for d in variants]
 

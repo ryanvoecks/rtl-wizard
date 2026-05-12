@@ -1,10 +1,26 @@
 """Discover the designs available for each supported benchmark."""
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from pathlib import Path
 
 from config import DesignConfig
+
+
+def _detect_rtllm_reference_top(text: str, name: str) -> str | None:
+    """Top module declared in an RTLLM `verified_<name>.v` reference.
+
+    RTLLM golden files are inconsistent: some declare `module <name>`,
+    others `module verified_<name>`. Try both in order and return whichever
+    the file actually contains. Returns None if neither matches — the
+    caller should skip designs without a detectable golden top, because
+    ORFS will fail to elaborate them.
+    """
+    for candidate in (name, f"verified_{name}"):
+        if re.search(rf"\bmodule\s+{re.escape(candidate)}\b", text):
+            return candidate
+    return None
 
 
 class DesignLoader(ABC):
@@ -54,11 +70,22 @@ class RTLLMLoader(DesignLoader):
             verified = sorted(design_dir.glob("verified_*.v"))
             if not verified:
                 continue
+            # Scan the concatenated reference for the golden top so designs
+            # whose verified file declares `module verified_<name>` are
+            # picked up correctly. Designs without a detectable top are
+            # skipped — they'd fail elaboration in ORFS anyway, and skipping
+            # the reference also drops every trial variant (no calibration
+            # source).
+            ref_text = "\n".join(v.read_text() for v in verified)
+            top = _detect_rtllm_reference_top(ref_text, name)
+            if top is None:
+                continue
             configs.append(DesignConfig(
                 benchmark=self.benchmark,
                 name=name,
                 variant="reference",
                 rtl_files=tuple(verified),
+                top_module=top,
             ))
             for prefix, subdir in self.TRIAL_GROUPS:
                 trial_root = self.rtllm_root / subdir
@@ -70,11 +97,16 @@ class RTLLMLoader(DesignLoader):
                     cand = trial_dir / f"{name}.v"
                     if not cand.is_file():
                         continue
+                    # Trial outputs are written against the spec, so they
+                    # declare `module <name>`. If a trial drifted from that
+                    # convention ORFS will fail to elaborate it — same
+                    # failure mode as before this field existed.
                     configs.append(DesignConfig(
                         benchmark=self.benchmark,
                         name=name,
                         variant=f"{prefix}_{trial_dir.name}",
                         rtl_files=(cand,),
+                        top_module=name,
                     ))
         return configs
 
@@ -108,5 +140,6 @@ class CorpusLoader(DesignLoader):
                 name=child.name,
                 variant="reference",
                 rtl_files=rtl_files,
+                top_module=child.name,
             ))
         return configs

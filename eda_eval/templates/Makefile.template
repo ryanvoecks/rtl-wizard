@@ -3,7 +3,7 @@
 # Config
 export FLOW_HOME      = {flow_home}
 export PLATFORM       = {platform}
-export DESIGN_NAME    = {design_name}
+export DESIGN_NAME    = {top_module}
 export DESIGN_DIR     = {design_dir}
 export VERILOG_FILES  = {verilog_files}
 export SDC_FILE       = {sdc_file}

@@ -30,3 +30,4 @@ class DesignConfig:
     name: str                    # design's logical name
     variant: str                 # distinguishes parameterizations sharing a name
     rtl_files: tuple[Path, ...]  # ordered RTL sources making up the design
+    top_module: str              # Verilog top module
