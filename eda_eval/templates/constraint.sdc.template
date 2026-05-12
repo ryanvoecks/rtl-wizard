@@ -1,11 +1,6 @@
-# Timing constraints rendered per-run by test_flow_orfs/run.py.
-# Period is set twice per design: first a loose calibration value to
-# measure achievable timing, then the tightened target for the real run.
+# Timing constraints rendered per-run by test_flow_orfs/run.py
 create_clock -name clk -period {period_ns} [get_ports clk]
 
-# Fixed 0.2 ns at each IO boundary (not scaled to the clock). The
-# calibration -> target derivation `min_period = cal_period - cal_WNS`
-# assumes the IO budget is constant across both phases; scaling it would
-# move the WNS reference and break that equivalence.
-set_input_delay  -clock clk 0.2 [all_inputs -no_clocks]
-set_output_delay -clock clk 0.2 [all_outputs]
+# Fixed IO delay at each boundary. Scaling with clock breaks calibration
+set_input_delay  -clock clk {io_delay_ns} [all_inputs -no_clocks]
+set_output_delay -clock clk {io_delay_ns} [all_outputs]

@@ -1,114 +1,79 @@
 #!/usr/bin/env python3
-"""Drive the ORFS make-based flow over the corpus, or a single design folder.
+"""Drive the ORFS flow over every discovered design (or a glob-filtered
+subset via --benchmark/--name/--variant).
 
-Each design folder must contain exactly one `*.v` file; its stem is used as
-DESIGN_NAME. The shared SDC template (`templates/constraint.sdc.template`)
-and the platform/utilization knobs in `templates/Makefile.template` apply to
-every design — only the design name, source file, DESIGN_DIR, clock period,
-and floorplan dimensions vary per run.
+Each (benchmark, name) group first runs a shared `__calibration__` on the
+reference variant at a loose period and large die. The calibration's
+worst setup slack and cell area derive the period and floorplan used for
+the routed run of every variant in the group.
 
-Per-design clock period and die size are both derived from a single
-*calibration* phase that runs the design at a loose period
-(`--calibration-period-ns`, default 10 ns) on a large square die
-(`--calibration-side-um`, default 1000 um). From that run we read:
-
-  - the post-route worst setup slack -> tightened period for the final phase
-    via `target_period = (cal_period - cal_ws) * --target-multiplier`
-    (default 1.1)
-  - the post-synth cell area -> floorplan side for the final phase via
-    `side = sqrt(cell_area / --target-utilization) + 2*core_margin`,
-    clamped to a minimum of `--minimum-side-um` (default 50 um) so small
-    designs hit a fixed floor instead of an impractically tiny die.
-
-Both phases use the same SDC shape, so the final WNS is interpretable
-against the calibration's.
-
-Each invocation is one *batch*: artifacts land under
-`<repo>/eda_runs/<timestamp>/<rel-corpus-path>/{calibration,final}/`, where
-`<rel-corpus-path>` mirrors the design's location inside `corpus/`. Each
-phase dir is self-contained — its own `inputs/` snapshot (rtl + rendered
-constraint.sdc + rendered Makefile) sits next to ORFS's
-`logs/objects/reports/results/` trees and the make log. A
-`calibration_summary.json` at the parent records the derivation.
-
-The flow always runs through `do-finish` (final routed STA/area/power
-report) rather than ORFS's `finish`, which additionally depends on GDS
-generation via KLayout — not installed in every sandbox.
-
-Usage:
-    uv run eda_eval/run.py                  # every design under corpus/
-    uv run eda_eval/run.py corpus/adder8    # full flow on one design
+Per-batch artifacts land under
+`eda_runs/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
+plus a top-level `runs.csv` summarizing each run's error status.
 """
 from __future__ import annotations
 
 import argparse
-import json
+import csv
+import fnmatch
 import math
 import os
-import re
 import shutil
 import subprocess
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 from tqdm import tqdm
 
-HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda_runs"
-CORPUS = REPO_ROOT / "corpus"
-
-# nangate45 die-to-core margin. Small enough not to dominate floorplan side
-# at the 50 um floor, large enough to leave room for IO pin placement and
-# the routing track grid. ORFS doesn't expose a portable default for this,
-# so we bake it in here and let users override via --core-margin-um.
-DEFAULT_CORE_MARGIN_UM = 2.0
-
-# Full-precision total stdcell area from yosys `stat`. The `cells` totals
-# row uses %g formatting and flips to scientific notation (e.g.
-# `1.32E+03`) for designs over ~1000 um^2, which is both fragile to parse
-# and lossy. The `Chip area for module '<top>'` line yosys prints below
-# the per-cell breakdown carries the same number to full precision.
-_CHIP_AREA_RE = re.compile(
-    r"^\s*Chip area for module\s+'[^']+'\s*:\s*([\d.eE+-]+)\s*$", re.MULTILINE,
+from config import (
+    EDA_RUNS,
+    HERE,
+    ORFS_HOME,
+    DesignConfig,
+    RunConfig,
+    RunJob,
+    StudyConfig,
 )
+from extract_metrics import extract
+from loader import CorpusLoader, DesignTree, RTLLMLoader
+
+SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
+MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
 
 
-def resolve_design(design_dir: Path) -> tuple[str, Path]:
-    """Locate the single `*.v` file in `design_dir`. The corpus convention is
-    one design per folder; if that ever stops holding we want to fail loudly
-    rather than guess."""
-    candidates = sorted(design_dir.glob("*.v"))
-    if not candidates:
-        raise SystemExit(f"error: no *.v file in {design_dir}")
-    if len(candidates) > 1:
-        names = ", ".join(p.name for p in candidates)
-        raise SystemExit(f"error: multiple *.v files in {design_dir}: {names}")
-    verilog = candidates[0]
-    return verilog.stem, verilog
+def filter_designs(
+    designs: DesignTree,
+    benchmark_globs: list[str] | None,
+    name_globs: list[str] | None,
+    variant_globs: list[str] | None,
+) -> DesignTree:
+    """Keep designs whose benchmark/name/variant match at least one glob in
+    each non-empty filter list. A `None` filter means that field is
+    unconstrained, so an unfiltered call returns `designs` unchanged."""
+    def matches(value: str, patterns: list[str] | None) -> bool:
+        return patterns is None or any(fnmatch.fnmatchcase(value, p) for p in patterns)
+    out: DesignTree = {}
+    for b, names in designs.items():
+        if not matches(b, benchmark_globs):
+            continue
+        for n, variants in names.items():
+            if not matches(n, name_globs):
+                continue
+            for v, d in variants.items():
+                if matches(v, variant_globs):
+                    out.setdefault(b, {}).setdefault(n, {})[v] = d
+    return out
 
 
-def list_corpus_designs(corpus_dir: Path) -> list[Path]:
-    """All subfolders of `corpus_dir` that contain at least one `.v` file."""
-    if not corpus_dir.is_dir():
-        return []
-    return [
-        child for child in sorted(corpus_dir.iterdir())
-        if child.is_dir() and any(child.glob("*.v"))
-    ]
+def design_variant_dir(design: DesignConfig, batch_dir: Path) -> Path:
+    """Output dir for this variant's run."""
+    return batch_dir / design.benchmark / design.name / design.variant
 
 
-def design_out_dir(design_dir: Path, batch_dir: Path, corpus: Path) -> Path:
-    """Per-design output dir under `batch_dir`, mirroring the design's path
-    relative to `corpus/`. Falls back to just the folder name for designs
-    passed from outside the corpus tree."""
-    try:
-        rel = design_dir.resolve().relative_to(corpus.resolve())
-    except ValueError:
-        rel = Path(design_dir.name)
-    return batch_dir / rel
+def design_calibration_dir(design: DesignConfig, batch_dir: Path) -> Path:
+    """Output dir for the calibration step."""
+    return batch_dir / design.benchmark / design.name / "__calibration__"
 
 
 def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
@@ -123,36 +88,39 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     return die_area, core_area
 
 
-def snapshot_inputs(
-    design_dir: Path,
-    phase_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
-    period_ns: float,
-    side_um: float,
-    core_margin_um: float,
-) -> Path:
-    """Materialize `<phase_dir>/inputs/` with an RTL copy, a rendered SDC at
-    `period_ns`, and a rendered per-design Makefile pinned to a square
-    `side_um` floorplan. Returns the path to the rendered Makefile."""
-    inputs = phase_dir / "inputs"
+def snapshot_inputs(run: RunConfig) -> Path:
+    """Copy RTL, generate Makefile, generate constraints. Returns the path to
+    the rendered Makefile."""
+    inputs = run.output_dir / "inputs"
+
+    # Copy RTL
     rtl_dst = inputs / "rtl"
-    if rtl_dst.exists():
-        shutil.rmtree(rtl_dst)
-    shutil.copytree(design_dir, rtl_dst)
+    rtl_dst.mkdir(parents=True)
+    verilog_dsts: list[Path] = []
+    for src in run.design.rtl_files:
+        dst = rtl_dst / src.name
+        shutil.copy2(src, dst)
+        verilog_dsts.append(dst)
+
+    # Generate SDC with clock period
     sdc_dst = inputs / "constraint.sdc"
-    sdc_dst.write_text(sdc_template_src.read_text().format(period_ns=period_ns))
-    design_name, verilog_in_src = resolve_design(design_dir)
-    verilog_dst = rtl_dst / verilog_in_src.name
-    die_area, core_area = render_floorplan(side_um, core_margin_um)
+    sdc_dst.write_text(SDC_TEMPLATE.read_text().format(
+        period_ns=run.period_ns, io_delay_ns=run.cfg.io_delay_ns,
+    ))
+
+    # Generate Makefile with design config
+    die_area, core_area = render_floorplan(run.side_um, run.cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
-        makefile_template_src.read_text().format(
-            design_name=design_name,
-            design_dir=verilog_dst.parent,
-            verilog_files=verilog_dst,
+        MAKEFILE_TEMPLATE.read_text().format(
+            top_module=run.design.top_module,
+            design_dir=rtl_dst,
+            verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
-            work_home=phase_dir,
+            work_home=run.output_dir,
+            orfs_home=ORFS_HOME,
+            platform=run.cfg.platform,
+            place_density=run.cfg.place_density,
             die_area=die_area,
             core_area=core_area,
         )
@@ -160,25 +128,11 @@ def snapshot_inputs(
     return makefile_dst
 
 
-def run_phase(
-    design_dir: Path,
-    phase_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
-    period_ns: float,
-    side_um: float,
-    core_margin_um: float,
-    phase_label: str,
-) -> int:
-    """Invoke the rendered per-design Makefile for one phase. Output is
-    captured to `<phase_dir>/flow_<design>_<phase_label>.log`."""
-    design_name, _ = resolve_design(design_dir)
-    phase_dir.mkdir(parents=True, exist_ok=True)
-    makefile = snapshot_inputs(
-        design_dir, phase_dir, sdc_template_src, makefile_template_src,
-        period_ns, side_um, core_margin_um,
-    )
-    log_path = phase_dir / f"flow_{design_name}_{phase_label}.log"
+def run_job(run: RunConfig) -> int:
+    """Invoke the rendered per-design Makefile."""
+    run.output_dir.mkdir(parents=True, exist_ok=True)
+    makefile = snapshot_inputs(run)
+    log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
         return subprocess.run(
             ["make", "-C", str(makefile.parent)],
@@ -186,312 +140,182 @@ def run_phase(
         ).returncode
 
 
-def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
-    """Return the single match for `glob_pat` under `phase_dir`. The
-    platform/variant segments are glob-discovered rather than hardcoded so
-    changing `PLATFORM` in Makefile.template doesn't require code edits."""
-    matches = list(phase_dir.glob(glob_pat))
-    if not matches:
-        raise FileNotFoundError(
-            f"no {label} under {phase_dir}/{glob_pat} — "
-            "calibration flow likely failed before producing it"
-        )
-    if len(matches) > 1:
-        joined = ", ".join(str(m) for m in matches)
-        raise RuntimeError(f"multiple {label} matches: {joined}")
-    return matches[0]
+def derive_final_side_um(cell_area_um2: float, cfg: StudyConfig) -> float:
+    """Take a multiple of the cell area, or the minimum area if too small."""
+    effective_cell_area = cell_area_um2 * cfg.area_multiplier
+    core_side = math.sqrt(effective_cell_area / cfg.target_utilization)
+    natural_side = core_side + 2 * cfg.core_margin_um
+    return max(natural_side, cfg.minimum_side_um)
 
 
-def read_worst_setup_slack_ns(phase_dir: Path, design_name: str) -> float:
-    """Post-route worst setup slack in ns (positive when timing is met with
-    margin; negative when violated)."""
-    report = find_unique(
-        phase_dir, f"logs/*/{design_name}/*/6_report.json", "6_report.json",
-    )
-    return float(json.loads(report.read_text())["finish__timing__setup__ws"])
+def run_jobs(
+    runs: list[RunConfig],
+    num_threads: int,
+    desc: str,
+) -> dict[RunConfig, int]:
+    """Drive each `RunConfig` through `run_job` on a thread pool, with a
+    progress bar."""
+    if not runs:
+        raise ValueError("No jobs to run")
+    workers = max(1, min(num_threads, len(runs)))
+    rcs: dict[RunConfig, int] = {}
+    passed = failed = 0
 
-
-def read_synth_cell_area_um2(phase_dir: Path, design_name: str) -> float:
-    """Top-module stdcell area in um^2 from yosys's synth_stat.txt
-    `Chip area for module '<top>'` line."""
-    report = find_unique(
-        phase_dir, f"reports/*/{design_name}/*/synth_stat.txt", "synth_stat.txt",
-    )
-    m = _CHIP_AREA_RE.search(report.read_text())
-    if not m:
-        raise ValueError(
-            f"could not parse 'Chip area for module' line from {report}"
-        )
-    return float(m.group(1))
-
-
-def derive_final_side_um(
-    cell_area_um2: float,
-    target_utilization: float,
-    minimum_side_um: float,
-    core_margin_um: float,
-    area_multiplier: float,
-) -> tuple[float, float, float, bool]:
-    """Pick the final floorplan side.
-
-    The calibration synth runs at a loose period, which tends to pick
-    smaller drive strengths than the final tight-period synth — so the
-    calibration cell area is multiplied by `area_multiplier` before sizing
-    the die, padding the budget for the larger cells the final synth will
-    likely pick.
-
-    Returns `(side_um, natural_side_um, effective_cell_area_um2, at_floor)`:
-      - `effective_cell_area_um2` is the inflated area used for sizing.
-      - `natural_side_um` is what `target_utilization` alone would dictate
-        against `effective_cell_area_um2` (core side derived from area, plus
-        die margin on each edge).
-      - `side_um` is the value actually used — `natural_side_um` unless that
-        would fall below `minimum_side_um`, in which case the floor wins.
-      - `at_floor` is True when the floor was applied.
-    """
-    effective_cell_area = cell_area_um2 * area_multiplier
-    core_side = math.sqrt(effective_cell_area / target_utilization)
-    natural_side = core_side + 2 * core_margin_um
-    if natural_side < minimum_side_um:
-        return minimum_side_um, natural_side, effective_cell_area, True
-    return natural_side, natural_side, effective_cell_area, False
-
-
-def write_calibration_summary(out_dir: Path, payload: dict) -> None:
-    """Drop a tiny JSON next to the phase dirs so the derivation is easy to
-    inspect after the fact."""
-    (out_dir / "calibration_summary.json").write_text(
-        json.dumps(payload, indent=2) + "\n"
-    )
-
-
-def run_flow(
-    design_dir: Path,
-    out_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
-    calibration_period_ns: float,
-    calibration_side_um: float,
-    target_multiplier: float,
-    target_utilization: float,
-    minimum_side_um: float,
-    core_margin_um: float,
-    area_multiplier: float,
-) -> tuple[int, str]:
-    """Two-phase flow: a calibration run at a loose period on a large die,
-    then a final run at `(cal_period - cal_ws) * target_multiplier` with a
-    floorplan sized to hit `target_utilization` against `cal_cell_area *
-    area_multiplier` (subject to the `minimum_side_um` floor). Returns
-    `(returncode, status_detail)`."""
-    design_name, _ = resolve_design(design_dir)
-
-    cal_dir = out_dir / "calibration"
-    rc = run_phase(
-        design_dir, cal_dir, sdc_template_src, makefile_template_src,
-        calibration_period_ns, calibration_side_um, core_margin_um, "calibration",
-    )
-    if rc != 0:
-        return rc, f"calibration FAIL (rc={rc})"
-
-    try:
-        cal_ws_ns = read_worst_setup_slack_ns(cal_dir, design_name)
-        cal_cell_area_um2 = read_synth_cell_area_um2(cal_dir, design_name)
-    except Exception as exc:
-        return 1, f"calibration parse FAIL: {exc}"
-
-    target_period_ns = (calibration_period_ns - cal_ws_ns) * target_multiplier
-    (
-        final_side_um, natural_side_um, effective_cell_area_um2, at_floor,
-    ) = derive_final_side_um(
-        cal_cell_area_um2, target_utilization, minimum_side_um, core_margin_um,
-        area_multiplier,
-    )
-
-    write_calibration_summary(out_dir, {
-        "calibration_period_ns": calibration_period_ns,
-        "calibration_side_um": calibration_side_um,
-        "calibration_ws_ns": cal_ws_ns,
-        "calibration_cell_area_um2": cal_cell_area_um2,
-        "target_multiplier": target_multiplier,
-        "target_period_ns": target_period_ns,
-        "target_utilization": target_utilization,
-        "minimum_side_um": minimum_side_um,
-        "core_margin_um": core_margin_um,
-        "area_multiplier": area_multiplier,
-        "effective_cell_area_um2": effective_cell_area_um2,
-        "natural_side_um": natural_side_um,
-        "final_side_um": final_side_um,
-        "final_side_at_floor": at_floor,
-    })
-
-    final_dir = out_dir / "final"
-    rc = run_phase(
-        design_dir, final_dir, sdc_template_src, makefile_template_src,
-        target_period_ns, final_side_um, core_margin_um, "final",
-    )
-    floor_tag = " (floor)" if at_floor else ""
-    detail = (
-        f"T={target_period_ns:.3f}ns side={final_side_um:.1f}um{floor_tag} "
-        f"(cal_ws={cal_ws_ns:.3f}ns cal_area={cal_cell_area_um2:.1f}um2)"
-    )
-    if rc != 0:
-        return rc, f"final FAIL (rc={rc}) [{detail}]"
-    return 0, detail
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        futures = {executor.submit(run_job, r): r for r in runs}
+        with tqdm(total=len(runs), desc=desc, unit="run") as pbar:
+            pbar.set_postfix(passed=passed, failed=failed)
+            for fut in as_completed(futures):
+                r = futures[fut]
+                try:
+                    rc = fut.result()
+                except Exception:
+                    rc = 1
+                if rc == 0:
+                    passed += 1
+                else:
+                    failed += 1
+                rcs[r] = rc
+                pbar.set_postfix(passed=passed, failed=failed)
+                pbar.update(1)
+    return rcs
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument(
-        "design_dir", nargs="?", type=Path, default=None,
-        help="Folder containing the design's .v file. "
-             "Default: run every design under <repo>/corpus/.",
+    parser.add_argument(
+        "--benchmark", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose benchmark matches one of these globs. "
+             "Repeatable; a design matches if *any* given glob hits.",
     )
-    ap.add_argument(
+    parser.add_argument(
+        "--name", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose name matches one of these globs. "
+             "Repeatable.",
+    )
+    parser.add_argument(
+        "--variant", action="append", default=None, metavar="GLOB",
+        help="Restrict to designs whose variant matches one of these globs. "
+             "Repeatable.",
+    )
+    parser.add_argument(
         "--num-threads", type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
-        help="Number of designs to run in parallel "
-             "(default: half of host CPU count). Each design runs its "
-             "calibration and final phases sequentially within its thread.",
+        help="Worker count for each parallel phase (default: half of host "
+             "CPU count). All calibrations run as one batch, then all finals "
+             "run as a second batch.",
     )
-    ap.add_argument(
-        "--calibration-period-ns", type=float, default=10.0,
-        help="Clock period used for the calibration phase. Should be loose "
-             "enough that even the slowest design in the corpus meets timing.",
-    )
-    ap.add_argument(
-        "--calibration-side-um", type=float, default=1000.0,
-        help="Side of the square die used for the calibration phase. Should "
-             "be large enough that even the largest design in the corpus "
-             "fits comfortably so synth area is measured unconstrained.",
-    )
-    ap.add_argument(
-        "--target-multiplier", type=float, default=1.1,
-        help="Safety factor on the calibration-derived minimum period. "
-             "1.0 = run at the achievable minimum; >1 gives the final flow "
-             "headroom to absorb optimization differences between phases.",
-    )
-    ap.add_argument(
-        "--target-utilization", type=float, default=0.4,
-        help="Target core utilization for the final phase. The floorplan "
-             "side is derived to hit this density against the calibration "
-             "cell area, unless --minimum-side-um is binding.",
-    )
-    ap.add_argument(
-        "--area-multiplier", type=float, default=1.1,
-        help="Safety factor on the calibration cell area before sizing. "
-             "Tight-period synth tends to pick larger drive strengths than "
-             "the loose calibration synth, so the floorplan is built for "
-             "`cal_cell_area * --area-multiplier` rather than the raw value.",
-    )
-    ap.add_argument(
-        "--minimum-side-um", type=float, default=50.0,
-        help="Floor on the final floorplan side. Designs whose natural "
-             "(utilization-derived) size would fall below this get padded "
-             "out to a fixed minimum die instead.",
-    )
-    ap.add_argument(
-        "--core-margin-um", type=float, default=DEFAULT_CORE_MARGIN_UM,
-        help="Die-to-core boundary applied on each edge of the square die.",
-    )
-    args = ap.parse_args()
+    args = parser.parse_args()
 
-    if not 0.0 < args.target_utilization <= 1.0:
-        sys.stderr.write(
-            f"error: --target-utilization must be in (0, 1], got "
-            f"{args.target_utilization}\n"
-        )
-        return 1
-    if args.area_multiplier < 1.0:
-        sys.stderr.write(
-            f"error: --area-multiplier must be >= 1.0 (a safety factor), "
-            f"got {args.area_multiplier}\n"
-        )
-        return 1
+    cfg = StudyConfig()
 
-    # FLOW_HOME falls back to /OpenROAD-flow-scripts/flow inside the rendered
-    # Makefile; check here too so we fail fast with a clear message rather
-    # than deferring to a sub-make error.
-    flow_home = Path(os.environ.get("FLOW_HOME", "/OpenROAD-flow-scripts/flow"))
-    if not (flow_home / "Makefile").is_file():
-        sys.stderr.write(
-            f"error: ORFS flow Makefile not found at {flow_home / 'Makefile'}\n"
-            "       set FLOW_HOME to your OpenROAD-flow-scripts/flow checkout.\n"
-        )
-        return 1
+    if not (ORFS_HOME / "Makefile").is_file():
+        raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    sdc_template_src = HERE / "templates" / "constraint.sdc.template"
-    makefile_template_src = HERE / "templates" / "Makefile.template"
+    all_designs = CorpusLoader().designs() | RTLLMLoader().designs()
+    designs = filter_designs(
+        all_designs, args.benchmark, args.name, args.variant,
+    )
+    if not designs:
+        raise ValueError("No designs matched specified filters")
 
-    if args.design_dir is not None:
-        design_dir = args.design_dir.resolve()
-        if not design_dir.is_dir():
-            sys.stderr.write(f"error: design dir not found: {design_dir}\n")
-            return 1
-        designs = [design_dir]
-    else:
-        designs = list_corpus_designs(CORPUS)
-        if not designs:
-            sys.stderr.write(f"error: no designs found under {CORPUS}\n")
-            return 1
+    # Group filtered designs and check for valid references
+    references: dict[tuple[str, str], DesignConfig] = {}
+    groups: dict[tuple[str, str], list[DesignConfig]] = {}
+    for b, names in designs.items():
+        for n, variants in names.items():
+            if "reference" not in all_designs[b][n]:
+                raise ValueError(f"no 'reference' variant available for {b}/{n}")
+            groups[(b, n)] = list(variants.values())
+            references[(b, n)] = all_designs[b][n]["reference"]
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
     batch_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Batch output: {batch_dir}")
-    print(
-        f"Calibration: period={args.calibration_period_ns} ns, "
-        f"side={args.calibration_side_um} um"
+    print(f"Output dir: {batch_dir}")
+
+    # Phase 1: run every group's calibration (on the reference variant).
+    cal_runs: dict[tuple[str, str], RunConfig] = {
+        key: RunConfig(
+            design=references[key],
+            output_dir=design_calibration_dir(references[key], batch_dir),
+            period_ns=cfg.calibration_period_ns,
+            side_um=cfg.calibration_side_um,
+            cfg=cfg,
+        )
+        for key in groups
+    }
+    cal_rcs = run_jobs(
+        list(cal_runs.values()), args.num_threads, "Calibration",
     )
-    print(
-        f"Final: target_mult={args.target_multiplier}, "
-        f"target_util={args.target_utilization}, "
-        f"area_mult={args.area_multiplier}, "
-        f"min_side={args.minimum_side_um} um, "
-        f"core_margin={args.core_margin_um} um"
-    )
 
-    out_dirs = {d: design_out_dir(d, batch_dir, CORPUS) for d in designs}
+    # Build one RunJob per variant, and record each group's calibration as
+    # its own synthetic `__calibration__` row. Calibration failures (rc != 0
+    # or unparseable outputs) attach as `error` on every variant in the
+    # group and skip execution, but the RunJob still carries the design so
+    # the row shows in runs.csv.
+    final_runs: dict[DesignConfig, RunJob] = {}
+    runs_report: list[dict] = []
+    for key, variants in groups.items():
+        b, n = key
+        cal_run = cal_runs[key]
+        cal_rc = cal_rcs[cal_run]
+        error: str | None = None
+        period_ns = cfg.calibration_period_ns
+        side_um = cfg.calibration_side_um
+        if cal_rc != 0:
+            error = f"calibration FAIL (rc={cal_rc})"
+        else:
+            try:
+                metrics = extract(cal_run.output_dir, cal_run.design.top_module)
+                ws_ns = metrics["route_ws_ns"]
+                cell_area_um2 = metrics["synth_area_um2"]
+                period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
+                side_um = derive_final_side_um(cell_area_um2, cfg)
+            except Exception as exc:
+                error = f"calibration parse FAIL: {exc}"
+        runs_report.append({
+            "benchmark": b,
+            "name": n,
+            "variant": "__calibration__",
+            "error": error,
+        })
+        for d in variants:
+            final_runs[d] = RunJob(
+                run=RunConfig(
+                    design=d,
+                    output_dir=design_variant_dir(d, batch_dir),
+                    period_ns=period_ns,
+                    side_um=side_um,
+                    cfg=cfg,
+                ),
+                error=error,
+            )
 
-    num_threads = max(1, min(args.num_threads, len(designs)))
-    results: list[tuple[str, int, str]] = []
-    with ThreadPoolExecutor(max_workers=num_threads) as executor:
-        futures = {
-            executor.submit(
-                run_flow, d, out_dirs[d],
-                sdc_template_src, makefile_template_src,
-                args.calibration_period_ns, args.calibration_side_um,
-                args.target_multiplier, args.target_utilization,
-                args.minimum_side_um, args.core_margin_um,
-                args.area_multiplier,
-            ): d
-            for d in designs
-        }
-        with tqdm(total=len(designs), desc="Designs", unit="design") as pbar:
-            for fut in as_completed(futures):
-                d = futures[fut]
-                try:
-                    rc, detail = fut.result()
-                except Exception as exc:
-                    rc, detail = 1, f"ERROR: {exc}"
-                status = "OK" if rc == 0 else "FAIL"
-                pbar.write(
-                    f"  {d.name:<30} {status:<4} {detail}  "
-                    f"(out: {out_dirs[d]})"
-                )
-                results.append((d.name, rc, detail))
-                pbar.update(1)
+    runnable = [job.run for job in final_runs.values() if job.error is None]
+    final_rcs = run_jobs(runnable, args.num_threads, "Eval       ")
 
-    if len(results) > 1:
-        print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
-        for name, rc, detail in sorted(results):
-            status = "OK" if rc == 0 else "FAIL"
-            print(f"  {name:<30} {status:<4} {detail}")
-
-    return 0 if all(rc == 0 for _, rc, _ in results) else 1
+    for d, job in final_runs.items():
+        if job.error is not None:
+            error = job.error
+        else:
+            rc = final_rcs[job.run]
+            error = f"final FAIL (rc={rc})" if rc != 0 else None
+        runs_report.append({
+            "benchmark": d.benchmark,
+            "name": d.name,
+            "variant": d.variant,
+            "error": error,
+        })
+    runs_report.sort(key=lambda e: (e["benchmark"], e["name"], e["variant"]))
+    with (batch_dir / "runs.csv").open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["benchmark", "name", "variant", "error"])
+        writer.writeheader()
+        writer.writerows(runs_report)
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
