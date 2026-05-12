@@ -2,10 +2,10 @@
 """Drive the ORFS make-based flow over the corpus, or a single design folder.
 
 Each design folder must contain exactly one `*.v` file; its stem is used as
-DESIGN_NAME. The shared SDC template (`constraint.sdc.template`) and the
-platform/utilization knobs in `Makefile.template` apply to every design — only
-the design name, source file, DESIGN_DIR, clock period, and floorplan
-dimensions vary per run.
+DESIGN_NAME. The shared SDC template (`templates/constraint.sdc.template`)
+and the platform/utilization knobs in `templates/Makefile.template` apply to
+every design — only the design name, source file, DESIGN_DIR, clock period,
+and floorplan dimensions vary per run.
 
 Per-design clock period and die size are both derived from a single
 *calibration* phase that runs the design at a loose period
@@ -36,8 +36,8 @@ report) rather than ORFS's `finish`, which additionally depends on GDS
 generation via KLayout — not installed in every sandbox.
 
 Usage:
-    uv run test_flow_orfs/run.py                  # every design under corpus/
-    uv run test_flow_orfs/run.py corpus/adder8    # full flow on one design
+    uv run eda_eval/run.py                  # every design under corpus/
+    uv run eda_eval/run.py corpus/adder8    # full flow on one design
 """
 from __future__ import annotations
 
@@ -422,8 +422,8 @@ def main() -> int:
         )
         return 1
 
-    sdc_template_src = HERE / "constraint.sdc.template"
-    makefile_template_src = HERE / "Makefile.template"
+    sdc_template_src = HERE / "templates" / "constraint.sdc.template"
+    makefile_template_src = HERE / "templates" / "Makefile.template"
 
     if args.design_dir is not None:
         design_dir = args.design_dir.resolve()

@@ -154,7 +154,7 @@ def extract(work_home: Path, platform: str, design: str, variant: str) -> dict:
 
 def main(argv: list[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
-    config_defaults = parse_config_mk(here / "Makefile.template")
+    config_defaults = parse_config_mk(here / "templates" / "Makefile.template")
     default_platform = config_defaults.get("PLATFORM", "nangate45")
 
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
