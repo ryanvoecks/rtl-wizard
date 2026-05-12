@@ -5,16 +5,17 @@
 # tapcells -> PDN -> global+detail placement -> CTS -> global+detail route ->
 # final STA report. Outputs land in `./out/` next to this script.
 #
-# Inputs are taken from env vars set by run.sh:
-#   DESIGN_NAME, NETLIST, SDC, TECH_LEF, CELL_LEF, LIB, OUT_DIR
+# Paths are taken from config.tcl (shared with synth.tcl and sta.tcl).
+
+source config.tcl
 
 # ---------- Library + design ----------
-read_lef  $env(TECH_LEF)
-read_lef  $env(CELL_LEF)
-read_liberty $env(LIB)
-read_verilog $env(NETLIST)
-link_design $env(DESIGN_NAME)
-read_sdc $env(SDC)
+read_lef     $TECH_LEF
+read_lef     $CELL_LEF
+read_liberty $PDK_LIB
+read_verilog $SYNTH_V
+link_design  $DESIGN_NAME
+read_sdc     $SDC
 
 # ---------- Floorplan ----------
 # 60% utilization, square aspect ratio; small core margin so this fits a
@@ -29,7 +30,7 @@ initialize_floorplan \
     -site FreePDK45_38x28_10R_NP_162NW_34O
 
 # Snap routing/placement tracks to the platform's standard pitches.
-source /OpenROAD-flow-scripts/flow/platforms/nangate45/make_tracks.tcl
+source $PLATFORM_DIR/make_tracks.tcl
 
 # ---------- IO placement ----------
 # Pick horizontal pins on metal3, vertical on metal2 — the bottom routing
@@ -40,11 +41,11 @@ place_pins -hor_layers metal3 -ver_layers metal2
 # The platform's tapcell.tcl reads $::env(TAP_CELL_NAME); set it from
 # config.mk's value.
 set ::env(TAP_CELL_NAME) TAPCELL_X1
-source /OpenROAD-flow-scripts/flow/platforms/nangate45/tapcell.tcl
+source $PLATFORM_DIR/tapcell.tcl
 
 # ---------- Power grid ----------
 # Use the platform's M1/M4/M7 grid strategy verbatim.
-source /OpenROAD-flow-scripts/flow/platforms/nangate45/grid_strategy-M1-M4-M7.tcl
+source $PLATFORM_DIR/grid_strategy-M1-M4-M7.tcl
 pdngen
 
 # ---------- Global placement ----------
@@ -55,7 +56,7 @@ global_placement \
 
 # ---------- Clock tree synthesis ----------
 # Use the platform's RC estimates so wire delay is sane pre-route.
-source /OpenROAD-flow-scripts/flow/platforms/nangate45/setRC.tcl
+source $PLATFORM_DIR/setRC.tcl
 set_propagated_clock [all_clocks]
 clock_tree_synthesis \
     -buf_list "BUF_X1 BUF_X2 BUF_X4 BUF_X8 BUF_X16 BUF_X32" \
@@ -72,12 +73,12 @@ check_placement -verbose
 # ---------- Routing ----------
 set_routing_layers -signal metal2-metal10 -clock metal4-metal10
 global_route \
-    -guide_file $env(OUT_DIR)/route.guide \
+    -guide_file $OUT_DIR/route.guide \
     -congestion_iterations 50
 
 detailed_route \
-    -output_drc $env(OUT_DIR)/route.drc \
-    -output_maze $env(OUT_DIR)/route.maze.log \
+    -output_drc $OUT_DIR/route.drc \
+    -output_maze $OUT_DIR/route.maze.log \
     -verbose 0
 
 # ---------- Final reports ----------
@@ -88,8 +89,8 @@ report_checks -path_delay max
 report_power
 
 # ---------- Outputs ----------
-write_verilog $env(OUT_DIR)/$env(DESIGN_NAME).routed.v
-write_def     $env(OUT_DIR)/$env(DESIGN_NAME).routed.def
-write_db      $env(OUT_DIR)/$env(DESIGN_NAME).routed.odb
+write_verilog $OUT_DIR/$DESIGN_NAME.routed.v
+write_def     $OUT_DIR/$DESIGN_NAME.routed.def
+write_db      $OUT_DIR/$DESIGN_NAME.routed.odb
 
 exit
