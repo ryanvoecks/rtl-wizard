@@ -22,4 +22,7 @@ clean
 # Sanity report so the run log shows the post-synth cell mix
 stat -liberty $PDK_LIB
 
+# Machine-readable area + cell counts
+tee -o $SYNTH_STAT stat -liberty $PDK_LIB -top $DESIGN_NAME -json
+
 write_verilog -noexpr -nohex -nodec $SYNTH_V
