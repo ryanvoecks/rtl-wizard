@@ -1,3 +1,8 @@
 [submodule "external/RTLLM"]
 	path = external/RTLLM
 	url = git@github.com:hkust-zhiyao/RTLLM.git
+	ignore = all
+[submodule "external/RTL-OPT"]
+	path = external/RTL-OPT
+	url = git@github.com:ryanvoecks/rtl-opt-mirror.git
+	ignore = all

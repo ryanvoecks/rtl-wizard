@@ -8,8 +8,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
-CORPUS = REPO_ROOT / "corpus"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
+RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
 
 

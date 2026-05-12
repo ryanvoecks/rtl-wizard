@@ -2,8 +2,9 @@
 """Extract PPA metrics from the non-calibration phases of an ORFS batch.
 
 Run `./run.py` first to populate `eda_runs/<batch>/`; this walks every
-`final/` phase dir under that batch (one per design) and emits a CSV row
-per design with the post-synth and post-route metrics joined together.
+variant phase dir (`<benchmark>/<name>/<variant>/`, excluding the
+`__calibration__` siblings) and emits one CSV row per variant with the
+post-synth and post-route metrics joined together.
 
 Most values are pulled straight from ORFS-emitted JSON; the synth-side
 area / cell / FF count come from yosys's `synth_stat.txt` because
@@ -206,13 +207,16 @@ def resolve_batch(arg: str) -> Path:
     raise SystemExit(f"error: batch not found as path or under {EDA_RUNS}: {arg}")
 
 
-def iter_final_phases(batch_dir: Path) -> list[Path]:
-    """Every `final/` phase dir under the batch, sorted for deterministic
-    CSV order. Skips anything without a rendered SDC — that catches both
+def iter_variant_phases(batch_dir: Path) -> list[Path]:
+    """Every `<benchmark>/<name>/<variant>/` phase dir under the batch,
+    sorted for deterministic CSV order. Skips the `__calibration__`
+    siblings, and anything without a rendered SDC — that catches both
     spurious matches and phases that aborted before snapshot_inputs ran."""
     return sorted(
-        p for p in batch_dir.rglob("final")
-        if p.is_dir() and (p / "inputs" / "constraint.sdc").is_file()
+        p for p in batch_dir.glob("*/*/*")
+        if p.is_dir()
+        and p.name != "__calibration__"
+        and (p / "inputs" / "constraint.sdc").is_file()
     )
 
 
@@ -230,13 +234,13 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
 
     batch_dir = resolve_batch(args.batch)
-    finals = iter_final_phases(batch_dir)
-    if not finals:
-        sys.stderr.write(f"error: no final/ phase dirs under {batch_dir}\n")
+    phases = iter_variant_phases(batch_dir)
+    if not phases:
+        sys.stderr.write(f"error: no variant phase dirs under {batch_dir}\n")
         return 1
 
     rows: list[dict] = []
-    for phase_dir in finals:
+    for phase_dir in phases:
         try:
             design = resolve_design_name(phase_dir)
             period_ps = parse_period_ps(phase_dir / "inputs" / "constraint.sdc")
