@@ -6,8 +6,12 @@ DESIGN_NAME. The shared SDC (`constraint.sdc`) and the platform/utilization
 knobs in `config.mk` apply to every design — only the design name, source
 file, and DESIGN_DIR vary per run.
 
-Artifacts land under `<repo>/eda_runs/`; ORFS already namespaces by design
-name internally, so multiple corpus designs can coexist there.
+Each invocation is one *batch*: artifacts land under
+`<repo>/eda_runs/<timestamp>/<rel-corpus-path>/`, where `<rel-corpus-path>`
+mirrors the design's location inside `corpus/`. The per-design directory
+contains a snapshot of the `inputs/` actually fed to ORFS (rtl + config +
+constraints) so the run is self-contained, plus ORFS's own
+`logs/objects/reports/results/` trees and the make log.
 
 Default targets stop at `do-finish` (final routed STA/area/power report)
 rather than ORFS's `finish`, which additionally depends on GDS generation
@@ -24,8 +28,10 @@ from __future__ import annotations
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
@@ -73,18 +79,52 @@ def list_corpus_designs(corpus_dir: Path) -> list[Path]:
     ]
 
 
+def design_out_dir(design_dir: Path, batch_dir: Path, corpus: Path) -> Path:
+    """Per-design output dir under `batch_dir`, mirroring the design's path
+    relative to `corpus/`. Falls back to just the folder name for designs
+    passed from outside the corpus tree."""
+    try:
+        rel = design_dir.resolve().relative_to(corpus.resolve())
+    except ValueError:
+        rel = Path(design_dir.name)
+    return batch_dir / rel
+
+
+def snapshot_inputs(
+    design_dir: Path, out_dir: Path, sdc_src: Path, config_mk_src: Path,
+) -> tuple[Path, Path, Path]:
+    """Copy the design RTL tree and the shared SDC/config into
+    `<out_dir>/inputs/` so the run is self-contained. Returns the paths
+    ORFS should consume: (verilog_file, sdc, config_mk)."""
+    inputs = out_dir / "inputs"
+    rtl_dst = inputs / "rtl"
+    if rtl_dst.exists():
+        shutil.rmtree(rtl_dst)
+    shutil.copytree(design_dir, rtl_dst)
+    sdc_dst = inputs / "constraint.sdc"
+    config_mk_dst = inputs / "config.mk"
+    shutil.copy2(sdc_src, sdc_dst)
+    shutil.copy2(config_mk_src, config_mk_dst)
+    _, verilog_in_src = resolve_design(design_dir)
+    return rtl_dst / verilog_in_src.name, sdc_dst, config_mk_dst
+
+
 def run_flow(
     design_dir: Path,
     targets: tuple[str, ...],
     flow_home: Path,
     out_dir: Path,
-    sdc_path: Path,
-    config_mk: Path,
+    sdc_src: Path,
+    config_mk_src: Path,
 ) -> int:
     """Invoke ORFS make for one design and return its exit code. All output is
     redirected to a per-design log file so it doesn't fight with the progress
     bar."""
-    design_name, verilog = resolve_design(design_dir)
+    design_name, _ = resolve_design(design_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    verilog, sdc_path, config_mk = snapshot_inputs(
+        design_dir, out_dir, sdc_src, config_mk_src,
+    )
 
     # Per-design values override anything in config.mk; only the platform and
     # utilization knobs come from the config file.
@@ -93,7 +133,7 @@ def run_flow(
         "-C", str(flow_home),
         f"DESIGN_CONFIG={config_mk}",
         f"DESIGN_NAME={design_name}",
-        f"DESIGN_DIR={design_dir}",
+        f"DESIGN_DIR={verilog.parent}",
         f"VERILOG_FILES={verilog}",
         f"SDC_FILE={sdc_path}",
         f"WORK_HOME={out_dir}",
@@ -137,10 +177,9 @@ def main() -> int:
         )
         return 1
 
-    EDA_RUNS.mkdir(parents=True, exist_ok=True)
     targets = tuple(args.targets) if args.targets else DEFAULT_TARGETS
-    sdc_path = HERE / "constraint.sdc"
-    config_mk = HERE / "config.mk"
+    sdc_src = HERE / "constraint.sdc"
+    config_mk_src = HERE / "config.mk"
 
     if args.design_dir is not None:
         design_dir = args.design_dir.resolve()
@@ -154,12 +193,19 @@ def main() -> int:
             sys.stderr.write(f"error: no designs found under {CORPUS}\n")
             return 1
 
+    batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
+    batch_dir = EDA_RUNS / batch_ts
+    batch_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Batch output: {batch_dir}")
+
+    out_dirs = {d: design_out_dir(d, batch_dir, CORPUS) for d in designs}
+
     num_threads = max(1, min(args.num_threads, len(designs)))
     results: list[tuple[str, int]] = []
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {
             executor.submit(
-                run_flow, d, targets, flow_home, EDA_RUNS, sdc_path, config_mk,
+                run_flow, d, targets, flow_home, out_dirs[d], sdc_src, config_mk_src,
             ): d
             for d in designs
         }
@@ -175,7 +221,7 @@ def main() -> int:
                     status = "OK" if rc == 0 else f"FAIL (rc={rc})"
                     pbar.write(
                         f"  {d.name:<30} {status}  "
-                        f"(log: {EDA_RUNS}/flow_{d.name}.log)"
+                        f"(log: {out_dirs[d]}/flow_{d.name}.log)"
                     )
                 results.append((d.name, rc))
                 pbar.update(1)
