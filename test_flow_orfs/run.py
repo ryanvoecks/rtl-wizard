@@ -11,14 +11,14 @@ name internally, so multiple corpus designs can coexist there.
 
 Default targets stop at `do-finish` (final routed STA/area/power report)
 rather than ORFS's `finish`, which additionally depends on GDS generation
-via KLayout — not installed in every sandbox. Pass `finish`/`gds` explicitly
-to get GDS.
+via KLayout — not installed in every sandbox. Pass `--targets finish` to
+get GDS.
 
 Usage:
-    ./run.py                          # every design under <repo>/corpus/
-    ./run.py ../corpus/adder8         # full flow on one design
-    ./run.py ../corpus/adder8 synth   # stop after synthesis
-    ./run.py . clean                  # ORFS clean for the local counter.v
+    uv run test_flow_orfs/run.py                                # every design under corpus/
+    uv run test_flow_orfs/run.py corpus/adder8                  # full flow on one design
+    uv run test_flow_orfs/run.py corpus/adder8 --targets synth  # stop after synthesis
+    uv run test_flow_orfs/run.py corpus/adder8 --targets clean  # ORFS clean
 """
 from __future__ import annotations
 
@@ -26,7 +26,10 @@ import argparse
 import os
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+
+from tqdm import tqdm
 
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
@@ -78,7 +81,9 @@ def run_flow(
     sdc_path: Path,
     config_mk: Path,
 ) -> int:
-    """Invoke ORFS make for one design and return its exit code."""
+    """Invoke ORFS make for one design and return its exit code. All output is
+    redirected to a per-design log file so it doesn't fight with the progress
+    bar."""
     design_name, verilog = resolve_design(design_dir)
 
     # Per-design values override anything in config.mk; only the platform and
@@ -95,32 +100,14 @@ def run_flow(
         *targets,
     ]
 
-    # Stream make's combined stdout+stderr to the terminal and a per-design
-    # log file at the same time (replaces the bash `tee` from the old script).
     log_path = out_dir / f"flow_{design_name}.log"
-    with subprocess.Popen(
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        bufsize=1,
-        text=True,
-    ) as proc, log_path.open("w") as log:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            sys.stdout.write(line)
-            sys.stdout.flush()
-            log.write(line)
-        rc = proc.wait()
-
-    if rc == 0:
-        print(
-            f"\n{design_name}: ORFS artifacts under "
-            f"{out_dir}/{{logs,objects,reports,results}}/nangate45/{design_name}/base/"
-        )
-    return rc
+    with log_path.open("w") as log:
+        return subprocess.run(
+            cmd, stdout=log, stderr=subprocess.STDOUT
+        ).returncode
 
 
-def main(argv: list[str]) -> int:
+def main() -> int:
     ap = argparse.ArgumentParser(
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -131,10 +118,16 @@ def main(argv: list[str]) -> int:
              "Default: run every design under <repo>/corpus/.",
     )
     ap.add_argument(
-        "targets", nargs="*",
+        "--targets", nargs="+", default=None, metavar="TARGET",
         help="ORFS make targets (default: full flow through do-finish).",
     )
-    args = ap.parse_args(argv)
+    ap.add_argument(
+        "--num-threads", type=int,
+        default=max(1, (os.cpu_count() or 2) // 2),
+        help="Number of designs to run in parallel "
+             "(default: half of host CPU count).",
+    )
+    args = ap.parse_args()
 
     flow_home = Path(os.environ.get("FLOW_HOME", "/OpenROAD-flow-scripts/flow"))
     if not (flow_home / "Makefile").is_file():
@@ -161,18 +154,35 @@ def main(argv: list[str]) -> int:
             sys.stderr.write(f"error: no designs found under {CORPUS}\n")
             return 1
 
-    # Run sequentially — each ORFS invocation already saturates the host's
-    # cores via the upstream Makefile's parallelism flags.
+    num_threads = max(1, min(args.num_threads, len(designs)))
     results: list[tuple[str, int]] = []
-    for i, d in enumerate(designs, 1):
-        banner = f"[{i}/{len(designs)}] {d.name}"
-        print(f"\n{'=' * 60}\n{banner}\n{'=' * 60}")
-        rc = run_flow(d, targets, flow_home, EDA_RUNS, sdc_path, config_mk)
-        results.append((d.name, rc))
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        futures = {
+            executor.submit(
+                run_flow, d, targets, flow_home, EDA_RUNS, sdc_path, config_mk,
+            ): d
+            for d in designs
+        }
+        with tqdm(total=len(designs), desc="Designs", unit="design") as pbar:
+            for fut in as_completed(futures):
+                d = futures[fut]
+                try:
+                    rc = fut.result()
+                except Exception as exc:
+                    rc = 1
+                    pbar.write(f"  {d.name:<30} ERROR: {exc}")
+                else:
+                    status = "OK" if rc == 0 else f"FAIL (rc={rc})"
+                    pbar.write(
+                        f"  {d.name:<30} {status}  "
+                        f"(log: {EDA_RUNS}/flow_{d.name}.log)"
+                    )
+                results.append((d.name, rc))
+                pbar.update(1)
 
     if len(results) > 1:
         print(f"\n{'=' * 60}\nSummary\n{'=' * 60}")
-        for name, rc in results:
+        for name, rc in sorted(results):
             status = "OK" if rc == 0 else f"FAIL (rc={rc})"
             print(f"  {name:<30} {status}")
 
@@ -180,4 +190,4 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    sys.exit(main())

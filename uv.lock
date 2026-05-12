@@ -1998,6 +1998,7 @@ dependencies = [
     { name = "mcp" },
     { name = "openai" },
     { name = "pyslang" },
+    { name = "tqdm" },
 ]
 
 [package.dev-dependencies]
@@ -2013,6 +2014,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.27.0" },
     { name = "openai", specifier = ">=2.32.0" },
     { name = "pyslang", specifier = ">=10" },
+    { name = "tqdm", specifier = ">=4.67" },
 ]
 
 [package.metadata.requires-dev]
