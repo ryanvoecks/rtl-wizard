@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pyslang
 
-from config import DesignConfig
+from config import CORPUS, RTLLM, DesignConfig
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -51,7 +51,7 @@ class RTLLMLoader(DesignLoader):
         ("chatgpt4", "_chatgpt4"),
     )
 
-    def __init__(self, rtllm_root: Path):
+    def __init__(self, rtllm_root: Path = RTLLM):
         self.rtllm_root = rtllm_root
 
     def designs(self) -> DesignTree:
@@ -88,7 +88,7 @@ class CorpusLoader(DesignLoader):
 
     benchmark = "corpus"
 
-    def __init__(self, corpus_dir: Path):
+    def __init__(self, corpus_dir: Path = CORPUS):
         self.corpus_dir = corpus_dir
 
     def designs(self) -> DesignTree:

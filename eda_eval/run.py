@@ -74,14 +74,11 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from config import DesignConfig, StudyConfig
+from config import EDA_RUNS, HERE, ORFS_HOME, DesignConfig, StudyConfig
 from loader import CorpusLoader, DesignTree, RTLLMLoader
 
-HERE = Path(__file__).resolve().parent
-REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda_runs"
-CORPUS = REPO_ROOT / "corpus"
-RTLLM = REPO_ROOT / "external" / "RTLLM"
+SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
+MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
 
 # Full-precision total stdcell area from yosys `stat`. The `cells` totals
 # row uses %g formatting and flips to scientific notation (e.g.
@@ -144,8 +141,6 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
 def snapshot_inputs(
     design: DesignConfig,
     phase_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
     period_ns: float,
     side_um: float,
     cfg: StudyConfig,
@@ -164,19 +159,19 @@ def snapshot_inputs(
         shutil.copy2(src, dst)
         verilog_dsts.append(dst)
     sdc_dst = inputs / "constraint.sdc"
-    sdc_dst.write_text(sdc_template_src.read_text().format(
+    sdc_dst.write_text(SDC_TEMPLATE.read_text().format(
         period_ns=period_ns, io_delay_ns=cfg.io_delay_ns,
     ))
     die_area, core_area = render_floorplan(side_um, cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
-        makefile_template_src.read_text().format(
+        MAKEFILE_TEMPLATE.read_text().format(
             top_module=design.top_module,
             design_dir=rtl_dst,
             verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
             work_home=phase_dir,
-            flow_home=cfg.flow_home,
+            orfs_home=ORFS_HOME,
             platform=cfg.platform,
             place_density=cfg.place_density,
             die_area=die_area,
@@ -189,8 +184,6 @@ def snapshot_inputs(
 def run_phase(
     design: DesignConfig,
     phase_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
     period_ns: float,
     side_um: float,
     cfg: StudyConfig,
@@ -199,10 +192,7 @@ def run_phase(
     """Invoke the rendered per-design Makefile for one phase. Output is
     captured to `<phase_dir>/flow_<design>_<phase_label>.log`."""
     phase_dir.mkdir(parents=True, exist_ok=True)
-    makefile = snapshot_inputs(
-        design, phase_dir, sdc_template_src, makefile_template_src,
-        period_ns, side_um, cfg,
-    )
+    makefile = snapshot_inputs(design, phase_dir, period_ns, side_um, cfg)
     log_path = phase_dir / f"flow_{design.name}_{phase_label}.log"
     with log_path.open("w") as log:
         return subprocess.run(
@@ -288,8 +278,6 @@ def run_group(
     reference: DesignConfig,
     variants: list[DesignConfig],
     batch_dir: Path,
-    sdc_template_src: Path,
-    makefile_template_src: Path,
     cfg: StudyConfig,
 ) -> list[tuple[DesignConfig, int, str]]:
     """Run one shared calibration on `reference` (at a loose period on a
@@ -300,7 +288,7 @@ def run_group(
     failed since none can produce a meaningful final."""
     cal_dir = design_calibration_dir(reference, batch_dir)
     rc = run_phase(
-        reference, cal_dir, sdc_template_src, makefile_template_src,
+        reference, cal_dir,
         cfg.calibration_period_ns, cfg.calibration_side_um, cfg, "calibration",
     )
     if rc != 0:
@@ -329,7 +317,7 @@ def run_group(
     for d in variants:
         variant_dir = design_variant_dir(d, batch_dir)
         rc = run_phase(
-            d, variant_dir, sdc_template_src, makefile_template_src,
+            d, variant_dir,
             target_period_ns, final_side_um, cfg, "final",
         )
         if rc != 0:
@@ -340,59 +328,45 @@ def run_group(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    ap.add_argument(
+    parser.add_argument(
         "--benchmark", action="append", default=None, metavar="GLOB",
         help="Restrict to designs whose benchmark matches one of these globs. "
              "Repeatable; a design matches if *any* given glob hits.",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--name", action="append", default=None, metavar="GLOB",
         help="Restrict to designs whose name matches one of these globs. "
              "Repeatable.",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--variant", action="append", default=None, metavar="GLOB",
         help="Restrict to designs whose variant matches one of these globs. "
              "Repeatable.",
     )
-    ap.add_argument(
+    parser.add_argument(
         "--num-threads", type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
         help="Number of (benchmark, name) groups to run in parallel "
              "(default: half of host CPU count). Within a group, the shared "
              "calibration plus each variant's final phase run sequentially.",
     )
-    args = ap.parse_args()
+    args = parser.parse_args()
 
     cfg = StudyConfig()
 
-    # Fail fast with a clear message rather than deferring to a sub-make error.
-    flow_home = Path(cfg.flow_home)
-    if not (flow_home / "Makefile").is_file():
-        sys.stderr.write(
-            f"error: ORFS flow Makefile not found at {flow_home / 'Makefile'}\n"
-            f"       point StudyConfig.flow_home at your "
-            f"OpenROAD-flow-scripts/flow checkout.\n"
-        )
-        return 1
+    if not (ORFS_HOME / "Makefile").is_file():
+        raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    sdc_template_src = HERE / "templates" / "constraint.sdc.template"
-    makefile_template_src = HERE / "templates" / "Makefile.template"
-
-    all_designs = CorpusLoader(CORPUS).designs() | RTLLMLoader(RTLLM).designs()
+    all_designs = CorpusLoader().designs() | RTLLMLoader().designs()
     designs = filter_designs(
         all_designs, args.benchmark, args.name, args.variant,
     )
     if not designs:
-        sys.stderr.write(
-            "error: no designs matched filters "
-            f"benchmark={args.benchmark} name={args.name} variant={args.variant}\n"
-        )
-        return 1
+        raise ValueError("No designs matched specified filters")
 
     # Group filtered designs and check for valid references
     references: dict[tuple[str, str], DesignConfig] = {}
@@ -427,8 +401,7 @@ def main() -> int:
     with ThreadPoolExecutor(max_workers=num_threads) as executor:
         futures = {
             executor.submit(
-                run_group, references[key], variants, batch_dir,
-                sdc_template_src, makefile_template_src, cfg,
+                run_group, references[key], variants, batch_dir, cfg,
             ): key
             for key, variants in groups.items()
         }

@@ -4,12 +4,19 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+# Config variables
+HERE = Path(__file__).resolve().parent
+REPO_ROOT = HERE.parent
+EDA_RUNS = REPO_ROOT / "eda_runs"
+CORPUS = REPO_ROOT / "corpus"
+RTLLM = REPO_ROOT / "external" / "RTLLM"
+ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
+
 
 @dataclass(frozen=True)
 class StudyConfig:
     """Knobs for the ORFS flow."""
 
-    flow_home: str = "/OpenROAD-flow-scripts/flow"  # ORFS flow dir
     platform: str = "nangate45"            # ORFS PDK
     calibration_period_ns: float = 10.0    # loose period for the calibration phase
     calibration_side_um: float = 1000.0    # large square die for the calibration phase
