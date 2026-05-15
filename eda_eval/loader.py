@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pyslang
 
-from config import RTL_OPT, RTLLM, DesignConfig
+from config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -83,6 +83,28 @@ class RTLLMLoader(DesignLoader):
         return {self.benchmark: names}
 
 
+class AESLoader(DesignLoader):
+    """Get the secworks/aes core. Single design, single variant."""
+
+    benchmark = "secworks"
+
+    def __init__(self, aes_root: Path = AES):
+        self.aes_root = aes_root
+
+    def designs(self) -> DesignTree:
+        rtl_files = sorted((self.aes_root / "src" / "rtl").glob("*.v"))
+        if not rtl_files:
+            return {self.benchmark: {}}
+        design = DesignConfig(
+            benchmark=self.benchmark,
+            name="aes",
+            variant="reference",
+            rtl_files=tuple(rtl_files),
+            top_module=detect_top_module(rtl_files),
+        )
+        return {self.benchmark: {"aes": {"reference": design}}}
+
+
 class RTLOPTLoader(DesignLoader):
     """Get designs from the RTL-OPT benchmark."""
 
@@ -137,4 +159,45 @@ class RTLOPTLoader(DesignLoader):
                     top_module=detect_top_module(llm_files),
                 )
             names[name] = variants
+        return {self.benchmark: names}
+
+
+class CorpusLoader(DesignLoader):
+    """Get designs from the in-repo `corpus/` tree.
+
+    Layout: `corpus/<subdir>/<name>/*.v`, where each subdir maps to one
+    variant (`default` → `reference`, `opt` → `claude`)."""
+
+    benchmark = "corpus"
+
+    # Mapping of on-disk subdir to variant name
+    VARIANT_DIRS = (
+        ("default", "reference"),
+        ("opt", "claude"),
+    )
+
+    def __init__(self, corpus_root: Path = CORPUS):
+        self.corpus_root = corpus_root
+
+    @staticmethod
+    def _rtl_in(d: Path) -> list[Path]:
+        return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
+
+    def designs(self) -> DesignTree:
+        names: dict[str, dict[str, DesignConfig]] = {}
+        for subdir, variant in self.VARIANT_DIRS:
+            for design_dir in sorted((self.corpus_root / subdir).glob("*")):
+                if not design_dir.is_dir():
+                    continue
+                rtl_files = self._rtl_in(design_dir)
+                if not rtl_files:
+                    continue
+                name = design_dir.name
+                names.setdefault(name, {})[variant] = DesignConfig(
+                    benchmark=self.benchmark,
+                    name=name,
+                    variant=variant,
+                    rtl_files=tuple(rtl_files),
+                    top_module=detect_top_module(rtl_files),
+                )
         return {self.benchmark: names}

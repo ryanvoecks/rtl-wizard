@@ -1,7 +1,8 @@
 """Study configuration for the ORFS evaluation flow."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # Config variables
@@ -10,6 +11,8 @@ REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
+AES = REPO_ROOT / "aes"
+CORPUS = REPO_ROOT / "corpus"
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
 
 
@@ -59,3 +62,13 @@ class RunJob:
 
     run: RunConfig
     error: str | None = None
+
+
+RUN_CONFIG_FILENAME = "run_config.json"
+
+
+def dump_run_config(run: RunConfig, path: Path) -> None:
+    """Serialise a RunConfig (and its nested DesignConfig + StudyConfig) to
+    JSON. The artifact alone is enough to reproduce the run: every knob and
+    derived parameter is captured. Paths are serialised as plain strings."""
+    path.write_text(json.dumps(asdict(run), default=str, indent=2))

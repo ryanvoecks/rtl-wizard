@@ -30,13 +30,15 @@ from config import (
     EDA_RUNS,
     HERE,
     ORFS_HOME,
+    RUN_CONFIG_FILENAME,
     DesignConfig,
     RunConfig,
     RunJob,
     StudyConfig,
+    dump_run_config,
 )
 from extract_metrics import extract
-from loader import DesignTree, RTLLMLoader, RTLOPTLoader
+from loader import AESLoader, CorpusLoader, DesignTree, RTLLMLoader, RTLOPTLoader
 
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
@@ -131,6 +133,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
 def run_job(run: RunConfig) -> int:
     """Invoke the rendered per-design Makefile."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
+    dump_run_config(run, run.output_dir / RUN_CONFIG_FILENAME)
     makefile = snapshot_inputs(run)
     log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
@@ -215,7 +218,12 @@ def main() -> int:
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    all_designs = RTLLMLoader().designs() | RTLOPTLoader().designs()
+    all_designs = (
+        RTLLMLoader().designs()
+        | RTLOPTLoader().designs()
+        | AESLoader().designs()
+        | CorpusLoader().designs()
+    )
     designs = filter_designs(
         all_designs, args.benchmark, args.name, args.variant,
     )

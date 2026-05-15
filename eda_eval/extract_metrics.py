@@ -40,7 +40,7 @@ _CHIP_AREA_RE = re.compile(
 )
 
 COLUMNS = [
-    "batch", "design", "target_period_ps",
+    "batch", "design", "variant", "target_period_ps",
     "synth_area_um2", "synth_cell_count", "synth_ff_count",
     "synth_wns_ns", "synth_tns_ns",
     "route_area_um2", "route_cell_count",
@@ -135,17 +135,20 @@ def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
 
 
 def resolve_design_name(phase_dir: Path) -> str:
-    """Stem of the single `*.v` under `<phase_dir>/inputs/rtl/`. Mirrors
-    run.py's `resolve_design` rule so the same folder convention drives
-    DESIGN_NAME on both sides."""
-    rtl_dir = phase_dir / "inputs" / "rtl"
-    candidates = sorted(rtl_dir.glob("*.v"))
-    if not candidates:
-        raise ValueError(f"no *.v file under {rtl_dir}")
-    if len(candidates) > 1:
-        names = ", ".join(p.name for p in candidates)
-        raise ValueError(f"multiple *.v files under {rtl_dir}: {names}")
-    return candidates[0].stem
+    """Read `DESIGN_NAME` (= top_module) out of the phase's rendered
+    `inputs/Makefile`. That's what run.py wrote and what ORFS used for its
+    `reports/<platform>/<DESIGN_NAME>/...` and `logs/...` hierarchy, so it
+    matches the glob patterns in `extract()` regardless of how many RTL
+    files the design has."""
+    makefile = phase_dir / "inputs" / "Makefile"
+    m = re.search(
+        r"^\s*export\s+DESIGN_NAME\s*=\s*(\S+)\s*$",
+        makefile.read_text(),
+        re.MULTILINE,
+    )
+    if not m:
+        raise ValueError(f"no `DESIGN_NAME` line in {makefile}")
+    return m.group(1)
 
 
 def extract(phase_dir: Path, design: str) -> dict:
@@ -253,6 +256,7 @@ def main(argv: list[str] | None = None) -> int:
         rows.append({
             "batch": batch_dir.name,
             "design": design,
+            "variant": phase_dir.name,
             "target_period_ps": period_ps,
             **metrics,
         })
