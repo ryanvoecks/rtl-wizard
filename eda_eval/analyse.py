@@ -27,69 +27,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-from config import ORFS_HOME, RUN_CONFIG_FILENAME
+from config import HERE, ORFS_HOME, RUN_CONFIG_FILENAME
 from extract_metrics import find_unique
 
-
-VERILOG_KEYWORDS = {
-    "always", "and", "assign", "begin", "buf", "bufif0", "bufif1", "case",
-    "casex", "casez", "cmos", "deassign", "default", "defparam", "disable",
-    "edge", "else", "end", "endcase", "endfunction", "endgenerate",
-    "endmodule", "endprimitive", "endspecify", "endtable", "endtask", "event",
-    "for", "force", "forever", "fork", "function", "generate", "genvar",
-    "highz0", "highz1", "if", "ifnone", "initial", "inout", "input",
-    "integer", "join", "large", "localparam", "macromodule", "medium",
-    "module", "nand", "negedge", "nmos", "nor", "not", "notif0", "notif1",
-    "or", "output", "parameter", "pmos", "posedge", "primitive", "pull0",
-    "pull1", "pulldown", "pullup", "rcmos", "real", "realtime", "reg",
-    "release", "repeat", "rnmos", "rpmos", "rtran", "rtranif0", "rtranif1",
-    "scalared", "signed", "small", "specify", "specparam", "strong0",
-    "strong1", "supply0", "supply1", "table", "task", "time", "tran",
-    "tranif0", "tranif1", "tri", "tri0", "tri1", "triand", "trior", "trireg",
-    "unsigned", "vectored", "wait", "wand", "weak0", "weak1", "while",
-    "wire", "wor", "xnor", "xor",
-}
-
-
-# Embedded OpenSTA Tcl. `find_timing_paths` returns opaque PathEnd handles;
-# we project each to a tab-separated `slack<TAB>start<TAB>end<TAB>cells` row.
-# `-endpoint_path_count 1 -unique_paths_to_endpoint` caps the pool at one
-# path per endpoint so a wide fanout doesn't drown out the rest of the
-# design. The pool size and output path are wired in via env vars so the
-# Python side controls them without textual templating.
-_EXTRACT_TCL = r"""
-if {![info exists env(ANALYSE_OUT_TSV)]} {
-    error "ANALYSE_OUT_TSV env var not set"
-}
-set out_path $env(ANALYSE_OUT_TSV)
-set pool 1000
-if {[info exists env(ANALYSE_POOL)]} {
-    set pool $env(ANALYSE_POOL)
-}
-set paths [find_timing_paths -path_delay max \
-                             -group_path_count $pool \
-                             -endpoint_path_count 1 \
-                             -unique_paths_to_endpoint]
-set fh [open $out_path w]
-puts $fh "# slack_ns\tstartpoint\tendpoint\tcells"
-foreach p $paths {
-    set slack [sta::get_property $p slack]
-    set sp [sta::get_property [sta::get_property $p startpoint] full_name]
-    set ep [sta::get_property [sta::get_property $p endpoint]   full_name]
-    set cells [list]
-    foreach pt [sta::get_property $p points] {
-        set pin [sta::get_property $pt pin]
-        set fn  [sta::get_property $pin full_name]
-        set slash [string last "/" $fn]
-        if {$slash < 0} { continue }
-        lappend cells [string range $fn 0 [expr {$slash - 1}]]
-    }
-    set cells [lsort -unique $cells]
-    puts $fh "[format %.6f $slack]\t$sp\t$ep\t[join $cells |]"
-}
-close $fh
-puts "ANALYSE: wrote [llength $paths] paths to $out_path"
-"""
+EXTRACT_TCL = HERE / "tcl" / "extract_critical_paths.tcl"
 
 
 def load_run_config(phase_dir: Path) -> dict:
@@ -131,7 +72,7 @@ def run_openroad_extract(
     lines.append(f"read_sdc {sdc}")
     if spef is not None:
         lines.append(f"read_spef {spef}")
-    lines.append(_EXTRACT_TCL)
+    lines.append(f"source {EXTRACT_TCL}")
     script = "\n".join(lines)
 
     env = {**os.environ,
@@ -153,66 +94,82 @@ def run_openroad_extract(
         raise RuntimeError(f"openroad did not write {tsv_out}")
 
 
-# RTL parsing & hierarchical lookup --------------------------------------------
+# Hierarchy via yosys ----------------------------------------------------------
 
-_MOD_START_RE = re.compile(r"^\s*module\s+(\w+)\b")
-_END_RE = re.compile(r"^\s*endmodule\b")
-_INST_RE = re.compile(
-    r"^\s*([a-zA-Z_]\w*)"           # 1: module type
-    r"(?:\s*#\s*\([^)]*\))?"         # optional #(params)
-    r"\s+([a-zA-Z_]\w*)"            # 2: instance name
-    r"\s*\("                         # opening port-connection paren
-)
 _INDEX_RE = re.compile(r"\[\d+\]")
 
 
-def strip_comments(text: str) -> str:
-    text = re.sub(r"/\*.*?\*/", "", text, flags=re.S)
-    text = re.sub(r"//[^\n]*", "", text)
-    return text
+def dump_hierarchy(
+    rtl_files: list[Path], top_module: str, json_out: Path,
+) -> None:
+    """Have yosys read the RTL, elaborate the hierarchy, and dump it as JSON.
 
-
-def parse_rtl(rtl_files: list[Path]) -> dict[str, dict]:
-    """Return module_name -> {file, start_line, end_line, line_count,
-    instances: {inst_name: child_module_name}}.
-
-    Two passes: first locate module spans (so we know the universe of valid
-    module names), then re-scan each body to find child instantiations whose
-    type resolves to a known module.
+    `proc` is the minimum yosys needs before `write_json` accepts the design
+    (it lowers always-blocks to structured logic). We deliberately do NOT
+    run `flatten` or `synth` -- we want the original module structure with
+    one cells entry per submodule instantiation.
     """
-    modules: dict[str, dict] = {}
-    for f in rtl_files:
-        clean = strip_comments(f.read_text()).splitlines()
-        current = None
-        for i, line in enumerate(clean, 1):
-            if current is None:
-                m = _MOD_START_RE.match(line)
-                if m:
-                    current = {"name": m.group(1), "start": i, "instances": {}}
-            else:
-                if _END_RE.match(line):
-                    modules[current["name"]] = {
-                        "file": f,
-                        "start_line": current["start"],
-                        "end_line": i,
-                        "line_count": i - current["start"] + 1,
-                        "instances": current["instances"],
-                    }
-                    current = None
+    rtl_args = " ".join(str(f) for f in rtl_files)
+    script = (
+        f"read_verilog -sv {rtl_args}\n"
+        f"hierarchy -top {top_module}\n"
+        "proc\n"
+        f"write_json {json_out}\n"
+    )
+    proc = subprocess.run(
+        ["yosys", "-q", "-p", script],
+        text=True, capture_output=True,
+    )
+    if proc.returncode != 0 or not json_out.is_file():
+        sys.stderr.write(proc.stdout)
+        sys.stderr.write(proc.stderr)
+        raise RuntimeError(
+            f"yosys hierarchy dump failed (rc={proc.returncode})."
+        )
 
-    valid_types = set(modules.keys())
-    for info in modules.values():
-        clean = strip_comments(info["file"].read_text()).splitlines()
-        body = clean[info["start_line"] - 1 : info["end_line"]]
-        for line in body:
-            m = _INST_RE.match(line)
-            if not m:
-                continue
-            mod_type, inst_name = m.group(1), m.group(2)
-            if mod_type not in valid_types or inst_name in VERILOG_KEYWORDS:
-                continue
-            info["instances"][inst_name] = mod_type
-    return modules
+
+def _module_loc(src_attr: str | None) -> int:
+    """Yosys emits `attributes.src` like `"path/to/file.v:41.1-269.10"`,
+    occasionally `"...|..."` for spans across multiple ranges. Take the
+    first range and count inclusive lines. Missing/unparseable -> 0."""
+    if not src_attr:
+        return 0
+    first = src_attr.split("|", 1)[0]
+    try:
+        _, span = first.rsplit(":", 1)
+        start_s, end_s = span.split("-")
+        start = int(start_s.split(".")[0])
+        end = int(end_s.split(".")[0])
+        return max(0, end - start + 1)
+    except (ValueError, IndexError):
+        return 0
+
+
+def load_hierarchy(json_path: Path) -> dict[str, dict]:
+    """Reshape yosys's write_json output into:
+        module_name -> {line_count: int,
+                        instances: {inst_name: child_module_name}}
+
+    Only cells whose `type` is itself a module get recorded as instances --
+    leaf primitives (`$_DFFE_`, gate cells, etc.) are skipped because the
+    walk in `cell_modules` only cares about module-to-module hops.
+    """
+    raw = json.loads(json_path.read_text())
+    modules_raw = raw.get("modules", {})
+    valid = set(modules_raw.keys())
+    hierarchy: dict[str, dict] = {}
+    for name, info in modules_raw.items():
+        instances: dict[str, str] = {}
+        for inst, cell in info.get("cells", {}).items():
+            t = cell.get("type")
+            if t in valid:
+                instances[inst] = t
+        src = info.get("attributes", {}).get("src")
+        hierarchy[name] = {
+            "line_count": _module_loc(src),
+            "instances": instances,
+        }
+    return hierarchy
 
 
 def _clean_instance(name: str) -> str:
@@ -386,10 +343,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    hierarchy = parse_rtl(rtl_files)
+    hier_json = reports_dir / "hierarchy.json"
+    dump_hierarchy(rtl_files, top_module, hier_json)
+    hierarchy = load_hierarchy(hier_json)
     if top_module not in hierarchy:
         ap.error(
-            f"top module {top_module!r} not found among parsed RTL modules: "
+            f"top module {top_module!r} not found in yosys-dumped hierarchy: "
             f"{sorted(hierarchy)}"
         )
 
