@@ -24,11 +24,11 @@ class StudyConfig:
     calibration_period_ns: float = 10.0    # loose period for the calibration phase
     calibration_side_um: float = 1000.0    # large square die for the calibration phase
     target_multiplier: float = 1.1         # safety factor on calibration-derived period
-    target_utilization: float = 0.4        # core utilization target for the final phase
+    target_utilization: float = 0.6        # core utilization target for the final phase
     area_multiplier: float = 1.1           # safety factor on calibration cell area
     minimum_side_um: float = 50.0          # floor on final floorplan side
     core_margin_um: float = 2.0            # die-to-core boundary on each edge
-    place_density: float = 0.3             # global placement target density
+    place_density: float = 0.75            # global placement target density
     io_delay_ns: float = 0.2               # fixed IO delay at each boundary
 
 

@@ -184,7 +184,7 @@ def run_jobs(
     return rcs
 
 
-def main() -> int:
+def main():
     parser = argparse.ArgumentParser(
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,

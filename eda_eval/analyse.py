@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 """Analyse a single ORFS variant phase dir for optimisation opportunities.
 
-Queries the post-route OpenROAD database for the worst-slack setup paths,
-groups them by logical register-to-register relationship using the original
-RTL hierarchy, and writes ranked reports next to the EDA tool's own output.
+Queries the post-route OpenROAD database for the worst-slack setup paths
+**and** the worst routing-congestion tiles, groups each by logical RTL
+relationship using the original module hierarchy, and writes ranked
+reports next to the EDA tool's own output.
 
 Reports land in `<phase_dir>/reports/<platform>/<design>/<variant>/`:
-    critical_paths.rpt        -- top M worst-slack individual paths
-    critical_paths_raw.tsv    -- the full sampled pool, with per-path cell
-                                 chain detail (auditable + reusable)
-    logical_paths.rpt         -- top N logical register-to-register groups,
-                                 with worst/best slack, path count, the union
-                                 of containing modules, and their total LOC
+    critical_paths.rpt          -- top M worst-slack individual paths
+    critical_paths_raw.tsv      -- the full sampled timing pool, with
+                                   per-path cell chain detail
+    logical_paths.rpt           -- top N logical register-to-register
+                                   groups, with worst/best slack, path
+                                   count, the union of containing
+                                   modules, and their total LOC
+    congestion_hotspots.rpt     -- top M overflowing GR tiles by overflow
+                                   magnitude (empty stub if the design
+                                   routed clean)
+    congestion_hotspots_raw.tsv -- every overflow tile, enriched with the
+                                   instances + IO pins driving the
+                                   contributing nets
+    logical_congestion.rpt      -- top N RTL-module groups by aggregate
+                                   overflow exposure
 
 Usage:
     uv run eda_eval/analyse.py eda_runs/<batch>/<benchmark>/<name>/<variant>/
@@ -25,12 +35,24 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 
 from config import HERE, ORFS_HOME, RUN_CONFIG_FILENAME
 from extract_metrics import find_unique
 
 EXTRACT_TCL = HERE / "tcl" / "extract_critical_paths.tcl"
+EXTRACT_CONGEST_TCL = HERE / "tcl" / "extract_congestion.tcl"
+
+# ORFS emits up to four congestion reports across the GR pass; the later
+# the stage, the closer to the final routed state. Pick the latest that
+# exists (per-iteration `-N.rpt` snapshots are intentionally ignored).
+_CONGESTION_RPT_PRIORITY = (
+    "congestion_post_recover_power.rpt",
+    "congestion_post_repair_timing.rpt",
+    "congestion_post_repair_design.rpt",
+    "congestion.rpt",
+)
 
 
 def load_run_config(phase_dir: Path) -> dict:
@@ -65,19 +87,28 @@ def liberty_files(platform: str) -> list[Path]:
 def run_openroad_extract(
     odb: Path, sdc: Path, spef: Path | None, libs: list[Path],
     pool: int, tsv_out: Path,
+    congest_rpt: Path | None, congest_tsv_out: Path,
 ) -> None:
-    """Pipe an STA driver script into openroad to populate `tsv_out`."""
+    """Pipe an STA + congestion driver script into openroad. One openroad
+    invocation produces both `tsv_out` (timing pool) and
+    `congest_tsv_out` (enriched congestion). When `congest_rpt` is
+    None the congestion tcl short-circuits and `congest_tsv_out` is
+    written with just its header (the clean-design case)."""
     lines = [f"read_liberty {lib}" for lib in libs]
     lines.append(f"read_db {odb}")
     lines.append(f"read_sdc {sdc}")
     if spef is not None:
         lines.append(f"read_spef {spef}")
     lines.append(f"source {EXTRACT_TCL}")
+    lines.append(f"source {EXTRACT_CONGEST_TCL}")
     script = "\n".join(lines)
 
     env = {**os.environ,
            "ANALYSE_OUT_TSV": str(tsv_out),
-           "ANALYSE_POOL": str(pool)}
+           "ANALYSE_POOL": str(pool),
+           "ANALYSE_CONGEST_TSV": str(congest_tsv_out)}
+    if congest_rpt is not None:
+        env["ANALYSE_CONGEST_RPT"] = str(congest_rpt)
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
         input=script, env=env, text=True,
@@ -87,11 +118,25 @@ def run_openroad_extract(
         sys.stderr.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         raise RuntimeError(
-            f"openroad path extraction failed (rc={proc.returncode}). "
+            f"openroad extraction failed (rc={proc.returncode}). "
             f"See output above."
         )
     if not tsv_out.is_file():
         raise RuntimeError(f"openroad did not write {tsv_out}")
+    if not congest_tsv_out.is_file():
+        raise RuntimeError(f"openroad did not write {congest_tsv_out}")
+
+
+def locate_congestion_rpt(reports_dir: Path) -> Path | None:
+    """Return the most-final GR-emitted congestion rpt that exists, or
+    None. ORFS writes these only when overflowing tiles exist (see
+    `flow/scripts/global_route.tcl`), so a missing file is the
+    clean-design case."""
+    for name in _CONGESTION_RPT_PRIORITY:
+        candidate = reports_dir / name
+        if candidate.is_file():
+            return candidate
+    return None
 
 
 # Hierarchy via yosys ----------------------------------------------------------
@@ -279,6 +324,133 @@ def write_logical_paths(
     return written
 
 
+# Congestion ------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class CongestionTile:
+    """One overflowing GR tile, post-enrichment by extract_congestion.tcl."""
+    direction: str            # "H" / "V" (or "?" if GR labelled unusually)
+    overflow: int             # usage - capacity, positive
+    capacity: int
+    usage: int
+    layer: str                # GR commonly writes "-" for per-direction aggregate
+    bbox_um: tuple[float, float, float, float]   # xL, yL, xH, yH
+    nets: tuple[str, ...]     # contributing nets per GR's `srcs:`
+    insts: tuple[str, ...]    # instance names connected to those nets
+    io_pins: tuple[str, ...]  # "IO:<bterm_name>" markers
+
+
+def read_congestion_tsv(tsv: Path) -> list[CongestionTile]:
+    """Parse the enriched congestion TSV. Ranked by overflow descending so
+    the first row is the worst tile."""
+    tiles: list[CongestionTile] = []
+    for line in tsv.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split("\t")
+        if len(parts) != 12:
+            continue
+        d, ovfl, cap, use, lyr, xL, yL, xH, yH, nets_s, insts_s, io_s = parts
+        tiles.append(CongestionTile(
+            direction=d,
+            overflow=int(ovfl),
+            capacity=int(cap),
+            usage=int(use),
+            layer=lyr,
+            bbox_um=(float(xL), float(yL), float(xH), float(yH)),
+            nets=tuple(nets_s.split("|")) if nets_s else (),
+            insts=tuple(insts_s.split("|")) if insts_s else (),
+            io_pins=tuple(io_s.split("|")) if io_s else (),
+        ))
+    tiles.sort(key=lambda t: (-t.overflow, -t.usage))
+    return tiles
+
+
+def write_congestion_hotspots(
+    tiles: list[CongestionTile], out_path: Path, top_m: int,
+) -> int:
+    with out_path.open("w") as fh:
+        fh.write(f"# total_overflow_tiles\t{len(tiles)}\n")
+        fh.write(
+            "# rank\toverflow\tcapacity\tusage\tdir\tlayer"
+            "\txL\tyL\txH\tyH\tnet_count\tinst_count\ttop_net\n"
+        )
+        if not tiles:
+            fh.write("# no overflowing tiles\n")
+            return 0
+        written = 0
+        for rank, t in enumerate(tiles[:top_m], 1):
+            xL, yL, xH, yH = t.bbox_um
+            top_net = t.nets[0] if t.nets else "-"
+            fh.write(
+                f"{rank}\t{t.overflow}\t{t.capacity}\t{t.usage}"
+                f"\t{t.direction}\t{t.layer}"
+                f"\t{xL:.4f}\t{yL:.4f}\t{xH:.4f}\t{yH:.4f}"
+                f"\t{len(t.nets)}\t{len(t.insts)}\t{top_net}\n"
+            )
+            written += 1
+    return written
+
+
+def write_logical_congestion(
+    tiles: list[CongestionTile], out_path: Path, top_n: int,
+    top_module: str, hierarchy: dict[str, dict],
+) -> int:
+    """Group overflow tiles by the frozenset of RTL modules their
+    contributing instances touch (via `cell_modules`). IO-pin contributions
+    are recorded separately as an `io_driven` flag so primary-port-fed
+    congestion is visible without diluting the module-set key."""
+    groups: dict[frozenset[str], dict] = {}
+    for t in tiles:
+        mods: set[str] = set()
+        for inst in t.insts:
+            mods |= cell_modules(inst, top_module, hierarchy)
+        key = frozenset(mods)
+        g = groups.get(key)
+        if g is None:
+            g = {
+                "tile_count": 0, "max_overflow": t.overflow,
+                "sum_overflow": 0, "insts": set(), "io_driven": False,
+            }
+            groups[key] = g
+        g["tile_count"] += 1
+        g["max_overflow"] = max(g["max_overflow"], t.overflow)
+        g["sum_overflow"] += t.overflow
+        g["insts"] |= set(t.insts)
+        if t.io_pins:
+            g["io_driven"] = True
+
+    ranked = sorted(
+        groups.items(),
+        key=lambda kv: (-kv[1]["sum_overflow"], -kv[1]["tile_count"]),
+    )
+
+    with out_path.open("w") as fh:
+        fh.write(f"# overflow_tiles\t{len(tiles)}\n")
+        fh.write(f"# top_module\t{top_module}\n")
+        fh.write(
+            "# rank\tsum_overflow\tmax_overflow\ttile_count\tunique_insts"
+            "\tio_driven\ttotal_loc\tmodules\n"
+        )
+        if not tiles:
+            fh.write("# no overflowing tiles\n")
+            return 0
+        written = 0
+        for rank, (mods_key, g) in enumerate(ranked[:top_n], 1):
+            mods = sorted(mods_key)
+            total_loc = sum(
+                hierarchy.get(m, {}).get("line_count", 0) for m in mods
+            )
+            mods_str = ",".join(mods) if mods else "(no instances)"
+            fh.write(
+                f"{rank}\t{g['sum_overflow']}\t{g['max_overflow']}"
+                f"\t{g['tile_count']}\t{len(g['insts'])}"
+                f"\t{int(g['io_driven'])}\t{total_loc}\t{mods_str}\n"
+            )
+            written += 1
+    return written
+
+
 # Entry point ------------------------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
@@ -296,6 +468,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--pool", type=int, default=1000, metavar="P",
                     help="Path pool size for find_timing_paths (default 1000). "
                          "Larger pools give better logical-group statistics.")
+    ap.add_argument("--top-tiles", type=int, default=50, metavar="M",
+                    help="How many worst-overflow congestion tiles to "
+                         "report (default 50).")
+    ap.add_argument("--top-modules-congest", type=int, default=50, metavar="N",
+                    help="How many RTL-module groups to report in the "
+                         "logical congestion rollup (default 50).")
     args = ap.parse_args(argv)
 
     phase_dir = args.phase_dir.resolve()
@@ -318,6 +496,8 @@ def main(argv: list[str] | None = None) -> int:
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
     raw_tsv = reports_dir / "critical_paths_raw.tsv"
+    congest_raw_tsv = reports_dir / "congestion_hotspots_raw.tsv"
+    congest_rpt = locate_congestion_rpt(reports_dir)
 
     print(f"==> Phase dir:   {phase_dir}")
     print(f"==> Platform:    {platform}")
@@ -325,15 +505,22 @@ def main(argv: list[str] | None = None) -> int:
     print(f"==> Routed DB:   {odb}")
     print(f"==> SDC:         {sdc}")
     print(f"==> SPEF:        {spef if spef else '(absent; STA estimates parasitics)'}")
+    print(f"==> GR congest:  {congest_rpt if congest_rpt else '(absent; design routed clean)'}")
     print(f"==> Reports:     {reports_dir}")
     print(f"==> Pool / paths / logical: {args.pool} / {args.top_paths} / {args.top_logical}")
+    print(f"==> Tiles / module groups:  {args.top_tiles} / {args.top_modules_congest}")
 
-    # Stage the OpenSTA output to a sibling of the final report so the
+    # Stage both tsv outputs to siblings of the final reports so the
     # atomic rename stays on one filesystem (workspace and /tmp can be
     # separate mounts in the devcontainer).
     staging = raw_tsv.with_suffix(".tsv.partial")
-    run_openroad_extract(odb, sdc, spef, libs, args.pool, staging)
+    congest_staging = congest_raw_tsv.with_suffix(".tsv.partial")
+    run_openroad_extract(
+        odb, sdc, spef, libs, args.pool, staging,
+        congest_rpt, congest_staging,
+    )
     staging.replace(raw_tsv)
+    congest_staging.replace(congest_raw_tsv)
 
     records = read_pool_tsv(raw_tsv)
     if not records:
@@ -361,9 +548,20 @@ def main(argv: list[str] | None = None) -> int:
         top_module, hierarchy, pool_size=len(records),
     )
 
+    tiles = read_congestion_tsv(congest_raw_tsv)
+    congest_path = reports_dir / "congestion_hotspots.rpt"
+    n_tiles = write_congestion_hotspots(tiles, congest_path, args.top_tiles)
+    logical_congest = reports_dir / "logical_congestion.rpt"
+    n_lcong = write_logical_congestion(
+        tiles, logical_congest, args.top_modules_congest, top_module, hierarchy,
+    )
+
     print(f"==> Wrote {n_crit} worst paths to {crit_path}")
     print(f"==> Wrote {n_log} logical groups to {logical_path}")
-    print(f"==> Raw pool ({len(records)} paths): {raw_tsv}")
+    print(f"==> Raw timing pool ({len(records)} paths): {raw_tsv}")
+    print(f"==> Wrote {n_tiles} congestion tiles to {congest_path}")
+    print(f"==> Wrote {n_lcong} logical congestion groups to {logical_congest}")
+    print(f"==> Overflow tiles total: {len(tiles)}")
     return 0
 
 
