@@ -479,8 +479,6 @@ def main(argv: list[str] | None = None) -> int:
     phase_dir = args.phase_dir.resolve()
     if not phase_dir.is_dir():
         ap.error(f"not a directory: {phase_dir}")
-    if phase_dir.name == "__calibration__":
-        ap.error(f"refusing to analyse calibration phase dir: {phase_dir}")
 
     run_cfg = load_run_config(phase_dir)
     top_module = run_cfg["design"]["top_module"]
