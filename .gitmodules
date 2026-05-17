@@ -6,3 +6,7 @@
 	path = external/RTL-OPT
 	url = git@github.com:ryanvoecks/rtl-opt-mirror.git
 	ignore = all
+[submodule "external/aes"]
+	path = external/aes
+	url = git@github.com:secworks/aes.git
+	ignore = all

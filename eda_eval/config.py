@@ -11,7 +11,7 @@ REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
-AES = REPO_ROOT / "aes"
+AES = REPO_ROOT / "external" / "aes"
 CORPUS = REPO_ROOT / "corpus"
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
 
