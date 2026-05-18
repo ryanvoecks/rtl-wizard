@@ -1,12 +1,11 @@
 """Smoke test: drive the OAUTH-token Claude Code agent against a broken hello.py.
 
 Run with:
-    uv run python -m new_benchmark eval new_benchmark/tasks.py [extra inspect args]
+    uv run inspect eval new_benchmark/tasks.py --model none/claude-sonnet-4-5
 
-(Use `python -m new_benchmark`, not `inspect eval` directly — the package's
-`__main__` sets `INSPECT_LOG_DIR` to the per-run output dir before Click parses
-args, so the `.eval` lands under `outputs/<RUN_TIMESTAMP>/`. Any explicit
-`--log-dir` you pass still wins.)
+The `.eval` log lands under `outputs/<RUN_TIMESTAMP>/` alongside per-sample
+artifacts (diff.patch, etc.) — see `new_benchmark/outputs.py` for the
+recorder redirect that makes this work without --log-dir.
 
 Prerequisite (one-time on the host):
     claude setup-token

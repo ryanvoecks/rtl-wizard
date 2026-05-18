@@ -421,10 +421,10 @@ def main() -> None:
     parser.add_argument("--eps", type=float, default=0.02,
                         help="Phase A convergence threshold on period delta (ns).")
     parser.add_argument("--max-modules", type=int, default=6)
-    parser.add_argument("--max-start-stems", type=int, default=3)
+    parser.add_argument("--max-start-stems", type=int, default=5)
     parser.add_argument("--max-loc", type=int, default=2000)
     parser.add_argument("--min-improvement", type=float, default=0.10)
-    parser.add_argument("--pool", type=int, default=200,
+    parser.add_argument("--pool", type=int, default=10000,
                         help="OpenSTA path pool size for fix-scope measurement.")
     args = parser.parse_args()
 
