@@ -1,11 +1,10 @@
 """Scorer for the broken-Hello-World smoke test.
 
-Also responsible for persisting per-sample artifacts to
-`outputs/<RUN_TIMESTAMP>/<sample_id>/`:
-
-  - `transcript.jsonl` — full stream-json transcript from `claude -p`
-    (one JSON event per line: system / assistant / tool / result).
-  - `diff.patch` — unified diff per sample file, original → final.
+The full agent transcript (messages, tool calls, tool results, usage) is now
+captured in `state.messages` / `state.output` by the solver and lands directly
+in the run's `.eval` log under `outputs/<RUN_TIMESTAMP>/`. The only per-sample
+side artifact persisted here is a `diff.patch` — convenient for humans/scripts
+that just want to see what files the agent changed without parsing the log.
 
 Persistence happens *before* the correctness check so a failed run is still
 debuggable from disk. The check itself runs the agent's `hello.py` inside the
@@ -24,7 +23,7 @@ from inspect_ai.scorer import (
     stderr,
 )
 from inspect_ai.solver import TaskState
-from inspect_ai.util import sandbox, store
+from inspect_ai.util import sandbox
 
 from new_benchmark.outputs import sample_output_dir
 
@@ -54,10 +53,6 @@ def _file_diff(filename: str, original: str, final: str) -> str:
 
 async def _save_artifacts(state: TaskState) -> None:
     out_dir = sample_output_dir(str(state.sample_id))
-
-    transcript = store().get("cc_transcript_jsonl") or ""
-    (out_dir / "transcript.jsonl").write_text(transcript)
-
     original_files = state.metadata.get("original_files", {})
     diff_parts: list[str] = []
     for fname, original in original_files.items():

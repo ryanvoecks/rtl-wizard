@@ -1,7 +1,12 @@
 """Smoke test: drive the OAUTH-token Claude Code agent against a broken hello.py.
 
 Run with:
-    uv run inspect eval new_benchmark/tasks.py
+    uv run python -m new_benchmark eval new_benchmark/tasks.py [extra inspect args]
+
+(Use `python -m new_benchmark`, not `inspect eval` directly — the package's
+`__main__` sets `INSPECT_LOG_DIR` to the per-run output dir before Click parses
+args, so the `.eval` lands under `outputs/<RUN_TIMESTAMP>/`. Any explicit
+`--log-dir` you pass still wins.)
 
 Prerequisite (one-time on the host):
     claude setup-token
@@ -52,7 +57,7 @@ def _build_dataset() -> list[Sample]:
 
 
 @task
-def fix_broken_hello(message_limit: int = 10) -> Task:
+def fix_broken_hello(message_limit: int = 200) -> Task:
     return Task(
         dataset=_build_dataset(),
         solver=claude_code_solver(),

@@ -1,31 +1,30 @@
 """Custom Claude Code agent driven by an OAUTH token, not an API key.
 
-The agent shells out to `claude -p` inside the sandbox with
-`--output-format stream-json --verbose` so we capture the full per-event
-transcript (init / assistant turns / tool uses / tool results / final result),
-not just the summary returned by `--output-format json`. The raw JSONL is
-stashed in `store()` under `cc_transcript_jsonl` so the scorer can persist it
-to disk alongside the diff.
+Shells out to `claude -p --output-format stream-json --verbose` inside the
+sandbox to capture the full per-event transcript, then translates each event
+into Inspect chat-message form so `state.messages` carries the whole agent
+trajectory (assistant turns + tool calls + tool results) and the .eval log is
+viewable in `inspect view` without further conversion.
 
-Token handling
---------------
-The host's `CLAUDE_CODE_OAUTH_TOKEN` (generated once via `claude setup-token`)
-is read from the Inspect process environment at factory-call time, and injected
-into the sandbox per `sb.exec(..., env={...})`. It is deliberately *not* set in
-compose.yaml, the Dockerfile, or as a container env var — that keeps it out of
-image layers and `docker inspect`. It does land in `/proc/<pid>/environ` inside
-the sandbox during the run, which is fine for a throwaway eval sandbox but
-worth knowing if the task under test could exfiltrate.
-
-ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL are explicitly NOT forwarded — Claude
-Code prefers an API key over the OAUTH token when both are present.
+`CLAUDE_CODE_OAUTH_TOKEN` is read from the Inspect process env and injected
+per `sb.exec(env=...)` — never baked into the image or compose file.
+ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL are deliberately NOT forwarded, since
+Claude Code prefers an API key over the OAUTH token when both are present.
 """
 import json
 import os
 
 from inspect_ai.agent import AgentState, agent, as_solver
-from inspect_ai.model import ModelOutput
-from inspect_ai.util import sandbox, store
+from inspect_ai.model import (
+    ChatCompletionChoice,
+    ChatMessage,
+    ChatMessageAssistant,
+    ChatMessageTool,
+    ModelOutput,
+    ModelUsage,
+)
+from inspect_ai.tool import ToolCall, ToolCallError
+from inspect_ai.util import LimitExceededError, sandbox, store
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 
@@ -41,15 +40,7 @@ def _require_token() -> str:
 
 
 def _parse_stream_json(stdout: str) -> list[dict]:
-    """Parse line-delimited JSON events from `claude --output-format stream-json`.
-
-    Raises RuntimeError on the first non-JSON line. Probed on Claude Code
-    2.1.139: happy paths, tool calls, bogus-model errors, and SIGTERM-truncated
-    streams all emit pure NDJSON, with human errors going to stderr. If a
-    future CLI version starts mixing non-JSON output (deprecation notices,
-    progress bars, interactive prompts) we want to know loudly rather than
-    silently dropping events from a transcript meant to be a full record.
-    """
+    """Parse line-delimited JSON events from `claude --output-format stream-json`."""
     events: list[dict] = []
     for lineno, raw in enumerate(stdout.splitlines(), 1):
         line = raw.strip()
@@ -60,9 +51,123 @@ def _parse_stream_json(stdout: str) -> list[dict]:
         except json.JSONDecodeError as e:
             raise RuntimeError(
                 f"claude stdout line {lineno} is not valid JSON ({e}). "
-                f"Preview (first 200B): {line[:200]!r}"
+                f"Preview (first 200 chars): {line[:200]!r}"
             ) from e
     return events
+
+
+def _tool_result_text(content) -> str:
+    """Flatten a tool_result `content` field (str | list[block]) to plain text.
+
+    Anthropic-style tool_result blocks can carry either a string or a list of
+    content blocks (text/image/etc.). The viewer expects plain text on
+    ChatMessageTool, so we concatenate text parts and stringify the rest."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+            else:
+                parts.append(json.dumps(block))
+        return "".join(parts)
+    return str(content)
+
+
+def _events_to_messages(events: list[dict]) -> list[ChatMessage]:
+    """Convert stream-json events into Inspect ChatMessage objects.
+
+    `claude -p --output-format stream-json` emits one event *per content block*,
+    not per assistant message — a tool-using turn typically arrives as three
+    events sharing one `message.id`: a `thinking` block, a `text` block, then a
+    `tool_use` block. Treating each event as its own message produces a blank
+    `ChatMessageAssistant` for the thinking block (it has neither text nor
+    tool_use). We aggregate by `message.id` so one logical turn becomes one
+    message with text + tool_calls combined.
+
+    `user` event -> one ChatMessageTool per tool_result block (parallel tool
+    calls in a single turn produce multiple tool_result blocks).
+
+    `system` / `result` events are not messages; they're handled separately."""
+    messages: list[ChatMessage] = []
+    # Track the in-flight assistant message by id so subsequent events with the
+    # same id append to it rather than producing a fresh (often-empty) message.
+    asst_by_id: dict[str, ChatMessageAssistant] = {}
+    for event in events:
+        etype = event.get("type")
+        if etype == "assistant":
+            msg = event.get("message") or {}
+            msg_id = msg.get("id")
+            text_parts: list[str] = []
+            tool_calls: list[ToolCall] = []
+            for block in msg.get("content") or []:
+                btype = block.get("type")
+                if btype == "text":
+                    text_parts.append(block.get("text", ""))
+                elif btype == "tool_use":
+                    tool_calls.append(
+                        ToolCall(
+                            id=block.get("id", ""),
+                            function=block.get("name", ""),
+                            arguments=block.get("input") or {},
+                        )
+                    )
+                # `thinking` and any other future block types are intentionally
+                # dropped — they carry no chat-visible content.
+            existing = asst_by_id.get(msg_id) if msg_id else None
+            if existing is not None:
+                if text_parts:
+                    existing.content = (existing.content or "") + "".join(text_parts)
+                if tool_calls:
+                    existing.tool_calls = (existing.tool_calls or []) + tool_calls
+            else:
+                new_msg = ChatMessageAssistant(
+                    id=msg_id,
+                    content="".join(text_parts),
+                    tool_calls=tool_calls or None,
+                    model=msg.get("model"),
+                )
+                if msg_id:
+                    asst_by_id[msg_id] = new_msg
+                messages.append(new_msg)
+        elif etype == "user":
+            msg = event.get("message") or {}
+            content = msg.get("content")
+            blocks = content if isinstance(content, list) else []
+            for block in blocks:
+                if not isinstance(block, dict) or block.get("type") != "tool_result":
+                    continue
+                text = _tool_result_text(block.get("content"))
+                error = (
+                    ToolCallError(type="unknown", message=text)
+                    if block.get("is_error")
+                    else None
+                )
+                messages.append(
+                    ChatMessageTool(
+                        content=text,
+                        tool_call_id=block.get("tool_use_id"),
+                        error=error,
+                    )
+                )
+    return messages
+
+
+def _build_usage(final: dict) -> ModelUsage:
+    u = final.get("usage") or {}
+    input_t = int(u.get("input_tokens", 0) or 0)
+    output_t = int(u.get("output_tokens", 0) or 0)
+    return ModelUsage(
+        input_tokens=input_t,
+        output_tokens=output_t,
+        total_tokens=input_t + output_t,
+        input_tokens_cache_write=u.get("cache_creation_input_tokens"),
+        input_tokens_cache_read=u.get("cache_read_input_tokens"),
+        total_cost=final.get("total_cost_usd"),
+    )
 
 
 @agent
@@ -113,18 +218,8 @@ def claude_code_oauth(
                 f"claude produced no JSON events. First 2KB of stdout:\n{result.stdout[:2048]}"
             )
 
-        # Stash the raw JSONL so the scorer can write it to outputs/<ts>/<id>/
-        # transcript.jsonl. We keep parsing here (instead of just dumping stdout)
-        # to drop blank lines / non-JSON noise that would make replay tools
-        # choke later.
-        store().set(
-            "cc_transcript_jsonl",
-            "\n".join(json.dumps(e) for e in events) + "\n",
-        )
-
-        # The final `result` event carries the same summary fields as the
-        # one-shot `--output-format json` mode (result text, session id, usage,
-        # cost, num_turns). It is always the last event in a successful run.
+        # The final `result` event carries the aggregate summary (result text,
+        # session id, usage, cost, num_turns). Always last in a successful run.
         final = next(
             (e for e in reversed(events) if e.get("type") == "result"), None
         )
@@ -133,15 +228,50 @@ def claude_code_oauth(
         if final.get("is_error"):
             raise RuntimeError(f"claude reported error: {final.get('result')}")
 
-        store().set("cc_session_id", final.get("session_id"))
-        store().set("cc_usage", final.get("usage"))
-        store().set("cc_cost_usd", final.get("total_cost_usd"))
-        store().set("cc_num_turns", final.get("num_turns"))
+        # Append one-by-one so a message_limit firing mid-transcript preserves
+        # everything we've recorded so far. `ChatMessageList.extend` is atomic:
+        # it checks the *projected* total before adding any items, so a single
+        # `extend` call that would overflow the limit drops the entire batch.
+        parsed = _events_to_messages(events)
+        limit_hit: LimitExceededError | None = None
+        for m in parsed:
+            try:
+                state.messages.append(m)
+            except LimitExceededError as e:
+                limit_hit = e
+                break
 
-        state.output = ModelOutput.from_content(
-            model="claude-code", content=final["result"]
+        usage = _build_usage(final)
+        last_assistant = next(
+            (m for m in reversed(parsed) if isinstance(m, ChatMessageAssistant)),
+            None,
         )
-        state.messages.append(state.output.message)
+        if last_assistant is not None:
+            state.output = ModelOutput(
+                model="claude-code",
+                choices=[
+                    ChatCompletionChoice(message=last_assistant, stop_reason="stop")
+                ],
+                usage=usage,
+            )
+        else:
+            # Defensive: no assistant events seen. Fall back to the result text.
+            state.output = ModelOutput.from_content(
+                model="claude-code", content=final.get("result", "")
+            )
+            state.output.usage = usage
+
+        # Keep a few extras in `store()` that don't fit on ModelUsage but are
+        # useful for downstream analysis (session resume, turn counts).
+        store().set("cc_session_id", final.get("session_id"))
+        store().set("cc_num_turns", final.get("num_turns"))
+        store().set("cc_duration_ms", final.get("duration_ms"))
+
+        # Re-raise after state.messages / state.output are populated so the
+        # transcript is preserved in the log; Inspect's solver wrapper records
+        # the limit and ends the sample as usual.
+        if limit_hit is not None:
+            raise limit_hit
         return state
 
     return execute
