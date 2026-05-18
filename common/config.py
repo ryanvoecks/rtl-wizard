@@ -43,6 +43,20 @@ class DesignConfig:
     rtl_files: tuple[Path, ...]  # ordered RTL sources making up the design
     top_module: str              # Verilog top module
 
+    # Optional upstream testbench harness. Populated for designs that ship a
+    # runnable simulator harness (e.g. AESLoader); left at None for designs
+    # where only RTL is available. When tb_run_cmd is set, llm-eval's
+    # testbench_passes scorer copies the repo to a tempdir, overlays the
+    # agent's modified rtl_files onto their original locations, then runs the
+    # build/run commands from tb_workdir_rel and grades stdout against the
+    # pass/fail markers.
+    tb_repo_root: Path | None = None             # upstream repo root on host
+    tb_workdir_rel: str | None = None            # cwd for build/run, relative to tb_repo_root
+    tb_build_cmd: tuple[str, ...] | None = None  # argv to build the sim (None = skip)
+    tb_run_cmd: tuple[str, ...] | None = None    # argv to invoke the sim
+    tb_pass_marker: str | None = None            # substring on stdout signalling pass
+    tb_fail_marker: str | None = None            # substring on stdout signalling fail (overrides pass)
+
 @dataclass(frozen=True)
 class TargetConfig:
     """Parameters fully specifying a calibrated ORFS run."""

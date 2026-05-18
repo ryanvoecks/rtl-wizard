@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pyslang
 
-from config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig
+from common.config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -95,12 +95,23 @@ class AESLoader(DesignLoader):
         rtl_files = sorted((self.aes_root / "src" / "rtl").glob("*.v"))
         if not rtl_files:
             return {self.benchmark: {}}
+        # tb_aes.v emits "*** All NN test cases completed successfully" on
+        # pass, "*** NN tests completed - MM test cases did not complete
+        # successfully." on fail. The two phrases overlap on the suffix
+        # "test cases ... successfully", so the fail marker is the
+        # authoritative check and takes precedence over pass.
         design = DesignConfig(
             benchmark=self.benchmark,
             name="aes",
             variant="reference",
             rtl_files=tuple(rtl_files),
             top_module=detect_top_module(rtl_files),
+            tb_repo_root=self.aes_root,
+            tb_workdir_rel="toolruns",
+            tb_build_cmd=("make", "top.sim"),
+            tb_run_cmd=("./top.sim",),
+            tb_pass_marker="test cases completed successfully",
+            tb_fail_marker="did not complete successfully",
         )
         return {self.benchmark: {"aes": {"reference": design}}}
 

@@ -25,10 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
+from common.config import TargetConfig
+from common.targets import aes_target
 from scorers import (
-    aes_testbench_passes,
-    aes_yosys_synthesisable,
     hello_world_runs,
+    testbench_passes,
+    yosys_synthesisable,
 )
 from solvers import claude_code_solver
 
@@ -36,7 +38,6 @@ REPO_ROOT = Path(__file__).parent.parent
 NB_ROOT = Path(__file__).parent
 SANDBOX_COMPOSE = NB_ROOT / "compose.yaml"
 BROKEN_HELLO = NB_ROOT / "samples" / "broken_hello.py"
-AES_RTL_DIR = REPO_ROOT / "external" / "aes" / "src" / "rtl"
 
 
 def _build_dataset() -> list[Sample]:
@@ -61,20 +62,33 @@ def _build_dataset() -> list[Sample]:
     ]
 
 
-def _build_aes_dataset() -> list[Sample]:
-    rtl_files = sorted(AES_RTL_DIR.glob("*.v"))
+def _sandbox_rtl_path(host_path: Path) -> str:
+    """Sandbox-relative location where an RTL file lands in the agent's tree.
+
+    Flat namespace under `rtl/` regardless of upstream repo layout — the
+    scorers reverse this mapping using `design.tb_repo_root` + each
+    `rtl_file`'s repo-relative path."""
+    return f"rtl/{host_path.name}"
+
+
+def _build_aes_dataset(target: TargetConfig) -> list[Sample]:
+    design = target.design
+    rtl_files = list(design.rtl_files)
     if not rtl_files:
         raise FileNotFoundError(
-            f"no .v files under {AES_RTL_DIR} — run `git submodule update --init` "
-            "to fetch the secworks/aes submodule"
+            f"design {design.benchmark}/{design.name}/{design.variant} has no "
+            "RTL files — run `git submodule update --init` if the upstream "
+            "repo is a submodule"
         )
-    sandbox_paths = [f"rtl/{p.name}" for p in rtl_files]
+    sandbox_paths = [_sandbox_rtl_path(p) for p in rtl_files]
+    top_file = next((p for p in rtl_files if p.stem == design.top_module), rtl_files[0])
+    top_sandbox = _sandbox_rtl_path(top_file)
     return [
         Sample(
-            id="aes",
+            id=design.name,
             input=(
-                "There is an AES-128 RTL design in `rtl/` (top module: `aes`, "
-                "in `rtl/aes.v`). Your job is to reduce the **longest "
+                f"There is an RTL design in `rtl/` (top module: `{design.top_module}`, "
+                f"in `{top_sandbox}`). Your job is to reduce the **longest "
                 "combinational path** through the design — the path that "
                 "gates the achievable clock period.\n\n"
                 "Constraints:\n"
@@ -100,11 +114,20 @@ def _build_aes_dataset() -> list[Sample]:
 
 
 @task
-def optimize_aes(message_limit: int = 200) -> Task:
+def optimize_aes(
+    target: TargetConfig = aes_target, message_limit: int = 200
+) -> Task:
+    design = target.design
+    scorers = [yosys_synthesisable(design)]
+    # Gate the testbench scorer on the design actually shipping a runnable
+    # harness. Designs from RTLLM/RTL-OPT/Corpus loaders leave tb_run_cmd
+    # None and grade on synthesisability alone.
+    if design.tb_run_cmd is not None:
+        scorers.append(testbench_passes(design))
     return Task(
-        dataset=_build_aes_dataset(),
+        dataset=_build_aes_dataset(target),
         solver=claude_code_solver(),
-        scorer=[aes_yosys_synthesisable(), aes_testbench_passes()],
+        scorer=scorers,
         sandbox=("docker", str(SANDBOX_COMPOSE)),
         message_limit=message_limit,
         tags=["claude-code", "rtl"],

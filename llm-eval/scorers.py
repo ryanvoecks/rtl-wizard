@@ -29,7 +29,8 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
-from outputs import REPO_ROOT, sample_output_dir
+from common.config import DesignConfig
+from outputs import sample_output_dir
 
 _EXPECTED = "Hello, World!"
 _RUN_TIMEOUT_S = 30
@@ -41,12 +42,10 @@ _RUN_TIMEOUT_S = 30
 _DEVCONTAINER_YOSYS = "/OpenROAD-flow-scripts/tools/install/yosys/bin/yosys"
 _YOSYS_TIMEOUT_S = 60
 
-# Secworks/AES upstream layout: rtl under src/rtl, testbenches under src/tb,
-# Makefile under toolruns/. The Makefile uses relative `../src/...` paths, so
-# it must be invoked from toolruns/ as cwd.
-_AES_REPO = REPO_ROOT / "external" / "aes"
-_AES_BUILD_TIMEOUT_S = 120
-_AES_RUN_TIMEOUT_S = 300
+# Protocol-agnostic timeouts for the upstream-testbench scorer. The actual
+# build/run commands come from `DesignConfig.tb_build_cmd` / `tb_run_cmd`.
+_TB_BUILD_TIMEOUT_S = 120
+_TB_RUN_TIMEOUT_S = 300
 
 
 async def _read_final(filename: str) -> str:
@@ -118,11 +117,12 @@ def _resolve_yosys() -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def aes_yosys_synthesisable() -> Scorer:
-    """Cheap synthesisability check for the optimize_aes task.
+def yosys_synthesisable(design: DesignConfig) -> Scorer:
+    """Cheap synthesisability check for an arbitrary RTL design.
 
     Pulls the agent's final `rtl/*.v` out of the sandbox to a host temp dir
-    and runs host yosys through `hierarchy -check -top aes; proc; opt; clean`.
+    and runs host yosys through
+    `hierarchy -check -top <design.top_module>; proc; opt; clean`.
     No techmap, no abc — we only care that the RTL still elaborates. CORRECT
     iff yosys exits 0 within `_YOSYS_TIMEOUT_S`.
     """
@@ -152,7 +152,7 @@ def aes_yosys_synthesisable() -> Scorer:
 
             script = (
                 f"read_verilog -sv {' '.join(rtl_paths)}; "
-                "hierarchy -check -top aes; proc; opt; clean"
+                f"hierarchy -check -top {design.top_module}; proc; opt; clean"
             )
             proc = await asyncio.create_subprocess_exec(
                 yosys, "-q", "-p", script,
@@ -208,17 +208,38 @@ async def _run(
     )
 
 
-@scorer(metrics=[accuracy(), stderr()])
-def aes_testbench_passes() -> Scorer:
-    """Run the secworks/aes top-level testbench against the agent's RTL.
+def _rtl_overlay_targets(design: DesignConfig) -> dict[str, Path]:
+    """Map each sandbox path (`rtl/<basename>`) to the repo-relative
+    destination under `design.tb_repo_root` where the agent's modified file
+    should be written before running the testbench."""
+    if design.tb_repo_root is None:
+        return {}
+    overlay: dict[str, Path] = {}
+    for rtl_file in design.rtl_files:
+        sandbox_path = f"rtl/{rtl_file.name}"
+        overlay[sandbox_path] = rtl_file.relative_to(design.tb_repo_root)
+    return overlay
 
-    Copies `external/aes` to a tempdir, overlays the agent's final `rtl/*.v`
-    into `src/rtl/`, then runs `make top.sim` + `./top.sim` from `toolruns/`
-    using the upstream Makefile (iverilog). CORRECT iff the testbench prints
-    the "All NN test cases completed successfully" success line and does not
-    print a failure line. The full simulator stdout is saved to
-    `llm-results/<RUN_TIMESTAMP>/<sample_id>/aes_testbench.log` for debugging.
+
+@scorer(metrics=[accuracy(), stderr()])
+def testbench_passes(design: DesignConfig) -> Scorer:
+    """Run the design's upstream testbench against the agent's RTL.
+
+    Copies `design.tb_repo_root` to a tempdir, overlays the agent's final
+    `rtl/*.v` onto each file's repo-relative location, then runs
+    `design.tb_build_cmd` (if set) and `design.tb_run_cmd` from
+    `design.tb_workdir_rel`. CORRECT iff stdout contains
+    `design.tb_pass_marker` and does *not* contain `design.tb_fail_marker`.
+    The full simulator stdout is saved to
+    `llm-results/<RUN_TIMESTAMP>/<sample_id>/testbench.log` for debugging.
     """
+    if design.tb_repo_root is None or design.tb_run_cmd is None:
+        raise ValueError(
+            f"design {design.name} has no testbench harness configured "
+            "(tb_repo_root / tb_run_cmd are None) — don't register this scorer"
+        )
+    overlay_map = _rtl_overlay_targets(design)
+
     async def score(state: TaskState, target: Target) -> Score:
         await _save_artifacts(state)
         out_dir = sample_output_dir(str(state.sample_id))
@@ -226,69 +247,74 @@ def aes_testbench_passes() -> Scorer:
         rtl_paths = list(state.metadata.get("original_files", {}).keys())
         if not rtl_paths:
             return Score(value=INCORRECT, explanation="no original_files in metadata")
-
-        if shutil.which("iverilog") is None:
-            return Score(
-                value=INCORRECT,
-                explanation="iverilog not found on host; cannot run secworks/aes testbench",
-            )
-        if not _AES_REPO.exists():
+        if not design.tb_repo_root.exists():
             return Score(
                 value=INCORRECT,
                 explanation=(
-                    f"{_AES_REPO} not found — run `git submodule update --init` "
-                    "to fetch the secworks/aes submodule"
+                    f"{design.tb_repo_root} not found — run "
+                    "`git submodule update --init` to fetch the upstream repo"
                 ),
             )
 
         with tempfile.TemporaryDirectory() as td:
-            repo_copy = Path(td) / "aes"
+            repo_copy = Path(td) / design.tb_repo_root.name
             # Exclude .git (it's a submodule pointer file) and any stale build
-            # artifacts so the copy is a clean tree to run make against.
+            # artifacts so the copy is a clean tree to build against.
             shutil.copytree(
-                _AES_REPO,
+                design.tb_repo_root,
                 repo_copy,
                 ignore=shutil.ignore_patterns(".git", "*.sim", "*.vcd"),
             )
 
-            # Overlay agent's final RTL onto src/rtl/. Sandbox paths are
-            # "rtl/<name>.v" (see tasks.py:_build_aes_dataset); upstream layout
-            # puts them at src/rtl/<name>.v.
+            # Overlay agent's final RTL back into the upstream layout. Each
+            # rtl_file's repo-relative path was precomputed in overlay_map.
             for sandbox_path in rtl_paths:
-                if not sandbox_path.startswith("rtl/"):
+                dest_rel = overlay_map.get(sandbox_path)
+                if dest_rel is None:
                     return Score(
                         value=INCORRECT,
-                        explanation=f"unexpected sandbox path {sandbox_path!r}; expected rtl/*",
+                        explanation=(
+                            f"sandbox path {sandbox_path!r} has no overlay "
+                            "destination — sample built from a different design?"
+                        ),
                     )
-                dest = repo_copy / "src" / "rtl" / sandbox_path[len("rtl/"):]
+                dest = repo_copy / dest_rel
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(await _read_final(sandbox_path))
 
-            toolruns = repo_copy / "toolruns"
-
-            rc, b_out, b_err = await _run(
-                "make", "top.sim", cwd=toolruns, timeout=_AES_BUILD_TIMEOUT_S
+            workdir = (
+                repo_copy / design.tb_workdir_rel
+                if design.tb_workdir_rel
+                else repo_copy
             )
-            if rc != 0:
-                tail = (b_err or b_out)[-2000:]
-                (out_dir / "aes_testbench.log").write_text(
-                    f"# build failed (rc={rc})\n{b_out}\n--- stderr ---\n{b_err}"
+
+            if design.tb_build_cmd is not None:
+                rc, b_out, b_err = await _run(
+                    *design.tb_build_cmd, cwd=workdir, timeout=_TB_BUILD_TIMEOUT_S
                 )
-                return Score(
-                    value=INCORRECT,
-                    explanation=f"iverilog build failed (rc={rc}):\n{tail}",
-                )
+                if rc != 0:
+                    tail = (b_err or b_out)[-2000:]
+                    (out_dir / "testbench.log").write_text(
+                        f"# build failed (rc={rc}): "
+                        f"{' '.join(design.tb_build_cmd)}\n{b_out}\n"
+                        f"--- stderr ---\n{b_err}"
+                    )
+                    return Score(
+                        value=INCORRECT,
+                        explanation=f"testbench build failed (rc={rc}):\n{tail}",
+                    )
 
             rc, r_out, r_err = await _run(
-                "./top.sim", cwd=toolruns, timeout=_AES_RUN_TIMEOUT_S
+                *design.tb_run_cmd, cwd=workdir, timeout=_TB_RUN_TIMEOUT_S
             )
-            (out_dir / "aes_testbench.log").write_text(
-                f"# rc={rc}\n{r_out}\n--- stderr ---\n{r_err}"
+            (out_dir / "testbench.log").write_text(
+                f"# rc={rc}: {' '.join(design.tb_run_cmd)}\n{r_out}\n"
+                f"--- stderr ---\n{r_err}"
             )
             if rc is None:
                 return Score(
                     value=INCORRECT,
-                    explanation=f"testbench timed out after {_AES_RUN_TIMEOUT_S}s",
+                    explanation=f"testbench timed out after {_TB_RUN_TIMEOUT_S}s",
                 )
             if rc != 0:
                 tail = (r_err or r_out)[-2000:]
@@ -297,24 +323,22 @@ def aes_testbench_passes() -> Scorer:
                     explanation=f"testbench exited rc={rc}:\n{tail}",
                 )
 
-        # tb_aes.v emits one of these two lines via display_test_results:
-        #   "*** All NN test cases completed successfully"
-        #   "*** NN tests completed - MM test cases did not complete successfully."
-        # Treat the failure phrase as authoritative since the success substring
-        # ("test cases completed successfully") is contained in both.
-        if "did not complete successfully" in r_out:
+        # Fail marker takes precedence: for some testbenches (e.g. tb_aes.v)
+        # the pass and fail lines both contain the pass substring, so checking
+        # the fail marker first is the only correct ordering.
+        if design.tb_fail_marker and design.tb_fail_marker in r_out:
             tail = r_out[-1500:]
             return Score(
                 value=INCORRECT,
                 answer="testbench reported failures",
-                explanation=f"secworks/aes tb_aes reported failures:\n{tail}",
+                explanation=f"testbench reported failures:\n{tail}",
             )
-        if "test cases completed successfully" in r_out:
+        if design.tb_pass_marker and design.tb_pass_marker in r_out:
             return Score(value=CORRECT, answer="testbench passed")
         tail = r_out[-1500:]
         return Score(
             value=INCORRECT,
-            explanation=f"no pass/fail marker in tb_aes output:\n{tail}",
+            explanation=f"no pass/fail marker in testbench output:\n{tail}",
         )
 
     return score
