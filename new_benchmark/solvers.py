@@ -28,6 +28,12 @@ from inspect_ai.util import LimitExceededError, sandbox, store
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 
+# Default model the agent runs through `claude --model`. Exported here so the
+# Task can declare it via `Task(model=...)` and Inspect's viewer labels the run
+# with the actual model rather than whatever `INSPECT_EVAL_MODEL` is set to
+# in .env (which targets the unrelated rtl-wizard benchmark).
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5"
+
 
 def _require_token() -> str:
     tok = os.environ.get(_TOKEN_ENV_VAR)
@@ -173,7 +179,7 @@ def _build_usage(final: dict) -> ModelUsage:
 @agent
 def claude_code_oauth(
     mcp_config: dict | None = None,
-    model: str = "claude-sonnet-4-5",
+    model: str = DEFAULT_CLAUDE_MODEL,
     allowed_tools: str = "Bash,Read,Write,Edit",
     timeout_s: int = 1800,
 ):
@@ -248,7 +254,7 @@ def claude_code_oauth(
         )
         if last_assistant is not None:
             state.output = ModelOutput(
-                model="claude-code",
+                model=model,
                 choices=[
                     ChatCompletionChoice(message=last_assistant, stop_reason="stop")
                 ],
@@ -257,7 +263,7 @@ def claude_code_oauth(
         else:
             # Defensive: no assistant events seen. Fall back to the result text.
             state.output = ModelOutput.from_content(
-                model="claude-code", content=final.get("result", "")
+                model=model, content=final.get("result", "")
             )
             state.output.usage = usage
 
@@ -277,6 +283,6 @@ def claude_code_oauth(
     return execute
 
 
-def claude_code_solver():
+def claude_code_solver(model: str = DEFAULT_CLAUDE_MODEL):
     """Adapt the OAUTH agent into a Task.solver slot."""
-    return as_solver(claude_code_oauth())
+    return as_solver(claude_code_oauth(model=model))

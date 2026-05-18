@@ -26,7 +26,7 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from new_benchmark.scorers import hello_world_runs
-from new_benchmark.solvers import claude_code_solver
+from new_benchmark.solvers import DEFAULT_CLAUDE_MODEL, claude_code_solver
 
 REPO_ROOT = Path(__file__).parent.parent
 NB_ROOT = Path(__file__).parent
@@ -57,11 +57,20 @@ def _build_dataset() -> list[Sample]:
 
 
 @task
-def fix_broken_hello(message_limit: int = 200) -> Task:
+def fix_broken_hello(
+    model: str = DEFAULT_CLAUDE_MODEL, message_limit: int = 200
+) -> Task:
+    # `model=f"none/{model}"` keeps the viewer label honest (the agent really
+    # runs that Claude variant via `claude --model`) without instantiating an
+    # Inspect-side model API — the solver shells out, so Inspect never calls
+    # `model.generate()`. Without this, the repo-wide `INSPECT_EVAL_MODEL` from
+    # .env (gpt-oss-120b, used by the rtl-wizard benchmark) leaks into this
+    # task's eval log even though it has nothing to do with the run.
     return Task(
         dataset=_build_dataset(),
-        solver=claude_code_solver(),
+        solver=claude_code_solver(model=model),
         scorer=hello_world_runs(),
         sandbox=("docker", str(SANDBOX_COMPOSE)),
+        model=f"none/{model}",
         message_limit=message_limit,
     )
