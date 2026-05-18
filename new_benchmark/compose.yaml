@@ -1,0 +1,13 @@
+x-sandbox-base: &sandbox-base
+  image: new-benchmark-sandbox:latest
+  command: "tail -f /dev/null"
+  init: true
+  stop_grace_period: 1s
+
+services:
+  solver:
+    <<: *sandbox-base
+    x-default: true
+    build:
+      context: .
+      dockerfile: Dockerfile
