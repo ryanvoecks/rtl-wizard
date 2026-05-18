@@ -43,19 +43,25 @@ def _require_token() -> str:
 def _parse_stream_json(stdout: str) -> list[dict]:
     """Parse line-delimited JSON events from `claude --output-format stream-json`.
 
-    Lines that fail to parse are skipped silently — they're typically warnings
-    or progress text the CLI emits outside the JSON stream, not events we'd
-    fail the run over.
+    Raises RuntimeError on the first non-JSON line. Probed on Claude Code
+    2.1.139: happy paths, tool calls, bogus-model errors, and SIGTERM-truncated
+    streams all emit pure NDJSON, with human errors going to stderr. If a
+    future CLI version starts mixing non-JSON output (deprecation notices,
+    progress bars, interactive prompts) we want to know loudly rather than
+    silently dropping events from a transcript meant to be a full record.
     """
     events: list[dict] = []
-    for line in stdout.splitlines():
-        line = line.strip()
+    for lineno, raw in enumerate(stdout.splitlines(), 1):
+        line = raw.strip()
         if not line:
             continue
         try:
             events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+        except json.JSONDecodeError as e:
+            raise RuntimeError(
+                f"claude stdout line {lineno} is not valid JSON ({e}). "
+                f"Preview (first 200B): {line[:200]!r}"
+            ) from e
     return events
 
 
