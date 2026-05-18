@@ -9,6 +9,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_runs"
+OUTPUTS = REPO_ROOT / "outputs"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
