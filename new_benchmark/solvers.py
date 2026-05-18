@@ -23,16 +23,29 @@ from inspect_ai.model import (
     ModelOutput,
     ModelUsage,
 )
+from inspect_ai.model._model import active_model
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, sandbox, store
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 
-# Default model the agent runs through `claude --model`. Exported here so the
-# Task can declare it via `Task(model=...)` and Inspect's viewer labels the run
-# with the actual model rather than whatever `INSPECT_EVAL_MODEL` is set to
-# in .env (which targets the unrelated rtl-wizard benchmark).
+# Fallback if Inspect resolves no model (e.g. neither `--model` nor
+# `INSPECT_EVAL_MODEL` is set). With the repo's .env in play the latter is
+# always set, so this is mostly a defensive default.
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5"
+
+
+def _resolve_claude_model() -> str:
+    """Bare model name to pass to `claude --model`, sourced from Inspect's
+    `--model` flag (or `INSPECT_EVAL_MODEL`) at solve time.
+
+    Inspect prefixes model strings with a provider (e.g. `none/claude-sonnet-4-5`,
+    `anthropic/claude-sonnet-4-5`). Claude Code's CLI wants the bare name only.
+    `active_model().name` already returns the post-prefix portion."""
+    m = active_model()
+    if m is None or m.name in ("none", ""):
+        return DEFAULT_CLAUDE_MODEL
+    return m.name
 
 
 def _require_token() -> str:
@@ -179,7 +192,6 @@ def _build_usage(final: dict) -> ModelUsage:
 @agent
 def claude_code_oauth(
     mcp_config: dict | None = None,
-    model: str = DEFAULT_CLAUDE_MODEL,
     allowed_tools: str = "Bash,Read,Write,Edit",
     timeout_s: int = 1800,
 ):
@@ -187,6 +199,12 @@ def claude_code_oauth(
     mcp_config = mcp_config if mcp_config is not None else {"mcpServers": {}}
 
     async def execute(state: AgentState) -> AgentState:
+        # Pull the model from Inspect's active model at solve time, so the
+        # `--model` CLI flag (or INSPECT_EVAL_MODEL) drives both the viewer
+        # label and the actual `claude --model` invocation. Use `none/<name>`
+        # in the flag (e.g. `--model none/claude-sonnet-4-5`) to keep Inspect
+        # from trying to instantiate an API client — the agent shells out.
+        model = _resolve_claude_model()
         sb = sandbox()
         await sb.write_file("/tmp/mcp.json", json.dumps(mcp_config))
 
@@ -283,6 +301,6 @@ def claude_code_oauth(
     return execute
 
 
-def claude_code_solver(model: str = DEFAULT_CLAUDE_MODEL):
+def claude_code_solver():
     """Adapt the OAUTH agent into a Task.solver slot."""
-    return as_solver(claude_code_oauth(model=model))
+    return as_solver(claude_code_oauth())
