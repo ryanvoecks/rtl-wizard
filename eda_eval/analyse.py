@@ -38,9 +38,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import HERE, ORFS_HOME, RUN_CONFIG_FILENAME
+from common.config import ORFS_HOME, RUN_CONFIG_FILENAME
 from extract_metrics import find_unique
 
+HERE = Path(__file__).resolve().parent
 EXTRACT_TCL = HERE / "tcl" / "extract_critical_paths.tcl"
 EXTRACT_CONGEST_TCL = HERE / "tcl" / "extract_congestion.tcl"
 

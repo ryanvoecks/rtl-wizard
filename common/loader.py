@@ -201,3 +201,23 @@ class CorpusLoader(DesignLoader):
                     top_module=detect_top_module(rtl_files),
                 )
         return {self.benchmark: names}
+
+
+class AllDesigns:
+    """Union of every DesignLoader's tree. The single entry point for
+    callers that want every discoverable design without picking benchmarks
+    by hand."""
+
+    LOADERS: tuple[type[DesignLoader], ...] = (
+        RTLLMLoader,
+        RTLOPTLoader,
+        AESLoader,
+        CorpusLoader,
+    )
+
+    @classmethod
+    def designs(cls) -> DesignTree:
+        out: DesignTree = {}
+        for loader in cls.LOADERS:
+            out |= loader().designs()
+        return out

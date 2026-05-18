@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from calibrate import ITER_CAL_DIR
-from config import AES, EDA_RUNS, OUTPUTS
+from common.config import AES, EDA_RUNS, OUTPUTS
 
 BENCHMARK = "secworks"
 NAME = "aes"

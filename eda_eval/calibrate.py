@@ -24,15 +24,15 @@ import math
 import time
 from pathlib import Path
 
-from config import (
+from common.config import (
     EDA_RUNS,
     ORFS_HOME,
     DesignConfig,
     RunConfig,
     StudyConfig,
 )
+from common.loader import AllDesigns
 from extract_metrics import extract
-from loader import AESLoader, CorpusLoader, RTLLMLoader, RTLOPTLoader
 from run import run_job
 
 ITER_CAL_DIR = "__iter_calibration__"
@@ -47,14 +47,8 @@ def iter_output_dir(design: DesignConfig, batch_dir: Path, i: int) -> Path:
 
 def resolve_design(benchmark: str, name: str, variant: str) -> DesignConfig:
     """Locate the single (benchmark, name, variant) design across all loaders."""
-    all_designs = (
-        RTLLMLoader().designs()
-        | RTLOPTLoader().designs()
-        | AESLoader().designs()
-        | CorpusLoader().designs()
-    )
     try:
-        return all_designs[benchmark][name][variant]
+        return AllDesigns.designs()[benchmark][name][variant]
     except KeyError as exc:
         raise ValueError(
             f"no design found for benchmark={benchmark!r} name={name!r} "

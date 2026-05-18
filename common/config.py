@@ -43,6 +43,15 @@ class DesignConfig:
     rtl_files: tuple[Path, ...]  # ordered RTL sources making up the design
     top_module: str              # Verilog top module
 
+@dataclass(frozen=True)
+class TargetConfig:
+    """Parameters fully specifying a calibrated ORFS run."""
+
+    design: DesignConfig  # design being driven through the flow
+    period_ns: float      # clock period rendered into the SDC
+    side_um: float        # square floorplan side -> DIE_AREA/CORE_AREA
+    cfg: StudyConfig      # shared study-wide knobs
+
 
 @dataclass(frozen=True)
 class RunConfig:

@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-from config import EDA_RUNS
+from common.config import EDA_RUNS
 
 # Cell-name prefixes that count as flip-flops/latches in the standard-cell
 # libraries we use (nangate45 primarily; the prefix list is intentionally
