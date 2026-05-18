@@ -30,6 +30,10 @@ BROKEN_HELLO = NB_ROOT / "samples" / "broken_hello.py"
 
 
 def _build_dataset() -> list[Sample]:
+    # original_files is consumed by the scorer to compute a unified diff against
+    # the agent's final state. Pre-reading the contents here keeps the scorer
+    # decoupled from host paths (sandbox-only at score time).
+    hello_original = BROKEN_HELLO.read_text()
     return [
         Sample(
             id="broken_hello",
@@ -40,6 +44,9 @@ def _build_dataset() -> list[Sample]:
             ),
             target="Hello, World!",
             files={"hello.py": str(BROKEN_HELLO.resolve())},
+            metadata={
+                "original_files": {"hello.py": hello_original},
+            },
         )
     ]
 
