@@ -24,13 +24,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
-from new_benchmark.scorers import hello_world_runs
+from new_benchmark.scorers import aes_yosys_synthesisable, hello_world_runs
 from new_benchmark.solvers import claude_code_solver
 
 REPO_ROOT = Path(__file__).parent.parent
 NB_ROOT = Path(__file__).parent
 SANDBOX_COMPOSE = NB_ROOT / "compose.yaml"
 BROKEN_HELLO = NB_ROOT / "samples" / "broken_hello.py"
+AES_RTL_DIR = REPO_ROOT / "external" / "aes" / "src" / "rtl"
 
 
 def _build_dataset() -> list[Sample]:
@@ -53,6 +54,56 @@ def _build_dataset() -> list[Sample]:
             },
         )
     ]
+
+
+def _build_aes_dataset() -> list[Sample]:
+    rtl_files = sorted(AES_RTL_DIR.glob("*.v"))
+    if not rtl_files:
+        raise FileNotFoundError(
+            f"no .v files under {AES_RTL_DIR} — run `git submodule update --init` "
+            "to fetch the secworks/aes submodule"
+        )
+    sandbox_paths = [f"rtl/{p.name}" for p in rtl_files]
+    return [
+        Sample(
+            id="aes",
+            input=(
+                "There is an AES-128 RTL design in `rtl/` (top module: `aes`, "
+                "in `rtl/aes.v`). Your job is to reduce the **longest "
+                "combinational path** through the design — the path that "
+                "gates the achievable clock period.\n\n"
+                "Constraints:\n"
+                "- Preserve functional behaviour. No testbench is available "
+                "to you, so reason about the RTL directly.\n"
+                "- The design must remain synthesisable by yosys (the scorer "
+                "runs yosys over `rtl/*.v` after you finish).\n"
+                "- Edit the files in `rtl/` in place; do not rename them."
+            ),
+            target="",
+            files={
+                sandbox_path: str(host_path.resolve())
+                for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
+            },
+            metadata={
+                "original_files": {
+                    sandbox_path: host_path.read_text()
+                    for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
+                },
+            },
+        )
+    ]
+
+
+@task
+def optimize_aes(message_limit: int = 200) -> Task:
+    return Task(
+        dataset=_build_aes_dataset(),
+        solver=claude_code_solver(),
+        scorer=aes_yosys_synthesisable(),
+        sandbox=("docker", str(SANDBOX_COMPOSE)),
+        message_limit=message_limit,
+        tags=["claude-code", "rtl"],
+    )
 
 
 @task

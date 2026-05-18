@@ -194,6 +194,7 @@ def claude_code_oauth(
     mcp_config: dict | None = None,
     allowed_tools: str = "Bash,Read,Write,Edit",
     timeout_s: int = 1800,
+    max_turns: int = 8,
 ):
     token = _require_token()
     mcp_config = mcp_config if mcp_config is not None else {"mcpServers": {}}
@@ -217,6 +218,7 @@ def claude_code_oauth(
             "--model", model,
             "--mcp-config", "/tmp/mcp.json", "--strict-mcp-config",
             "--allowedTools", allowed_tools,
+            "--max-turns", str(max_turns),
             "--dangerously-skip-permissions",
         ]
         if sid:
@@ -231,25 +233,32 @@ def claude_code_oauth(
             },
             timeout=timeout_s,
         )
-        if not result.success:
-            raise RuntimeError(
-                f"claude failed (rc={result.returncode}): {result.stderr[-2000:]}"
-            )
 
-        events = _parse_stream_json(result.stdout)
+        # `claude -p` exits non-zero when it hits --max-turns, but stdout still
+        # carries the full stream-json transcript including the terminating
+        # `result` event. Parse stdout first and only treat the run as a hard
+        # failure if stdout is unusable.
+        events = _parse_stream_json(result.stdout) if result.stdout else []
         if not events:
+            stderr_tail = (result.stderr or "")[-2000:]
             raise RuntimeError(
-                f"claude produced no JSON events. First 2KB of stdout:\n{result.stdout[:2048]}"
+                f"claude failed (rc={result.returncode}) with no parseable "
+                f"stdout. stderr: {stderr_tail}"
             )
 
         # The final `result` event carries the aggregate summary (result text,
-        # session id, usage, cost, num_turns). Always last in a successful run.
+        # session id, usage, cost, num_turns, subtype). Always last; present
+        # both on success and on a controlled `--max-turns` stop.
         final = next(
             (e for e in reversed(events) if e.get("type") == "result"), None
         )
         if final is None:
             raise RuntimeError("claude transcript contained no `result` event")
-        if final.get("is_error"):
+
+        # `error_max_turns` is a graceful stop — log the partial trajectory and
+        # record the reason instead of raising. Other error subtypes are real.
+        max_turns_hit = final.get("subtype") == "error_max_turns"
+        if final.get("is_error") and not max_turns_hit:
             raise RuntimeError(f"claude reported error: {final.get('result')}")
 
         # Append one-by-one so a message_limit firing mid-transcript preserves
@@ -270,11 +279,17 @@ def claude_code_oauth(
             (m for m in reversed(parsed) if isinstance(m, ChatMessageAssistant)),
             None,
         )
+        # Inspect's StopReason literal has no "max_turns" — `model_length` is
+        # the closest analog (a length-like external stop) and is what the
+        # viewer surfaces in the output card.
+        stop_reason = "model_length" if max_turns_hit else "stop"
         if last_assistant is not None:
             state.output = ModelOutput(
                 model=model,
                 choices=[
-                    ChatCompletionChoice(message=last_assistant, stop_reason="stop")
+                    ChatCompletionChoice(
+                        message=last_assistant, stop_reason=stop_reason
+                    )
                 ],
                 usage=usage,
             )
@@ -284,12 +299,14 @@ def claude_code_oauth(
                 model=model, content=final.get("result", "")
             )
             state.output.usage = usage
+            state.output.choices[0].stop_reason = stop_reason
 
         # Keep a few extras in `store()` that don't fit on ModelUsage but are
         # useful for downstream analysis (session resume, turn counts).
         store().set("cc_session_id", final.get("session_id"))
         store().set("cc_num_turns", final.get("num_turns"))
         store().set("cc_duration_ms", final.get("duration_ms"))
+        store().set("cc_stop_subtype", final.get("subtype"))
 
         # Re-raise after state.messages / state.output are populated so the
         # transcript is preserved in the log; Inspect's solver wrapper records
