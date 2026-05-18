@@ -8,7 +8,7 @@ worst setup slack and cell area derive the period and floorplan used for
 the routed run of every variant in the group.
 
 Per-batch artifacts land under
-`eda_runs/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
+`eda-results/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
 plus a top-level `runs.csv` summarizing each run's error status.
 """
 from __future__ import annotations

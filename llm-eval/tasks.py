@@ -3,7 +3,7 @@
 Run with:
     uv run inspect eval new_benchmark/tasks.py --model none/claude-sonnet-4-5
 
-The `.eval` log lands under `outputs/<RUN_TIMESTAMP>/` alongside per-sample
+The `.eval` log lands under `llm-results/<RUN_TIMESTAMP>/` alongside per-sample
 artifacts (diff.patch, etc.) — see `new_benchmark/outputs.py` for the
 recorder redirect that makes this work without --log-dir.
 

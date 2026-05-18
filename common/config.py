@@ -8,8 +8,8 @@ from pathlib import Path
 # Config variables
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda_runs"
-OUTPUTS = REPO_ROOT / "outputs"
+EDA_RUNS = REPO_ROOT / "eda-results"
+OUTPUTS = REPO_ROOT / "llm-results"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"

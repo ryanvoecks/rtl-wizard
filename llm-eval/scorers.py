@@ -3,7 +3,7 @@
 Both scorers share the diff-persistence pattern: before the correctness check
 they read each file in `metadata["original_files"]` back out of the sandbox,
 compute a unified diff against the host-side original, and write a single
-`diff.patch` into `outputs/<RUN_TIMESTAMP>/<sample_id>/`. This lands on disk
+`diff.patch` into `llm-results/<RUN_TIMESTAMP>/<sample_id>/`. This lands on disk
 even when the actual check fails, so a broken run is still debuggable.
 
 The full agent transcript (messages, tool calls, tool results, usage) is

@@ -24,7 +24,7 @@ Reports land in `<phase_dir>/reports/<platform>/<design>/<variant>/`:
                                    overflow exposure
 
 Usage:
-    uv run eda_eval/analyse.py eda_runs/<batch>/<benchmark>/<name>/<variant>/
+    uv run eda_eval/analyse.py eda-results/<batch>/<benchmark>/<name>/<variant>/
     uv run eda_eval/analyse.py <phase_dir> --top-paths 20 --top-logical 10
 """
 from __future__ import annotations

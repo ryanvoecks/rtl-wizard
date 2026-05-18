@@ -1,6 +1,6 @@
 """Per-run output directory layout for new_benchmark.
 
-The single source of truth for this run's outputs is `outputs/<RUN_TIMESTAMP>/`
+The single source of truth for this run's outputs is `llm-results/<RUN_TIMESTAMP>/`
 under the repo root, where `RUN_TIMESTAMP` is captured *once at module import
 time* — i.e., once per `inspect eval` invocation, so all samples share a dir.
 
@@ -20,7 +20,7 @@ from pathlib import Path
 import inspect_ai._eval.eval as _eval_mod
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-OUTPUTS_ROOT = REPO_ROOT / "outputs"
+OUTPUTS_ROOT = REPO_ROOT / "llm-results"
 
 RUN_TIMESTAMP = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 RUN_OUTPUT_DIR = OUTPUTS_ROOT / RUN_TIMESTAMP

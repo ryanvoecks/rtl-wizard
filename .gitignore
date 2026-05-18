@@ -1,7 +1,7 @@
 # Folders
 __pycache__/
 .vscode/
-eda_runs/
+*-results/
 logs/
 tmp/
 
