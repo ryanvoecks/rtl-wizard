@@ -1,4 +1,4 @@
-"""Per-run output directory layout for new_benchmark.
+"""Per-run output directory layout for llm-eval.
 
 The single source of truth for this run's outputs is `llm-results/<RUN_TIMESTAMP>/`
 under the repo root, where `RUN_TIMESTAMP` is captured *once at module import

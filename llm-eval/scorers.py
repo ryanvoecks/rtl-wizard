@@ -1,4 +1,4 @@
-"""Scorers for new_benchmark tasks.
+"""Scorers for llm-eval tasks.
 
 Both scorers share the diff-persistence pattern: before the correctness check
 they read each file in `metadata["original_files"]` back out of the sandbox,
@@ -29,17 +29,24 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
-from new_benchmark.outputs import sample_output_dir
+from outputs import REPO_ROOT, sample_output_dir
 
 _EXPECTED = "Hello, World!"
 _RUN_TIMEOUT_S = 30
 
 # Devcontainer's ORFS-bundled yosys, used as a fallback when `yosys` isn't on
-# PATH. The lightweight new_benchmark sandbox image deliberately doesn't ship
+# PATH. The lightweight llm-eval sandbox image deliberately doesn't ship
 # yosys, so this scorer is host-side; the devcontainer's Dockerfile installs
 # the EDA stack at this prefix.
 _DEVCONTAINER_YOSYS = "/OpenROAD-flow-scripts/tools/install/yosys/bin/yosys"
 _YOSYS_TIMEOUT_S = 60
+
+# Secworks/AES upstream layout: rtl under src/rtl, testbenches under src/tb,
+# Makefile under toolruns/. The Makefile uses relative `../src/...` paths, so
+# it must be invoked from toolruns/ as cwd.
+_AES_REPO = REPO_ROOT / "external" / "aes"
+_AES_BUILD_TIMEOUT_S = 120
+_AES_RUN_TIMEOUT_S = 300
 
 
 async def _read_final(filename: str) -> str:
@@ -172,5 +179,142 @@ def aes_yosys_synthesisable() -> Scorer:
                 explanation=f"yosys exited rc={proc.returncode}:\n{tail}",
             )
         return Score(value=CORRECT)
+
+    return score
+
+
+async def _run(
+    *cmd: str,
+    cwd: Path | None = None,
+    timeout: float,
+) -> tuple[int | None, str, str]:
+    """Spawn a subprocess and return (returncode, stdout, stderr) or ('TIMEOUT')."""
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(cwd) if cwd else None,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    try:
+        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout)
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return None, "", f"timed out after {timeout}s"
+    return (
+        proc.returncode,
+        out_b.decode(errors="replace"),
+        err_b.decode(errors="replace"),
+    )
+
+
+@scorer(metrics=[accuracy(), stderr()])
+def aes_testbench_passes() -> Scorer:
+    """Run the secworks/aes top-level testbench against the agent's RTL.
+
+    Copies `external/aes` to a tempdir, overlays the agent's final `rtl/*.v`
+    into `src/rtl/`, then runs `make top.sim` + `./top.sim` from `toolruns/`
+    using the upstream Makefile (iverilog). CORRECT iff the testbench prints
+    the "All NN test cases completed successfully" success line and does not
+    print a failure line. The full simulator stdout is saved to
+    `llm-results/<RUN_TIMESTAMP>/<sample_id>/aes_testbench.log` for debugging.
+    """
+    async def score(state: TaskState, target: Target) -> Score:
+        await _save_artifacts(state)
+        out_dir = sample_output_dir(str(state.sample_id))
+
+        rtl_paths = list(state.metadata.get("original_files", {}).keys())
+        if not rtl_paths:
+            return Score(value=INCORRECT, explanation="no original_files in metadata")
+
+        if shutil.which("iverilog") is None:
+            return Score(
+                value=INCORRECT,
+                explanation="iverilog not found on host; cannot run secworks/aes testbench",
+            )
+        if not _AES_REPO.exists():
+            return Score(
+                value=INCORRECT,
+                explanation=(
+                    f"{_AES_REPO} not found — run `git submodule update --init` "
+                    "to fetch the secworks/aes submodule"
+                ),
+            )
+
+        with tempfile.TemporaryDirectory() as td:
+            repo_copy = Path(td) / "aes"
+            # Exclude .git (it's a submodule pointer file) and any stale build
+            # artifacts so the copy is a clean tree to run make against.
+            shutil.copytree(
+                _AES_REPO,
+                repo_copy,
+                ignore=shutil.ignore_patterns(".git", "*.sim", "*.vcd"),
+            )
+
+            # Overlay agent's final RTL onto src/rtl/. Sandbox paths are
+            # "rtl/<name>.v" (see tasks.py:_build_aes_dataset); upstream layout
+            # puts them at src/rtl/<name>.v.
+            for sandbox_path in rtl_paths:
+                if not sandbox_path.startswith("rtl/"):
+                    return Score(
+                        value=INCORRECT,
+                        explanation=f"unexpected sandbox path {sandbox_path!r}; expected rtl/*",
+                    )
+                dest = repo_copy / "src" / "rtl" / sandbox_path[len("rtl/"):]
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_text(await _read_final(sandbox_path))
+
+            toolruns = repo_copy / "toolruns"
+
+            rc, b_out, b_err = await _run(
+                "make", "top.sim", cwd=toolruns, timeout=_AES_BUILD_TIMEOUT_S
+            )
+            if rc != 0:
+                tail = (b_err or b_out)[-2000:]
+                (out_dir / "aes_testbench.log").write_text(
+                    f"# build failed (rc={rc})\n{b_out}\n--- stderr ---\n{b_err}"
+                )
+                return Score(
+                    value=INCORRECT,
+                    explanation=f"iverilog build failed (rc={rc}):\n{tail}",
+                )
+
+            rc, r_out, r_err = await _run(
+                "./top.sim", cwd=toolruns, timeout=_AES_RUN_TIMEOUT_S
+            )
+            (out_dir / "aes_testbench.log").write_text(
+                f"# rc={rc}\n{r_out}\n--- stderr ---\n{r_err}"
+            )
+            if rc is None:
+                return Score(
+                    value=INCORRECT,
+                    explanation=f"testbench timed out after {_AES_RUN_TIMEOUT_S}s",
+                )
+            if rc != 0:
+                tail = (r_err or r_out)[-2000:]
+                return Score(
+                    value=INCORRECT,
+                    explanation=f"testbench exited rc={rc}:\n{tail}",
+                )
+
+        # tb_aes.v emits one of these two lines via display_test_results:
+        #   "*** All NN test cases completed successfully"
+        #   "*** NN tests completed - MM test cases did not complete successfully."
+        # Treat the failure phrase as authoritative since the success substring
+        # ("test cases completed successfully") is contained in both.
+        if "did not complete successfully" in r_out:
+            tail = r_out[-1500:]
+            return Score(
+                value=INCORRECT,
+                answer="testbench reported failures",
+                explanation=f"secworks/aes tb_aes reported failures:\n{tail}",
+            )
+        if "test cases completed successfully" in r_out:
+            return Score(value=CORRECT, answer="testbench passed")
+        tail = r_out[-1500:]
+        return Score(
+            value=INCORRECT,
+            explanation=f"no pass/fail marker in tb_aes output:\n{tail}",
+        )
 
     return score
