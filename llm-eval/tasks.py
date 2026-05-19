@@ -36,6 +36,7 @@ from inspect_ai.dataset import Sample
 from common.config import TargetConfig
 from common.targets import all_targets
 from scorers import (
+    SANDBOX_RTL_ROOT,
     testbench_passes,
     yosys_synthesisable,
 )
@@ -46,13 +47,12 @@ NB_ROOT = Path(__file__).parent
 SANDBOX_COMPOSE = NB_ROOT / "compose.yaml"
 
 
-def _sandbox_rtl_path(host_path: Path) -> str:
-    """Sandbox-relative location where an RTL file lands in the agent's tree.
-
-    Flat namespace under `rtl/` regardless of upstream repo layout — the
-    scorers reverse this mapping using `design.tb_repo_root` + each
-    `rtl_file`'s repo-relative path."""
-    return f"rtl/{host_path.name}"
+def _sandbox_rtl_path(design, host_path: Path) -> str:
+    """Sandbox location for an RTL file: mirrors its path relative to
+    `design.rtl_dir`, anchored at `SANDBOX_RTL_ROOT`. The scorers invert
+    this by reading back `<SANDBOX_RTL_ROOT>/<rel>` and applying the diff
+    relative to `rtl_dir`."""
+    return f"{SANDBOX_RTL_ROOT}/{host_path.relative_to(design.rtl_dir)}"
 
 
 def _build_sample(target: TargetConfig) -> Sample:
@@ -64,54 +64,45 @@ def _build_sample(target: TargetConfig) -> Sample:
             "RTL files — run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
-    sandbox_paths = [_sandbox_rtl_path(p) for p in rtl_files]
+    sandbox_paths = [_sandbox_rtl_path(design, p) for p in rtl_files]
     top_file = next((p for p in rtl_files if p.stem == design.top_module), rtl_files[0])
-    top_sandbox = _sandbox_rtl_path(top_file)
+    top_sandbox = _sandbox_rtl_path(design, top_file)
     return Sample(
         id=f"{design.benchmark}/{design.name}/{design.variant}",
         input=(
-            f"There is an RTL design in `rtl/` (top module: `{design.top_module}`, "
-            f"in `{top_sandbox}`). Your job is to reduce the **longest "
-            "combinational path** through the design — the path that "
-            "gates the achievable clock period.\n\n"
+            f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
+            f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
+            "reduce the **longest combinational path** through the design "
+            "— the path that gates the achievable clock period.\n\n"
             "Constraints:\n"
             "- Preserve functional behaviour. No testbench is available "
             "to you, so reason about the RTL directly.\n"
             "- The design must remain synthesisable by yosys (the scorer "
-            "runs yosys over `rtl/*.v` after you finish).\n"
-            "- Edit the files in `rtl/` in place; do not rename them."
+            f"runs yosys over `{SANDBOX_RTL_ROOT}/` after you finish).\n"
+            f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
+            "rename them."
         ),
         target="",
         files={
             sandbox_path: str(host_path.resolve())
             for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
         },
-        metadata={
-            "design": design,
-            "original_files": {
-                sandbox_path: host_path.read_text()
-                for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
-            },
-        },
+        metadata={"design": design},
     )
 
 
 @task
-def optimize_targets(
-    targets: list[TargetConfig] = all_targets, message_limit: int = 200
-) -> Task:
-    # testbench_passes pulls the design from each sample's metadata, so it
-    # works across a mixed dataset; only register it when at least one
-    # target ships a runnable harness, otherwise every sample would just
-    # report NOANSWER for it.
-    scorers = [yosys_synthesisable()]
-    if any(t.design.run_tb is not None for t in targets):
-        scorers.append(testbench_passes())
+def optimize_timing() -> Task:
+    # Dataset is all valid synthesis targets
+    dataset = [_build_sample(t) for t in all_targets]
+
+    # 2 requirements for progress: synthesisable and functionally correct
+    scorers = [yosys_synthesisable(), testbench_passes()]
+
     return Task(
-        dataset=[_build_sample(t) for t in targets],
+        dataset=dataset,
         solver=claude_code_solver(),
         scorer=scorers,
         sandbox=("docker", str(SANDBOX_COMPOSE)),
-        message_limit=message_limit,
-        tags=["claude-code", "rtl"],
+        tags=["claude-code"],
     )

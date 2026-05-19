@@ -66,6 +66,7 @@ class RTLLMLoader(DesignLoader):
                     benchmark=self.benchmark,
                     name=name,
                     variant="reference",
+                    rtl_dir=design_dir,
                     rtl_files=tuple(verified),
                     top_module=detect_top_module(verified),
                 ),
@@ -77,6 +78,7 @@ class RTLLMLoader(DesignLoader):
                         benchmark=self.benchmark,
                         name=name,
                         variant=variant,
+                        rtl_dir=cand.parent,
                         rtl_files=(cand,),
                         top_module=name,
                     )
@@ -134,13 +136,15 @@ class AESLoader(DesignLoader):
         self.aes_root = aes_root
 
     def designs(self) -> DesignTree:
-        rtl_files = sorted((self.aes_root / "src" / "rtl").glob("*.v"))
+        rtl_dir = self.aes_root / "src" / "rtl"
+        rtl_files = sorted(rtl_dir.glob("*.v"))
         if not rtl_files:
             return {self.benchmark: {}}
         design = DesignConfig(
             benchmark=self.benchmark,
             name="aes",
             variant="reference",
+            rtl_dir=rtl_dir,
             rtl_files=tuple(rtl_files),
             top_module=detect_top_module(rtl_files),
             tb_repo_root=self.aes_root,
@@ -180,6 +184,7 @@ class RTLOPTLoader(DesignLoader):
                     benchmark=self.benchmark,
                     name=name,
                     variant="reference",
+                    rtl_dir=ref_dir,
                     rtl_files=tuple(ref_files),
                     top_module=detect_top_module(ref_files),
                 ),
@@ -187,6 +192,7 @@ class RTLOPTLoader(DesignLoader):
                     benchmark=self.benchmark,
                     name=name,
                     variant="suboptimal",
+                    rtl_dir=sub_dir,
                     rtl_files=tuple(sub_files),
                     top_module=detect_top_module(sub_files),
                 ),
@@ -194,11 +200,13 @@ class RTLOPTLoader(DesignLoader):
 
             # Add LLM-generated variants
             for suffix in self.LLM_VARIANTS:
-                llm_files = self._rtl_in(llm_dir / f"{name}_{suffix}")
+                variant_dir = llm_dir / f"{name}_{suffix}"
+                llm_files = self._rtl_in(variant_dir)
                 variants[suffix] = DesignConfig(
                     benchmark=self.benchmark,
                     name=name,
                     variant=suffix,
+                    rtl_dir=variant_dir,
                     rtl_files=tuple(llm_files),
                     top_module=detect_top_module(llm_files),
                 )
@@ -241,6 +249,7 @@ class CorpusLoader(DesignLoader):
                     benchmark=self.benchmark,
                     name=name,
                     variant=variant,
+                    rtl_dir=design_dir,
                     rtl_files=tuple(rtl_files),
                     top_module=detect_top_module(rtl_files),
                 )
