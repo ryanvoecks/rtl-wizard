@@ -1,25 +1,8 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Run with:
-    uv run inspect eval llm-eval/tasks.py --model none/claude-sonnet-4-5
-
-The Claude Code model is taken from Inspect's `--model` flag at solve time
-(see solvers._resolve_claude_model). Pass it as `none/<model>` so Inspect
-doesn't try to instantiate an API client. Without `--model`, Inspect falls
-back to INSPECT_EVAL_MODEL from .env (currently gpt-oss-120b for the
-rtl-wizard benchmark); the solver then falls back to its own
-DEFAULT_CLAUDE_MODEL but the viewer will still show that env value. Pass
-`--model` to keep the label honest.
-
-The `.eval` log lands under `llm-results/<RUN_TIMESTAMP>/` alongside per-sample
-artifacts (diff.patch, etc.) — see `llm-eval/outputs.py` for the recorder
-redirect that makes this work without --log-dir.
-
-Prerequisite (one-time on the host):
-    claude setup-token
-    export CLAUDE_CODE_OAUTH_TOKEN=<paste>
-
-Builds the lightweight llm-eval sandbox image on first run (~2–3 min).
+Run with `uv run inspect eval llm-eval/tasks.py --model none/<model>`.
+Prerequisite: `claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
+Per-run logs + artifacts (diff.patch, *.log) land under `llm-results/<ts>/`.
 """
 import sys
 from pathlib import Path
@@ -49,9 +32,7 @@ SANDBOX_COMPOSE = NB_ROOT / "compose.yaml"
 
 def _sandbox_rtl_path(design, host_path: Path) -> str:
     """Sandbox location for an RTL file: mirrors its path relative to
-    `design.rtl_dir`, anchored at `SANDBOX_RTL_ROOT`. The scorers invert
-    this by reading back `<SANDBOX_RTL_ROOT>/<rel>` and applying the diff
-    relative to `rtl_dir`."""
+    `design.rtl_dir`, anchored at `SANDBOX_RTL_ROOT`."""
     return f"{SANDBOX_RTL_ROOT}/{host_path.relative_to(design.rtl_dir)}"
 
 

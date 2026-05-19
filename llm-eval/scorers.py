@@ -1,16 +1,8 @@
 """Diff-based scorers for llm-eval tasks.
 
-Each scorer pulls the agent's final RTL files out of the sandbox, computes a
-unified diff against the originals (using paths relative to `design.rtl_dir`),
-saves the diff as `diff.patch` under the run's per-sample output dir, then
-hands `(design, diff)` to a pure-function evaluator that reconstructs the
-modified RTL tree on disk (via `patch`) and runs the actual check.
-
-That split is deliberate: the pure evaluators (`evaluate_synthesis`,
-`evaluate_testbench`) only need a `DesignConfig` and a diff string, so the
-same correctness check can be replayed later from a saved `diff.patch`
-without re-running the agent. The Inspect wrappers exist only to bridge
-between the sandbox + TaskState and that pure interface.
+Each scorer diffs the agent's sandbox RTL against on-disk originals, saves
+`diff.patch`, and hands `(design, diff)` to a pure evaluator that reapplies
+the diff into a tempdir and runs the check — so a saved diff can be replayed.
 """
 import asyncio
 import difflib
@@ -33,12 +25,9 @@ from inspect_ai.util import sandbox
 from common.config import YOSYS_BIN, DesignConfig, Result
 from outputs import sample_output_dir
 
-_YOSYS_TIMEOUT_S = 60
-
-# Root inside the sandbox where the agent edits the design. tasks.py mirrors
-# `rtl_dir`'s structure under this prefix, so every RTL file lives at
-# `<SANDBOX_RTL_ROOT>/<file.relative_to(design.rtl_dir)>`.
-SANDBOX_RTL_ROOT = "rtl"
+# Config
+YOSYS_TIMEOUT = 60          # Timeout for synthesisability check
+SANDBOX_RTL_ROOT = "rtl"    # Root inside sandbox where agent edits design
 
 
 def _rel(design: DesignConfig, rtl_file: Path) -> Path:
@@ -59,10 +48,8 @@ async def _read_sandbox_file(path: str) -> str:
 
 async def build_diff_from_sandbox(design: DesignConfig) -> str:
     """Unified diff of the agent's edits against `design`'s on-disk originals.
+    Output paths are relative to `design.rtl_dir`, so diff applies cleanly."""
 
-    Output paths are relative to `design.rtl_dir`, so the diff applies
-    cleanly with `patch -p1` against a copy of `design.root` patched at
-    `rtl_dir.relative_to(root)`."""
     parts: list[str] = []
     for rtl_file in design.rtl_files:
         rel = _rel(design, rtl_file)
@@ -120,12 +107,12 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
         proc = subprocess.run(
             [YOSYS_BIN, "-q", "-p", script],
             cwd=rtl_path, capture_output=True, text=True,
-            timeout=_YOSYS_TIMEOUT_S,
+            timeout=YOSYS_TIMEOUT,
         )
     except RuntimeError as e:
         return str(e), 1
     except subprocess.TimeoutExpired:
-        return f"yosys timed out after {_YOSYS_TIMEOUT_S}s", 124
+        return f"yosys timed out after {YOSYS_TIMEOUT}s", 124
 
     return proc.stdout + proc.stderr, proc.returncode
 
