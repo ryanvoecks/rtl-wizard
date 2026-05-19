@@ -8,17 +8,34 @@ from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
+from inspect_ai.util import SandboxEnvironmentSpec
+from inspect_ai.util._sandbox.compose import ComposeConfig, parse_compose_yaml
 
 from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
-from scorers import (
+from .mcp_connect import discover_shared_network
+from .scorers import (
     SANDBOX_RTL_ROOT,
     synthesis,
     testbench,
 )
-from solvers import claude_code_solver
+from .solvers import claude_code_solver
 
 SANDBOX_COMPOSE = LLM_EVAL / "sandbox" / "compose.yaml"
+
+
+def _build_sandbox_compose() -> ComposeConfig:
+    """Load the compose template and inject the discovered shared-network
+    name directly into the config."""
+    config = parse_compose_yaml(str(SANDBOX_COMPOSE))
+    network, _ = discover_shared_network()
+    if config.networks and "shared" in config.networks:
+        config.networks["shared"]["name"] = network
+    sandbox_dir = SANDBOX_COMPOSE.parent.resolve()
+    for svc in config.services.values():
+        if svc.build and not isinstance(svc.build, str) and svc.build.context:
+            svc.build.context = str(sandbox_dir / svc.build.context)
+    return config
 
 
 def _sandbox_rtl_path(design, host_path: Path) -> str:
@@ -47,8 +64,11 @@ def _build_sample(target: TargetConfig) -> Sample:
             "reduce the **longest combinational path** through the design "
             "— the path that gates the achievable clock period.\n\n"
             "Constraints:\n"
-            "- Preserve functional behaviour. No testbench is available "
-            "to you, so reason about the RTL directly.\n"
+            "- Preserve functional behaviour. You cannot read the "
+            "testbench, but you can call the `run_testbench` MCP tool to "
+            "run it against your current RTL — it returns the testbench's "
+            "exit code and stdout so you can sanity-check edits before "
+            "finishing.\n"
             "- The design must remain synthesisable by yosys (the scorer "
             f"runs yosys over `{SANDBOX_RTL_ROOT}/` after you finish).\n"
             f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
@@ -71,10 +91,13 @@ def optimize_timing(output_dir: Path) -> Task:
     # 2 requirements for progress: synthesisable and functionally correct
     scorers = [synthesis(output_dir), testbench(output_dir)]
 
+    # Sandbox needs network config to access MCP servers
+    sandbox = SandboxEnvironmentSpec("docker", config=_build_sandbox_compose())
+
     return Task(
         dataset=dataset,
         solver=claude_code_solver(),
         scorer=scorers,
-        sandbox=("docker", str(SANDBOX_COMPOSE)),
+        sandbox=sandbox,
         tags=["claude-code"],
     )
