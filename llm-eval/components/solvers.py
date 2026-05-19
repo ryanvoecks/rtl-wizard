@@ -26,7 +26,7 @@ from inspect_ai.model import (
 from inspect_ai.model._model import active_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
-from inspect_ai.util import LimitExceededError, sandbox, store
+from inspect_ai.util import sandbox, store
 
 from common.config import DesignConfig
 from .mcp_connect import MCPService
@@ -141,7 +141,8 @@ def _events_to_messages(events: list[dict]) -> list[ChatMessage]:
             existing = asst_by_id.get(msg_id) if msg_id else None
             if existing is not None:
                 if text_parts:
-                    existing.content = (existing.content or "") + "".join(text_parts)
+                    prev = existing.content if isinstance(existing.content, str) else ""
+                    existing.content = prev + "".join(text_parts)
                 if tool_calls:
                     existing.tool_calls = (existing.tool_calls or []) + tool_calls
             else:
@@ -178,15 +179,15 @@ def _events_to_messages(events: list[dict]) -> list[ChatMessage]:
 
 
 def _build_usage(final: dict) -> ModelUsage:
-    u = final.get("usage") or {}
-    input_t = int(u.get("input_tokens", 0) or 0)
-    output_t = int(u.get("output_tokens", 0) or 0)
+    usage = final.get("usage") or {}
+    input_t = int(usage.get("input_tokens", 0))
+    output_t = int(usage.get("output_tokens", 0))
     return ModelUsage(
         input_tokens=input_t,
         output_tokens=output_t,
         total_tokens=input_t + output_t,
-        input_tokens_cache_write=u.get("cache_creation_input_tokens"),
-        input_tokens_cache_read=u.get("cache_read_input_tokens"),
+        input_tokens_cache_write=usage.get("cache_creation_input_tokens"),
+        input_tokens_cache_read=usage.get("cache_read_input_tokens"),
         total_cost=final.get("total_cost_usd"),
     )
 
@@ -251,73 +252,49 @@ def claude_code_oauth(
         if not events:
             raise RuntimeError(f"claude failed (rc={result.returncode})")
 
-        # The final `result` event carries the aggregate summary (result text,
-        # session id, usage, cost, num_turns, subtype). Always last; present
-        # both on success and on a controlled `--max-turns` stop.
+        # The final `result` event carries the summary. Always last.
         final = next(
             (e for e in reversed(events) if e.get("type") == "result"), None
         )
         if final is None:
             raise RuntimeError("claude transcript contained no `result` event")
 
-        # `error_max_turns` is a graceful stop — log the partial trajectory and
-        # record the reason instead of raising. Other error subtypes are real.
+        # End gracefully on `error_max_turns`
         max_turns_hit = final.get("subtype") == "error_max_turns"
         if final.get("is_error") and not max_turns_hit:
             raise RuntimeError(f"claude reported error: {final.get('result')}")
 
-        # Append one-by-one so a message_limit firing mid-transcript preserves
-        # everything we've recorded so far. `ChatMessageList.extend` is atomic:
-        # it checks the *projected* total before adding any items, so a single
-        # `extend` call that would overflow the limit drops the entire batch.
+        # Parse events, messages and usage
         parsed = _events_to_messages(events)
-        limit_hit: LimitExceededError | None = None
-        for m in parsed:
-            try:
-                state.messages.append(m)
-            except LimitExceededError as e:
-                limit_hit = e
-                break
-
+        state.messages.extend(parsed)
         usage = _build_usage(final)
+
+        # Viewer treats final response specially
         last_assistant = next(
             (m for m in reversed(parsed) if isinstance(m, ChatMessageAssistant)),
             None,
         )
-        # Inspect's StopReason literal has no "max_turns" — `model_length` is
-        # the closest analog (a length-like external stop) and is what the
-        # viewer surfaces in the output card.
-        stop_reason = "model_length" if max_turns_hit else "stop"
-        if last_assistant is not None:
-            state.output = ModelOutput(
-                model=model,
-                choices=[
-                    ChatCompletionChoice(
-                        message=last_assistant, stop_reason=stop_reason
-                    )
-                ],
-                usage=usage,
-            )
-        else:
-            # Defensive: no assistant events seen. Fall back to the result text.
-            state.output = ModelOutput.from_content(
-                model=model, content=final.get("result", "")
-            )
-            state.output.usage = usage
-            state.output.choices[0].stop_reason = stop_reason
+        if last_assistant is None:
+            raise ValueError("could not find final response")
 
-        # Keep a few extras in `store()` that don't fit on ModelUsage but are
-        # useful for downstream analysis (session resume, turn counts).
+        # Final message and stop reason
+        stop_reason = "model_length" if max_turns_hit else "stop"
+        state.output = ModelOutput(
+            model=model,
+            choices=[
+                ChatCompletionChoice(
+                    message=last_assistant, stop_reason=stop_reason
+                )
+            ],
+            usage=usage,
+        )
+
+        # Additional useful fields
         store().set("cc_session_id", final.get("session_id"))
         store().set("cc_num_turns", final.get("num_turns"))
         store().set("cc_duration_ms", final.get("duration_ms"))
         store().set("cc_stop_subtype", final.get("subtype"))
 
-        # Re-raise after state.messages / state.output are populated so the
-        # transcript is preserved in the log; Inspect's solver wrapper records
-        # the limit and ends the sample as usual.
-        if limit_hit is not None:
-            raise limit_hit
         return state
 
     return execute
@@ -331,14 +308,7 @@ def claude_code_solver() -> Solver:
         design = state.metadata.get("design")
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(design=design)
-        try:
-            result = await agent_fn(agent_state)
-        except LimitExceededError:
-            # Preserve partial transcript
-            state.messages = agent_state.messages
-            state.output = agent_state.output
-            raise
-
+        result = await agent_fn(agent_state)
         state.messages = result.messages
         state.output = result.output
         return state
