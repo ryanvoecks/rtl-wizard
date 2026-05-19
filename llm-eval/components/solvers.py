@@ -1,15 +1,9 @@
 """Custom Claude Code agent driven by an OAUTH token, not an API key.
 
-Shells out to `claude -p --output-format stream-json --verbose` inside the
-sandbox to capture the full per-event transcript, then translates each event
-into Inspect chat-message form so `state.messages` carries the whole agent
-trajectory (assistant turns + tool calls + tool results) and the .eval log is
-viewable in `inspect view` without further conversion.
-
-`CLAUDE_CODE_OAUTH_TOKEN` is read from the Inspect process env and injected
-per `sb.exec(env=...)` — never baked into the image or compose file.
-ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL are deliberately NOT forwarded, since
-Claude Code prefers an API key over the OAUTH token when both are present.
+Shells out to `claude -p --output-format stream-json` in the sandbox and
+translates each event into Inspect chat-message form so the .eval log is
+viewable in `inspect view`. `CLAUDE_CODE_OAUTH_TOKEN` is injected per
+`sb.exec(env=...)`; ANTHROPIC_API_KEY is *not* forwarded (CLI prefers it).
 """
 import json
 import os
@@ -78,11 +72,7 @@ def _parse_stream_json(stdout: str) -> list[dict]:
 
 
 def _tool_result_text(content) -> str:
-    """Flatten a tool_result `content` field (str | list[block]) to plain text.
-
-    Anthropic-style tool_result blocks can carry either a string or a list of
-    content blocks (text/image/etc.). The viewer expects plain text on
-    ChatMessageTool, so we concatenate text parts and stringify the rest."""
+    """Flatten a tool_result `content` field to plain text."""
     if content is None:
         return ""
     if isinstance(content, str):
@@ -98,83 +88,89 @@ def _tool_result_text(content) -> str:
     return str(content)
 
 
+def _parse_assistant_blocks(blocks: list) -> tuple[str, list[ToolCall]]:
+    """Split an assistant message's content blocks into (text, tool_calls)."""
+    text_parts: list[str] = []
+    tool_calls: list[ToolCall] = []
+    for block in blocks:
+        btype = block.get("type")
+        if btype == "text":
+            text_parts.append(block.get("text", ""))
+        elif btype == "tool_use":
+            tool_calls.append(
+                ToolCall(
+                    id=block.get("id", ""),
+                    function=block.get("name", ""),
+                    arguments=block.get("input") or {},
+                )
+            )
+    return "".join(text_parts), tool_calls
+
+
+def _merge_or_make_assistant(
+    msg: dict, asst_by_id: dict[str, ChatMessageAssistant]
+) -> ChatMessageAssistant | None:
+    """Build a ChatMessageAssistant for this event, or merge it into the
+    in-flight message sharing its `message.id`."""
+    text, tool_calls = _parse_assistant_blocks(msg.get("content") or [])
+    msg_id = msg.get("id")
+    existing = asst_by_id.get(msg_id) if msg_id else None
+    if existing is not None:
+        if text:
+            prev = existing.content if isinstance(existing.content, str) else ""
+            existing.content = prev + text
+        if tool_calls:
+            existing.tool_calls = (existing.tool_calls or []) + tool_calls
+        return None
+    new_msg = ChatMessageAssistant(
+        id=msg_id,
+        content=text,
+        tool_calls=tool_calls or None,
+        model=msg.get("model"),
+    )
+    if msg_id:
+        asst_by_id[msg_id] = new_msg
+    return new_msg
+
+
+def _tool_results_to_messages(msg: dict) -> list[ChatMessageTool]:
+    """One ChatMessageTool per tool_result block in a `user` event (parallel
+    tool calls in a single turn produce multiple tool_result blocks)."""
+    content = msg.get("content")
+    blocks = content if isinstance(content, list) else []
+    out: list[ChatMessageTool] = []
+    for block in blocks:
+        if not isinstance(block, dict) or block.get("type") != "tool_result":
+            continue
+        text = _tool_result_text(block.get("content"))
+        error = (
+            ToolCallError(type="unknown", message=text)
+            if block.get("is_error")
+            else None
+        )
+        out.append(
+            ChatMessageTool(
+                content=text,
+                tool_call_id=block.get("tool_use_id"),
+                error=error,
+            )
+        )
+    return out
+
+
 def _events_to_messages(events: list[dict]) -> list[ChatMessage]:
-    """Convert stream-json events into Inspect ChatMessage objects.
-
-    `claude -p --output-format stream-json` emits one event *per content block*,
-    not per assistant message — a tool-using turn typically arrives as three
-    events sharing one `message.id`: a `thinking` block, a `text` block, then a
-    `tool_use` block. Treating each event as its own message produces a blank
-    `ChatMessageAssistant` for the thinking block (it has neither text nor
-    tool_use). We aggregate by `message.id` so one logical turn becomes one
-    message with text + tool_calls combined.
-
-    `user` event -> one ChatMessageTool per tool_result block (parallel tool
-    calls in a single turn produce multiple tool_result blocks).
-
-    `system` / `result` events are not messages; they're handled separately."""
+    """Convert stream-json events into Inspect ChatMessage objects."""
     messages: list[ChatMessage] = []
-    # Track the in-flight assistant message by id so subsequent events with the
-    # same id append to it rather than producing a fresh (often-empty) message.
     asst_by_id: dict[str, ChatMessageAssistant] = {}
     for event in events:
         etype = event.get("type")
+        msg = event.get("message") or {}
         if etype == "assistant":
-            msg = event.get("message") or {}
-            msg_id = msg.get("id")
-            text_parts: list[str] = []
-            tool_calls: list[ToolCall] = []
-            for block in msg.get("content") or []:
-                btype = block.get("type")
-                if btype == "text":
-                    text_parts.append(block.get("text", ""))
-                elif btype == "tool_use":
-                    tool_calls.append(
-                        ToolCall(
-                            id=block.get("id", ""),
-                            function=block.get("name", ""),
-                            arguments=block.get("input") or {},
-                        )
-                    )
-                # `thinking` and any other future block types are intentionally
-                # dropped — they carry no chat-visible content.
-            existing = asst_by_id.get(msg_id) if msg_id else None
-            if existing is not None:
-                if text_parts:
-                    prev = existing.content if isinstance(existing.content, str) else ""
-                    existing.content = prev + "".join(text_parts)
-                if tool_calls:
-                    existing.tool_calls = (existing.tool_calls or []) + tool_calls
-            else:
-                new_msg = ChatMessageAssistant(
-                    id=msg_id,
-                    content="".join(text_parts),
-                    tool_calls=tool_calls or None,
-                    model=msg.get("model"),
-                )
-                if msg_id:
-                    asst_by_id[msg_id] = new_msg
-                messages.append(new_msg)
+            new = _merge_or_make_assistant(msg, asst_by_id)
+            if new is not None:
+                messages.append(new)
         elif etype == "user":
-            msg = event.get("message") or {}
-            content = msg.get("content")
-            blocks = content if isinstance(content, list) else []
-            for block in blocks:
-                if not isinstance(block, dict) or block.get("type") != "tool_result":
-                    continue
-                text = _tool_result_text(block.get("content"))
-                error = (
-                    ToolCallError(type="unknown", message=text)
-                    if block.get("is_error")
-                    else None
-                )
-                messages.append(
-                    ChatMessageTool(
-                        content=text,
-                        tool_call_id=block.get("tool_use_id"),
-                        error=error,
-                    )
-                )
+            messages.extend(_tool_results_to_messages(msg))
     return messages
 
 
