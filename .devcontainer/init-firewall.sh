@@ -75,6 +75,12 @@ for domain in \
     "marketplace.visualstudio.com" \
     "vscode.blob.core.windows.net" \
     "update.code.visualstudio.com" \
+    "ms-python.gallerycdn.vsassets.io" \
+    "charliermarsh.gallerycdn.vsassets.io" \
+    "eamodio.gallerycdn.vsassets.io" \
+    "anthropic.gallerycdn.vsassets.io" \
+    "ms-azuretools.gallerycdn.vsassets.io" \
+    "mechatroner.gallerycdn.vsassets.io" \
     "astral.sh" \
     "pypi.org" \
     "files.pythonhosted.org" \

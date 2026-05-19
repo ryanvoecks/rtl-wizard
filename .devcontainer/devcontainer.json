@@ -8,6 +8,7 @@
     "vscode": {
       "extensions": [
         "anthropic.claude-code",
+        "charliermarsh.ruff",
         "eamodio.gitlens",
         "mechatroner.rainbow-csv",
         "ms-azuretools.vscode-docker",
@@ -16,5 +17,6 @@
     }
   },
   "postStartCommand": "sudo /usr/local/bin/init-firewall.sh >/tmp/init-firewall.log 2>&1 || { cat /tmp/init-firewall.log; exit 1; }",
+  "postCreateCommand": "uv sync",
   "waitFor": "postStartCommand"
 }

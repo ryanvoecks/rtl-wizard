@@ -41,9 +41,10 @@ from typing import Any
 
 import analyse
 from calibrate import resolve_design
-from common.config import EDA_RUNS, ORFS_HOME, DesignConfig, RunConfig, StudyConfig
 from extract_metrics import extract
 from run import run_job
+
+from common.config import EDA_RUNS, ORFS_HOME, DesignConfig, RunConfig, StudyConfig
 
 ITER_SCOPE_DIR = "__iter_scope__"
 
@@ -487,7 +488,7 @@ def main() -> None:
         "--min-period-frac",
         type=float,
         default=0.4,
-        help="Phase B halts when period drops below " "T_baseline * this fraction.",
+        help="Phase B halts when period drops below T_baseline * this fraction.",
     )
     parser.add_argument(
         "--eps",

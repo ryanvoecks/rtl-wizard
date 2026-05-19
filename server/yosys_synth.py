@@ -65,7 +65,8 @@ def yosys_synth(verilog_path: str, top: str | None = None) -> str:
 
 
 def _extract_stats(stdout: str) -> str | None:
-    """Return every per-module and design-hierarchy `stat` block, trimmed of yosys's post-script log lines."""
+    """Return every per-module and design-hierarchy `stat` block, trimmed of
+    yosys's post-script log lines."""
     lines = stdout.splitlines()
 
     start = None

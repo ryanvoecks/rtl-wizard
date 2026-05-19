@@ -131,12 +131,12 @@ def parse_ppa_report(stdout: str) -> tuple[dict[str, float] | None, str | None]:
     delay_m = _DELAY_ARRIVAL_RE.search(_section(stdout, PPA_DELAY_TAG, PPA_AREA_TAG))
     area_m = _AREA_RE.search(_section(stdout, PPA_AREA_TAG, PPA_POWER_TAG))
     power_m = _POWER_TOTAL_RE.search(_section(stdout, PPA_POWER_TAG, PPA_END_TAG))
-    missing = [
-        n
-        for n, m in (("delay", delay_m), ("area", area_m), ("power", power_m))
-        if m is None
-    ]
-    if missing:
+    if delay_m is None or area_m is None or power_m is None:
+        missing = [
+            n
+            for n, m in (("delay", delay_m), ("area", area_m), ("power", power_m))
+            if m is None
+        ]
         return None, (
             f"could not parse {', '.join(missing)} from openroad output:\n"
             f"{stdout[-2000:]}"
@@ -175,6 +175,7 @@ def measure_ppa(verilog_paths: list[str], top: str | None = None) -> str:
         top: top-module name. Defaults to the first file's stem.
     """
     from pathlib import Path
+
     from util import eda_env  # lazy: only resolves inside the sandbox
 
     if not verilog_paths:
@@ -224,7 +225,7 @@ def measure_ppa(verilog_paths: list[str], top: str | None = None) -> str:
         return f"[openroad_ppa openroad rc={sta.returncode} top={top_name}]\n{log}"
 
     metrics, err = parse_ppa_report(sta.stdout)
-    if err:
+    if metrics is None:
         return f"[openroad_ppa parse-error top={top_name}]\n{err}"
 
     delay_ns = metrics["delay"]

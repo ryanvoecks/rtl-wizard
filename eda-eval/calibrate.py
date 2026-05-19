@@ -25,6 +25,9 @@ import math
 import time
 from pathlib import Path
 
+from extract_metrics import extract
+from run import run_job
+
 from common.config import (
     EDA_RUNS,
     ORFS_HOME,
@@ -33,8 +36,6 @@ from common.config import (
     StudyConfig,
 )
 from common.loader import AllDesigns
-from extract_metrics import extract
-from run import run_job
 
 ITER_CAL_DIR = "__iter_calibration__"
 

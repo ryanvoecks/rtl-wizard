@@ -25,6 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from extract_metrics import extract
 from tqdm import tqdm
 
 from common.config import (
@@ -38,7 +39,6 @@ from common.config import (
     dump_run_config,
 )
 from common.loader import AllDesigns, DesignTree
-from extract_metrics import extract
 
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
@@ -86,7 +86,7 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     die with a `core_margin_um` boundary on each edge."""
     inner = side_um - core_margin_um
     die_area = f"0 0 {side_um:.3f} {side_um:.3f}"
-    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} " f"{inner:.3f} {inner:.3f}"
+    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} {inner:.3f} {inner:.3f}"
     return die_area, core_area
 
 
@@ -206,8 +206,7 @@ def main():
         action="append",
         default=None,
         metavar="GLOB",
-        help="Restrict to designs whose name matches one of these globs. "
-        "Repeatable.",
+        help="Restrict to designs whose name matches one of these globs. Repeatable.",
     )
     parser.add_argument(
         "--variant",

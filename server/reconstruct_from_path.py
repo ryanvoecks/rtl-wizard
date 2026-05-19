@@ -213,7 +213,10 @@ def emit(start, events, end, src):
     return "\n".join([header] + out)
 
 
-YOSYS_SCRIPT = "read_verilog {sv}{path}; hierarchy -auto-top; proc; flatten; opt; techmap; opt; ltp -noff"
+YOSYS_SCRIPT = (
+    "read_verilog {sv}{path};"
+    " hierarchy -auto-top; proc; flatten; opt; techmap; opt; ltp -noff"
+)
 
 
 def run_yosys(verilog_path):

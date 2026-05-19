@@ -14,6 +14,7 @@ from inspect_ai.util._sandbox.compose import ComposeConfig, parse_compose_yaml
 
 from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
+
 from .mcp_connect import discover_shared_network
 from .scorers import (
     SANDBOX_RTL_ROOT,
