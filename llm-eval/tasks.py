@@ -1,22 +1,15 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Run with `uv run inspect eval llm-eval/tasks.py --model none/<model>`.
-Prerequisite: `claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
-Per-run logs + artifacts (diff.patch, *.log) land under `llm-results/<ts>/`.
+Entry point is `llm-eval/run.py` — it owns the per-run output dir and
+forwards it into `optimize_timing(output_dir)`. Prerequisite:
+`claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
 """
-import sys
 from pathlib import Path
-
-# inspect_ai loads task files via SourceFileLoader without adding their parent
-# directory to sys.path. The containing dir name (`llm-eval`) has a dash so it
-# can't be a Python package; add the dir itself to sys.path so siblings are
-# importable as bare modules.
-sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
-from common.config import TargetConfig
+from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
 from scorers import (
     SANDBOX_RTL_ROOT,
@@ -25,9 +18,7 @@ from scorers import (
 )
 from solvers import claude_code_solver
 
-REPO_ROOT = Path(__file__).parent.parent
-NB_ROOT = Path(__file__).parent
-SANDBOX_COMPOSE = NB_ROOT / "sandbox" / "compose.yaml"
+SANDBOX_COMPOSE = LLM_EVAL / "sandbox" / "compose.yaml"
 
 
 def _sandbox_rtl_path(design, host_path: Path) -> str:
@@ -73,12 +64,12 @@ def _build_sample(target: TargetConfig) -> Sample:
 
 
 @task
-def optimize_timing() -> Task:
+def optimize_timing(output_dir: Path) -> Task:
     # Dataset is all valid synthesis targets
     dataset = [_build_sample(t) for t in all_targets]
 
     # 2 requirements for progress: synthesisable and functionally correct
-    scorers = [synthesis(), testbench()]
+    scorers = [synthesis(output_dir), testbench(output_dir)]
 
     return Task(
         dataset=dataset,

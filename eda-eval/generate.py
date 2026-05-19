@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from calibrate import ITER_CAL_DIR
-from common.config import AES, EDA_RUNS, OUTPUTS
+from common.config import AES, EDA_RUNS, LLM_RESULTS
 
 BENCHMARK = "secworks"
 NAME = "aes"
@@ -73,7 +73,7 @@ def main() -> None:
     report_text = report_path.read_text()
 
     ts = time.strftime("%Y-%m-%d_%H-%M-%S")
-    target = OUTPUTS / ts / BENCHMARK / NAME
+    target = LLM_RESULTS / ts / BENCHMARK / NAME
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(AES, target)
     print(f"Staged {AES} -> {target}")

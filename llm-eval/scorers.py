@@ -23,7 +23,6 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
 from common.config import YOSYS_BIN, DesignConfig, Result
-from outputs import sample_output_dir
 
 # Config
 YOSYS_TIMEOUT = 60          # Timeout for synthesisability check
@@ -127,24 +126,24 @@ def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
         return str(e), 1
 
 
-async def _save_diff(state: TaskState, design: DesignConfig) -> str:
-    diff = await build_diff_from_sandbox(design)
-    out_dir = sample_output_dir(str(state.sample_id))
-    (out_dir / "diff.patch").write_text(diff)
-    return diff
+def _sample_dir(output_dir: Path, state: TaskState) -> Path:
+    p = output_dir / str(state.sample_id)
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 @scorer(metrics=[accuracy()])
-def synthesis() -> Scorer:
+def synthesis(output_dir: Path) -> Scorer:
     """Cheap synthesisability check for an arbitrary RTL design."""
 
     async def score(state: TaskState, target: Target) -> Score:
         design = state.metadata.get("design")
-        diff = await _save_diff(state, design)
+        sample_dir = _sample_dir(output_dir, state)
+        diff = await build_diff_from_sandbox(design)
+        (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_synthesis, design, diff)
+        (sample_dir / "synthesis.log").write_text(log)
 
-        out_dir = sample_output_dir(str(state.sample_id))
-        (out_dir / "synthesis.log").write_text(log)
         artifacts = {"diff": diff, "log": log}
         if rc == 0:
             return Score(value=CORRECT, metadata=artifacts)
@@ -159,16 +158,17 @@ def synthesis() -> Scorer:
 
 
 @scorer(metrics=[accuracy()])
-def testbench() -> Scorer:
+def testbench(output_dir: Path) -> Scorer:
     """Run the design's upstream testbench against the agent's RTL."""
 
     async def score(state: TaskState, target: Target) -> Score:
         design = state.metadata.get("design")
-        diff = await _save_diff(state, design)
+        sample_dir = _sample_dir(output_dir, state)
+        diff = await build_diff_from_sandbox(design)
+        (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)
+        (sample_dir / "testbench.log").write_text(log)
 
-        out_dir = sample_output_dir(str(state.sample_id))
-        (out_dir / "testbench.log").write_text(log)
         artifacts = {"diff": diff, "log": log}
         if rc == 0:
             return Score(value=CORRECT, metadata=artifacts)

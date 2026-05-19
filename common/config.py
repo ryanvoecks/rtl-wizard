@@ -10,7 +10,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda-results"
-OUTPUTS = REPO_ROOT / "llm-results"
+LLM_EVAL = REPO_ROOT / "llm-eval"
+LLM_RESULTS = REPO_ROOT / "llm-results"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
