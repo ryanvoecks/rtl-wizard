@@ -41,9 +41,10 @@ from typing import Any
 
 import analyse
 from calibrate import resolve_design
-from common.config import EDA_RUNS, ORFS_HOME, DesignConfig, RunConfig, StudyConfig
 from extract_metrics import extract
 from run import run_job
+
+from common.config import EDA_RUNS, ORFS_HOME, DesignConfig, RunConfig, StudyConfig
 
 ITER_SCOPE_DIR = "__iter_scope__"
 

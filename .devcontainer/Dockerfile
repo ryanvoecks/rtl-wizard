@@ -115,6 +115,13 @@ ENV PATH=/home/${USERNAME}/.local/bin:$PATH
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh
 ENV UV_LINK_MODE=copy
 
+# Pre-create uv's data dir so the named volume mount in docker-compose.yml
+# inherits wizard ownership. Docker copies the image's target-path ownership
+# into a fresh named volume only if that path exists; otherwise the volume
+# mounts as root:root and `uv sync` fails with EACCES when uv tries to
+# install a managed Python (image ships 3.10; pyproject pins 3.12).
+RUN mkdir -p /home/${USERNAME}/.local/share/uv
+
 # Copy and run firewall setup
 COPY init-firewall.sh /usr/local/bin/
 USER root

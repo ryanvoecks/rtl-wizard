@@ -24,6 +24,7 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import sandbox, store
 
 from common.config import DesignConfig
+
 from .mcp_connect import MCPService
 from .mcp_servers import make_server
 

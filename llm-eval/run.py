@@ -8,10 +8,10 @@ Owns the per-run output dir so the .eval log and per-sample artifacts
 
 from datetime import datetime
 
+from components.tasks import optimize_timing
 from inspect_ai import eval as inspect_eval
 
 from common.config import LLM_RESULTS
-from components.tasks import optimize_timing
 
 
 def main() -> None:

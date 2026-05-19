@@ -12,6 +12,7 @@ dependencies = [
     "mcp>=1.27.0",
     "openai>=2.32.0",
     "pyslang>=10",
+    "ruff>=0.15.13",
     "tqdm>=4.67",
 ]
 
@@ -29,3 +30,6 @@ packages = ["common"]
 
 [tool.ruff]
 extend-exclude = ["external"]
+
+[tool.ruff.lint]
+extend-select = ["I"]

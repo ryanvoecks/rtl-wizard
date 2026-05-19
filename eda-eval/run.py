@@ -25,6 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
+from extract_metrics import extract
 from tqdm import tqdm
 
 from common.config import (
@@ -38,7 +39,6 @@ from common.config import (
     dump_run_config,
 )
 from common.loader import AllDesigns, DesignTree
-from extract_metrics import extract
 
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"

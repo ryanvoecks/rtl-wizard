@@ -1,11 +1,10 @@
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
-
-from yosys_synth import yosys_synth as _yosys_synth
+from openroad_ppa import measure_ppa as _measure_ppa
 from reconstruct_from_path import emit, parse, run_yosys
 from verilator_sim import verilator_sim as _verilator_sim
-from openroad_ppa import measure_ppa as _measure_ppa
+from yosys_synth import yosys_synth as _yosys_synth
 
 mcp = FastMCP("rtl-wizard")
 

@@ -175,6 +175,7 @@ def measure_ppa(verilog_paths: list[str], top: str | None = None) -> str:
         top: top-module name. Defaults to the first file's stem.
     """
     from pathlib import Path
+
     from util import eda_env  # lazy: only resolves inside the sandbox
 
     if not verilog_paths:

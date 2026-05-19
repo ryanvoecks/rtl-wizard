@@ -109,6 +109,11 @@ services:
       - ..:/workspace:delegated
       - claude-code-bashhistory:/commandhistory
       - claude-code-config:/home/wizard/.claude
+      # Persist uv's managed Python installs and cache across container rebuilds.
+      # Without this, /workspace/.venv (on the host bind mount) survives rebuild
+      # but its python symlink points into a wiped uv data dir -- dangling, and
+      # tools like the Ruff extension fail with ENOENT until `uv sync` re-runs.
+      - uv-data:/home/wizard/.local/share/uv
       # Track the host's wall-clock zone so `date`, file mtimes, and tool logs
       # match what the user sees outside the container. Without this, the image
       # falls back to UTC (the ARG TZ in Dockerfile is never wired up). Only
@@ -143,3 +148,4 @@ networks:
 volumes:
   claude-code-bashhistory:
   claude-code-config:
+  uv-data:

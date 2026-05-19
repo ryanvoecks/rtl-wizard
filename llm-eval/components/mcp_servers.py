@@ -13,6 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import DesignConfig
+
 from .scorers import build_diff_from_sandbox, evaluate_testbench
 
 OUTPUT_LIMIT = 20_000  # Truncate overly long testbenches
