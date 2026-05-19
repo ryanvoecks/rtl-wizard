@@ -34,7 +34,7 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from common.config import TargetConfig
-from common.targets import aes_target
+from common.targets import all_targets
 from scorers import (
     testbench_passes,
     yosys_synthesisable,
@@ -55,7 +55,7 @@ def _sandbox_rtl_path(host_path: Path) -> str:
     return f"rtl/{host_path.name}"
 
 
-def _build_aes_dataset(target: TargetConfig) -> list[Sample]:
+def _build_sample(target: TargetConfig) -> Sample:
     design = target.design
     rtl_files = list(design.rtl_files)
     if not rtl_files:
@@ -67,49 +67,48 @@ def _build_aes_dataset(target: TargetConfig) -> list[Sample]:
     sandbox_paths = [_sandbox_rtl_path(p) for p in rtl_files]
     top_file = next((p for p in rtl_files if p.stem == design.top_module), rtl_files[0])
     top_sandbox = _sandbox_rtl_path(top_file)
-    return [
-        Sample(
-            id=design.name,
-            input=(
-                f"There is an RTL design in `rtl/` (top module: `{design.top_module}`, "
-                f"in `{top_sandbox}`). Your job is to reduce the **longest "
-                "combinational path** through the design — the path that "
-                "gates the achievable clock period.\n\n"
-                "Constraints:\n"
-                "- Preserve functional behaviour. No testbench is available "
-                "to you, so reason about the RTL directly.\n"
-                "- The design must remain synthesisable by yosys (the scorer "
-                "runs yosys over `rtl/*.v` after you finish).\n"
-                "- Edit the files in `rtl/` in place; do not rename them."
-            ),
-            target="",
-            files={
-                sandbox_path: str(host_path.resolve())
+    return Sample(
+        id=f"{design.benchmark}/{design.name}/{design.variant}",
+        input=(
+            f"There is an RTL design in `rtl/` (top module: `{design.top_module}`, "
+            f"in `{top_sandbox}`). Your job is to reduce the **longest "
+            "combinational path** through the design — the path that "
+            "gates the achievable clock period.\n\n"
+            "Constraints:\n"
+            "- Preserve functional behaviour. No testbench is available "
+            "to you, so reason about the RTL directly.\n"
+            "- The design must remain synthesisable by yosys (the scorer "
+            "runs yosys over `rtl/*.v` after you finish).\n"
+            "- Edit the files in `rtl/` in place; do not rename them."
+        ),
+        target="",
+        files={
+            sandbox_path: str(host_path.resolve())
+            for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
+        },
+        metadata={
+            "design": design,
+            "original_files": {
+                sandbox_path: host_path.read_text()
                 for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
             },
-            metadata={
-                "original_files": {
-                    sandbox_path: host_path.read_text()
-                    for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
-                },
-            },
-        )
-    ]
+        },
+    )
 
 
 @task
-def optimize_aes(
-    target: TargetConfig = aes_target, message_limit: int = 200
+def optimize_targets(
+    targets: list[TargetConfig] = all_targets, message_limit: int = 200
 ) -> Task:
-    design = target.design
-    scorers = [yosys_synthesisable(design)]
-    # Gate the testbench scorer on the design actually shipping a runnable
-    # harness. Designs from RTLLM/RTL-OPT/Corpus loaders leave run_tb None
-    # and grade on synthesisability alone.
-    if design.run_tb is not None:
-        scorers.append(testbench_passes(design))
+    # testbench_passes pulls the design from each sample's metadata, so it
+    # works across a mixed dataset; only register it when at least one
+    # target ships a runnable harness, otherwise every sample would just
+    # report NOANSWER for it.
+    scorers = [yosys_synthesisable()]
+    if any(t.design.run_tb is not None for t in targets):
+        scorers.append(testbench_passes())
     return Task(
-        dataset=_build_aes_dataset(target),
+        dataset=[_build_sample(t) for t in targets],
         solver=claude_code_solver(),
         scorer=scorers,
         sandbox=("docker", str(SANDBOX_COMPOSE)),

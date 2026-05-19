@@ -19,6 +19,7 @@ from pathlib import Path
 from inspect_ai.scorer import (
     CORRECT,
     INCORRECT,
+    NOANSWER,
     Score,
     Scorer,
     Target,
@@ -80,7 +81,7 @@ def _resolve_yosys() -> str | None:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def yosys_synthesisable(design: DesignConfig) -> Scorer:
+def yosys_synthesisable() -> Scorer:
     """Cheap synthesisability check for an arbitrary RTL design.
 
     Pulls the agent's final `rtl/*.v` out of the sandbox to a host temp dir
@@ -88,9 +89,16 @@ def yosys_synthesisable(design: DesignConfig) -> Scorer:
     `hierarchy -check -top <design.top_module>; proc; opt; clean`.
     No techmap, no abc — we only care that the RTL still elaborates. CORRECT
     iff yosys exits 0 within `_YOSYS_TIMEOUT_S`.
+
+    The per-sample `DesignConfig` is read from `state.metadata["design"]` so
+    the same scorer works across a multi-design dataset.
     """
     async def score(state: TaskState, target: Target) -> Score:
         await _save_artifacts(state)
+
+        design: DesignConfig | None = state.metadata.get("design")
+        if design is None:
+            return Score(value=INCORRECT, explanation="no design in metadata")
 
         rtl_paths = list(state.metadata.get("original_files", {}).keys())
         if not rtl_paths:
@@ -160,7 +168,7 @@ def _rtl_overlay_targets(design: DesignConfig) -> dict[str, Path]:
 
 
 @scorer(metrics=[accuracy(), stderr()])
-def testbench_passes(design: DesignConfig) -> Scorer:
+def testbench_passes() -> Scorer:
     """Run the design's upstream testbench against the agent's RTL.
 
     Copies `design.tb_repo_root` to a tempdir, overlays the agent's final
@@ -168,18 +176,23 @@ def testbench_passes(design: DesignConfig) -> Scorer:
     `design.run_tb(repo_copy)` and grades on its returncode (0 == pass). The
     full testbench stdout is saved to
     `llm-results/<RUN_TIMESTAMP>/<sample_id>/testbench.log` for debugging.
-    """
-    if design.tb_repo_root is None or design.run_tb is None:
-        raise ValueError(
-            f"design {design.name} has no testbench harness configured "
-            "(tb_repo_root / run_tb are None) — don't register this scorer"
-        )
-    overlay_map = _rtl_overlay_targets(design)
-    run_tb = design.run_tb
 
+    The per-sample `DesignConfig` is read from `state.metadata["design"]`.
+    Samples whose design ships no testbench harness (tb_repo_root / run_tb
+    are None) are skipped with NOANSWER so they don't count against accuracy.
+    """
     async def score(state: TaskState, target: Target) -> Score:
         await _save_artifacts(state)
         out_dir = sample_output_dir(str(state.sample_id))
+
+        design: DesignConfig | None = state.metadata.get("design")
+        if design is None:
+            return Score(value=INCORRECT, explanation="no design in metadata")
+        if design.tb_repo_root is None or design.run_tb is None:
+            return Score(
+                value=NOANSWER,
+                explanation=f"design {design.name} has no testbench harness",
+            )
 
         rtl_paths = list(state.metadata.get("original_files", {}).keys())
         if not rtl_paths:
@@ -192,6 +205,9 @@ def testbench_passes(design: DesignConfig) -> Scorer:
                     "`git submodule update --init` to fetch the upstream repo"
                 ),
             )
+
+        overlay_map = _rtl_overlay_targets(design)
+        run_tb = design.run_tb
 
         with tempfile.TemporaryDirectory() as td:
             repo_copy = Path(td) / design.tb_repo_root.name

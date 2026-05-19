@@ -8,3 +8,6 @@ aes_target = TargetConfig(
     side_um=223.9,
     cfg=StudyConfig(),
 )
+
+# All calibrated RTL implementation targets
+all_targets = [aes_target]
