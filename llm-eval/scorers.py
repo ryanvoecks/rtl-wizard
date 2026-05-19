@@ -213,10 +213,15 @@ def synthesisable() -> Scorer:
 
         out_dir = sample_output_dir(str(state.sample_id))
         (out_dir / "synthesis.log").write_text(log)
+        artifacts = {"diff": diff, "log": log}
         if rc == 0:
-            return Score(value=CORRECT)
+            return Score(value=CORRECT, metadata=artifacts)
         else:
-            return Score(value=INCORRECT, explanation="synthesis failed")
+            return Score(
+                value=INCORRECT,
+                explanation="synthesis failed",
+                metadata=artifacts,
+            )
 
     return score
 
@@ -232,9 +237,14 @@ def functional() -> Scorer:
 
         out_dir = sample_output_dir(str(state.sample_id))
         (out_dir / "testbench.log").write_text(log)
+        artifacts = {"diff": diff, "log": log}
         if rc == 0:
-            return Score(value=CORRECT)
+            return Score(value=CORRECT, metadata=artifacts)
         else:
-            return Score(value=INCORRECT, explanation=f"testbench failed")
+            return Score(
+                value=INCORRECT,
+                explanation="testbench failed",
+                metadata=artifacts,
+            )
 
     return score
