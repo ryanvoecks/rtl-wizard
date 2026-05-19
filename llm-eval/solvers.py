@@ -14,7 +14,7 @@ Claude Code prefers an API key over the OAUTH token when both are present.
 import json
 import os
 
-from inspect_ai.agent import AgentState, agent, as_solver
+from inspect_ai.agent import AgentState, agent
 from inspect_ai.model import (
     ChatCompletionChoice,
     ChatMessage,
@@ -24,10 +24,19 @@ from inspect_ai.model import (
     ModelUsage,
 )
 from inspect_ai.model._model import active_model
+from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, sandbox, store
 
+from common.config import DesignConfig
+from host_mcp import start_run_testbench_server
+
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+
+# MCP namespace under which `host_mcp` registers its tools — the Claude CLI
+# exposes a FastMCP server's tools as `mcp__<server-name>__<tool>`.
+_HOST_MCP_NAME = "rtl-wizard-host"
+_RUN_TB_TOOL = f"mcp__{_HOST_MCP_NAME}__run_testbench"
 
 # Fallback if Inspect resolves no model (e.g. neither `--model` nor
 # `INSPECT_EVAL_MODEL` is set). With the repo's .env in play the latter is
@@ -191,13 +200,14 @@ def _build_usage(final: dict) -> ModelUsage:
 
 @agent
 def claude_code_oauth(
+    design: DesignConfig,
     mcp_config: dict | None = None,
-    allowed_tools: str = "Bash,Read,Write,Edit",
+    allowed_tools: str = f"Bash,Read,Write,Edit,{_RUN_TB_TOOL}",
     timeout_s: int = 1800,
     max_turns: int = 8,
 ):
     token = _require_token()
-    mcp_config = mcp_config if mcp_config is not None else {"mcpServers": {}}
+    base_mcp_config = mcp_config if mcp_config is not None else {"mcpServers": {}}
 
     async def execute(state: AgentState) -> AgentState:
         # Pull the model from Inspect's active model at solve time, so the
@@ -207,32 +217,55 @@ def claude_code_oauth(
         # from trying to instantiate an API client — the agent shells out.
         model = _resolve_claude_model()
         sb = sandbox()
-        await sb.write_file("/tmp/mcp.json", json.dumps(mcp_config))
 
-        prompt = state.messages[-1].text
-        sid = store().get("cc_session_id")
+        # Per-sample host-side MCP server: the agent reaches `run_testbench`
+        # over SSE at host.docker.internal:<port>. The testbench evaluator
+        # itself runs on the host, so testbench sources never enter the
+        # sandbox.
+        host_url, stop_host_mcp = await start_run_testbench_server(design)
 
-        cmd = [
-            "claude", "-p",
-            "--output-format", "stream-json", "--verbose",
-            "--model", model,
-            "--mcp-config", "/tmp/mcp.json", "--strict-mcp-config",
-            "--allowedTools", allowed_tools,
-            "--max-turns", str(max_turns),
-            "--dangerously-skip-permissions",
-        ]
-        if sid:
-            cmd += ["--resume", sid]
+        try:
+            sample_mcp_config = {
+                "mcpServers": {
+                    **base_mcp_config.get("mcpServers", {}),
+                    _HOST_MCP_NAME: {"type": "sse", "url": host_url},
+                }
+            }
+            await sb.write_file("/tmp/mcp.json", json.dumps(sample_mcp_config))
 
-        result = await sb.exec(
-            cmd,
-            input=prompt,
-            env={
-                _TOKEN_ENV_VAR: token,
-                "IS_SANDBOX": "1",
-            },
-            timeout=timeout_s,
-        )
+            prompt = state.messages[-1].text
+            sid = store().get("cc_session_id")
+
+            cmd = [
+                "claude", "-p",
+                "--output-format", "stream-json", "--verbose",
+                "--model", model,
+                "--mcp-config", "/tmp/mcp.json", "--strict-mcp-config",
+                "--allowedTools", allowed_tools,
+                "--max-turns", str(max_turns),
+                "--dangerously-skip-permissions",
+            ]
+            if sid:
+                cmd += ["--resume", sid]
+
+            result = await sb.exec(
+                cmd,
+                input=prompt,
+                env={
+                    _TOKEN_ENV_VAR: token,
+                    "IS_SANDBOX": "1",
+                },
+                timeout=timeout_s,
+            )
+        finally:
+            await stop_host_mcp()
+
+        # Claude CLI logs MCP connection failures to stderr (the stream-json
+        # transcript on stdout doesn't mention them). Stash the stderr tail so
+        # eval logs surface "MCP server unreachable" / "tool not registered"
+        # diagnostics without needing a fresh run.
+        if result.stderr:
+            store().set("cc_stderr_tail", result.stderr[-4000:])
 
         # `claude -p` exits non-zero when it hits --max-turns, but stdout still
         # carries the full stream-json transcript including the terminating
@@ -318,6 +351,40 @@ def claude_code_oauth(
     return execute
 
 
-def claude_code_solver():
-    """Adapt the OAUTH agent into a Task.solver slot."""
-    return as_solver(claude_code_oauth())
+@solver
+def claude_code_solver() -> Solver:
+    """Per-sample Solver wrapper around `claude_code_oauth`.
+
+    Pulls the sample's `DesignConfig` out of `TaskState.metadata` and threads
+    it into the agent so the host-side MCP server can be scoped to this
+    sample. Bypasses `as_solver` because that wrapper strips everything from
+    TaskState except the message list.
+    """
+
+    async def solve(state: TaskState, generate: Generate) -> TaskState:
+        design = state.metadata.get("design")
+        if design is None:
+            raise RuntimeError(
+                "claude_code_solver requires `state.metadata['design']` "
+                "(set in tasks.py:_build_sample)"
+            )
+
+        agent_state = AgentState(messages=state.messages)
+        agent_fn = claude_code_oauth(design=design)
+        try:
+            result = await agent_fn(agent_state)
+        except LimitExceededError:
+            # The agent populates state.messages/output before re-raising so
+            # the partial transcript is preserved. Mirror that into TaskState
+            # and let the limit propagate.
+            state.messages = agent_state.messages
+            if agent_state.output is not None:
+                state.output = agent_state.output
+            raise
+
+        state.messages = result.messages
+        if result.output is not None:
+            state.output = result.output
+        return state
+
+    return solve
