@@ -27,7 +27,7 @@ _RTL_GUIDANCE = (
 
 @mcp.tool()
 def rtl_helper() -> str:
-    """Returns concise best-practice guidance for writing synthesizable Verilog/SystemVerilog RTL.
+    """Returns best-practice guidance for synthesizable Verilog/SystemVerilog RTL.
 
     Call this tool BEFORE generating any Verilog or SystemVerilog RTL snippet
     (modules, always blocks, continuous assignments, FSMs, pipelines, testbenches,

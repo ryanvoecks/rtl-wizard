@@ -29,4 +29,4 @@ packages = ["common"]
 extend-exclude = ["external"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
+select = ["E", "F", "I"]

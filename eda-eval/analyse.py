@@ -564,12 +564,12 @@ def main(argv: list[str] | None = None) -> int:
     print(f"==> Routed DB:   {odb}")
     print(f"==> SDC:         {sdc}")
     print(f"==> SPEF:        {spef if spef else '(absent; STA estimates parasitics)'}")
-    print(
-        f"==> GR congest:  {congest_rpt if congest_rpt else '(absent; design routed clean)'}"
-    )
+    congest_str = congest_rpt if congest_rpt else "(absent; design routed clean)"
+    print(f"==> GR congest:  {congest_str}")
     print(f"==> Reports:     {reports_dir}")
     print(
-        f"==> Pool / paths / logical: {args.pool} / {args.top_paths} / {args.top_logical}"
+        f"==> Pool / paths / logical:"
+        f" {args.pool} / {args.top_paths} / {args.top_logical}"
     )
     print(f"==> Tiles / module groups:  {args.top_tiles} / {args.top_modules_congest}")
 
