@@ -7,7 +7,7 @@ hands `(design, diff)` to a pure-function evaluator that reconstructs the
 modified RTL tree on disk (via `patch`) and runs the actual check.
 
 That split is deliberate: the pure evaluators (`evaluate_synthesisable`,
-`evaluate_testbench`) only need a `DesignConfig` and a diff string, so the
+`evaluate_functional`) only need a `DesignConfig` and a diff string, so the
 same correctness check can be replayed later from a saved `diff.patch`
 without re-running the agent. The Inspect wrappers exist only to bridge
 between the sandbox + TaskState and that pure interface.
@@ -22,13 +22,11 @@ from pathlib import Path
 from inspect_ai.scorer import (
     CORRECT,
     INCORRECT,
-    NOANSWER,
     Score,
     Scorer,
     Target,
     accuracy,
     scorer,
-    stderr,
 )
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
@@ -161,18 +159,20 @@ def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[bool, str]:
     return True, ""
 
 
-def evaluate_testbench(design: DesignConfig, diff: str) -> tuple[int, str]:
+def evaluate_functional(design: DesignConfig, diff: str) -> tuple[str, int]:
     """Apply `diff` into a copy of `design.tb_repo_root` and run the
-    upstream testbench. Returns (rc, stdout); rc == 0 iff the testbench
-    passed. Raises if the design ships no testbench harness."""
+    upstream testbench. Returns (stdout, rc); rc == 0 iff the testbench
+    passed, non-zero (with the failure reason in `stdout`) for any setup
+    error — missing harness, missing repo, patch failure, etc. The
+    function never raises so the caller can treat the return value as
+    the single source of truth."""
     if design.tb_repo_root is None or design.run_tb is None:
-        raise RuntimeError(
-            f"design {design.name} has no testbench harness"
-        )
+        return f"design {design.name} has no testbench harness", 1
     if not design.tb_repo_root.exists():
-        raise RuntimeError(
+        return (
             f"{design.tb_repo_root} not found — run "
-            "`git submodule update --init` to fetch the upstream repo"
+            "`git submodule update --init` to fetch the upstream repo",
+            1,
         )
     rtl_dir_rel = design.rtl_dir.relative_to(design.tb_repo_root)
 
@@ -188,7 +188,7 @@ def evaluate_testbench(design: DesignConfig, diff: str) -> tuple[int, str]:
         try:
             _apply_diff(diff, repo_copy / rtl_dir_rel)
         except RuntimeError as e:
-            return 1, str(e)
+            return str(e), 1
         return design.run_tb(repo_copy)
 
 
@@ -199,68 +199,36 @@ async def _save_diff(state: TaskState, design: DesignConfig) -> str:
     return diff
 
 
-@scorer(metrics=[accuracy(), stderr()])
-def yosys_synthesisable() -> Scorer:
-    """Cheap synthesisability check for an arbitrary RTL design.
+@scorer(metrics=[accuracy()])
+def synthesisable() -> Scorer:
+    """Cheap synthesisability check for an arbitrary RTL design."""
 
-    Diffs the agent's `rtl/` against the originals, then hands
-    `(design, diff)` to `evaluate_synthesisable`, which stages the design
-    + applies the diff into a host tempdir and runs yosys
-    `hierarchy -check -top <design.top_module>; proc; opt; clean`. No
-    techmap, no abc — we only care that the RTL still elaborates."""
     async def score(state: TaskState, target: Target) -> Score:
-        design: DesignConfig | None = state.metadata.get("design")
-        if design is None:
-            return Score(value=INCORRECT, explanation="no design in metadata")
+        design = state.metadata.get("design")
         diff = await _save_diff(state, design)
         ok, msg = await asyncio.to_thread(evaluate_synthesisable, design, diff)
         if ok:
             return Score(value=CORRECT)
-        return Score(value=INCORRECT, explanation=msg)
+        else:
+            return Score(value=INCORRECT, explanation=msg)
 
     return score
 
 
-@scorer(metrics=[accuracy(), stderr()])
-def testbench_passes() -> Scorer:
-    """Run the design's upstream testbench against the agent's RTL.
+@scorer(metrics=[accuracy()])
+def functional() -> Scorer:
+    """Run the design's upstream testbench against the agent's RTL."""
 
-    Diffs the sandbox against on-disk originals, then hands
-    `(design, diff)` to `evaluate_testbench`, which copies
-    `design.tb_repo_root`, applies the diff at
-    `tb_repo_root / rtl_dir.relative_to(tb_repo_root)`, and calls
-    `design.run_tb(repo_copy)`. The full testbench stdout is saved to
-    `llm-results/<RUN_TIMESTAMP>/<sample_id>/testbench.log`.
-
-    Samples whose design ships no testbench harness (tb_repo_root /
-    run_tb are None) are skipped with NOANSWER so they don't count
-    against accuracy."""
     async def score(state: TaskState, target: Target) -> Score:
-        design: DesignConfig | None = state.metadata.get("design")
-        if design is None:
-            return Score(value=INCORRECT, explanation="no design in metadata")
+        design = state.metadata.get("design")
         diff = await _save_diff(state, design)
-        if design.tb_repo_root is None or design.run_tb is None:
-            return Score(
-                value=NOANSWER,
-                explanation=f"design {design.name} has no testbench harness",
-            )
-        try:
-            stdout, rc = await asyncio.to_thread(
-                evaluate_testbench, design, diff
-            )
-        except RuntimeError as e:
-            return Score(value=INCORRECT, explanation=str(e))
+        log, rc = await asyncio.to_thread(evaluate_functional, design, diff)
 
         out_dir = sample_output_dir(str(state.sample_id))
-        (out_dir / "testbench.log").write_text(stdout)
+        (out_dir / "testbench.log").write_text(log)
         if rc == 0:
             return Score(value=CORRECT, answer="testbench passed")
-        tail = stdout[-1500:]
-        return Score(
-            value=INCORRECT,
-            answer="testbench failed",
-            explanation=f"testbench failed (rc={rc}):\n{tail}",
-        )
+        else:
+            return Score(value=INCORRECT, explanation=f"testbench failed")
 
     return score

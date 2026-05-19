@@ -37,8 +37,8 @@ from common.config import TargetConfig
 from common.targets import all_targets
 from scorers import (
     SANDBOX_RTL_ROOT,
-    testbench_passes,
-    yosys_synthesisable,
+    functional,
+    synthesisable,
 )
 from solvers import claude_code_solver
 
@@ -97,7 +97,7 @@ def optimize_timing() -> Task:
     dataset = [_build_sample(t) for t in all_targets]
 
     # 2 requirements for progress: synthesisable and functionally correct
-    scorers = [yosys_synthesisable(), testbench_passes()]
+    scorers = [synthesisable(), functional()]
 
     return Task(
         dataset=dataset,
