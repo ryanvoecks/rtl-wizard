@@ -13,13 +13,13 @@ from inspect_ai.util._sandbox.compose import ComposeConfig, parse_compose_yaml
 
 from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
-from mcp_connect import discover_shared_network
-from scorers import (
+from .mcp_connect import discover_shared_network
+from .scorers import (
     SANDBOX_RTL_ROOT,
     synthesis,
     testbench,
 )
-from solvers import claude_code_solver
+from .solvers import claude_code_solver
 
 SANDBOX_COMPOSE = LLM_EVAL / "sandbox" / "compose.yaml"
 

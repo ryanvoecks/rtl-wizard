@@ -29,8 +29,8 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, sandbox, store
 
 from common.config import DesignConfig
-from mcp_connect import MCPService
-from mcp_servers import make_server
+from .mcp_connect import MCPService
+from .mcp_servers import make_server
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 

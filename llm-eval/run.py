@@ -10,7 +10,7 @@ from datetime import datetime
 from inspect_ai import eval as inspect_eval
 
 from common.config import LLM_RESULTS
-from tasks import optimize_timing
+from components.tasks import optimize_timing
 
 
 def main() -> None:
