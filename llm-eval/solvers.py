@@ -29,7 +29,7 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, sandbox, store
 
 from common.config import DesignConfig
-from mcp_connect import serve
+from mcp_connect import MCPService
 from mcp_servers import make_server
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
@@ -224,13 +224,12 @@ def claude_code_oauth(
         # itself runs on the host, so testbench sources never enter the
         # sandbox.
         host_mcp = make_server(_HOST_MCP_NAME, ["run_testbench"], design)
-        host_url, stop_host_mcp = await serve(host_mcp)
 
-        try:
+        async with MCPService(host_mcp) as host_service:
             sample_mcp_config = {
                 "mcpServers": {
                     **base_mcp_config.get("mcpServers", {}),
-                    _HOST_MCP_NAME: {"type": "sse", "url": host_url},
+                    _HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
                 }
             }
             await sb.write_file("/tmp/mcp.json", json.dumps(sample_mcp_config))
@@ -259,8 +258,6 @@ def claude_code_oauth(
                 },
                 timeout=timeout_s,
             )
-        finally:
-            await stop_host_mcp()
 
         # Claude CLI logs MCP connection failures to stderr (the stream-json
         # transcript on stdout doesn't mention them). Stash the stderr tail so

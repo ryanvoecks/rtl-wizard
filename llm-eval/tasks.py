@@ -31,6 +31,10 @@ def _build_sandbox_compose() -> ComposeConfig:
     network, _ = discover_shared_network()
     if config.networks and "shared" in config.networks:
         config.networks["shared"]["name"] = network
+    sandbox_dir = SANDBOX_COMPOSE.parent.resolve()
+    for svc in config.services.values():
+        if svc.build and not isinstance(svc.build, str) and svc.build.context:
+            svc.build.context = str(sandbox_dir / svc.build.context)
     return config
 
 

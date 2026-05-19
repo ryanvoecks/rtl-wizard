@@ -1,28 +1,12 @@
-"""Network glue for hosting a per-sample MCP server reachable from the sandbox.
-
-The agent runs inside a Docker sandbox and can't see host filesystem state,
-but it should still be able to invoke host-side tools (e.g. running the
-hidden testbench). We start a small FastMCP server in-process on the host
-for each sample, bound to an ephemeral port; the sandbox reaches it on a
-Docker bridge network the two containers share.
-
-Server contents are defined in `mcp_servers.py`; this module just handles
-network discovery and the uvicorn lifecycle.
-
-Networking note: in a devcontainer (docker-in-docker) setup,
-`host.docker.internal` from a sibling sandbox container does NOT resolve to
-the devcontainer — it resolves to the Docker VM gateway, which isn't where
-this server lives. We instead bind to the devcontainer's own IP on a Docker
-bridge network and attach the sandbox to that same network (see
-`discover_shared_network`; the network name gets injected into the compose
-config by `tasks.py`).
-"""
+"""Host the per-sample MCP server (defined in `mcp_servers.py`) for the
+sandbox to reach over a shared Docker bridge network. In a devcontainer
+setup `host.docker.internal` from a sibling sandbox resolves to the Docker
+VM gateway, not us, so we bind to our own IP on the shared network and
+inject that network name into the sandbox compose config via `tasks.py`."""
 import asyncio
 import functools
 import socket
 import subprocess
-from typing import Awaitable, Callable
-
 import uvicorn
 from mcp.server.fastmcp import FastMCP
 
@@ -60,51 +44,49 @@ def discover_shared_network() -> tuple[str, str]:
     return fallback
 
 
-async def serve(mcp: FastMCP) -> tuple[str, Callable[[], Awaitable[None]]]:
-    """Serve a FastMCP instance over SSE on a kernel-assigned port.
+class MCPService:
+    """Async context manager that serves a FastMCP over SSE on a
+    kernel-assigned port for the duration of the `async with` block."""
 
-    Returns `(url, stop)`. `url` is what the agent's MCP client should
-    connect to, reachable from the sandbox container over a shared Docker
-    bridge network (see `discover_shared_network`). `stop` is an awaitable
-    that shuts the server down and reaps its task.
+    def __init__(self, mcp: FastMCP) -> None:
+        self._mcp = mcp
+        self._server: uvicorn.Server | None = None
+        self._task: asyncio.Task[None] | None = None
+        self.url: str = ""
 
-    The current Inspect `sandbox()` contextvar is captured by
-    `asyncio.create_task`, so calls into sandbox-aware tool bodies still
-    resolve to the right sample's sandbox.
-    """
-    _, host_ip = discover_shared_network()
+    async def __aenter__(self) -> "MCPService":
+        _, host_ip = discover_shared_network()
+        config = uvicorn.Config(
+            self._mcp.sse_app(),
+            host="0.0.0.0",
+            port=0,
+            log_level="warning",
+            lifespan="off",
+        )
+        self._server = uvicorn.Server(config)
+        self._task = asyncio.create_task(self._server.serve())
 
-    config = uvicorn.Config(
-        mcp.sse_app(),
-        host="0.0.0.0",
-        port=0,
-        log_level="warning",
-        lifespan="off",
-    )
-    server = uvicorn.Server(config)
-    serve_task = asyncio.create_task(server.serve())
+        # uvicorn binds inside serve(); wait until it's actually listening
+        # before we can read back the kernel-assigned port.
+        deadline = asyncio.get_event_loop().time() + STARTUP_TIMEOUT
+        while not self._server.started:
+            if self._task.done():
+                raise RuntimeError(
+                    f"uvicorn exited before binding: {self._task.exception()}"
+                )
+            if asyncio.get_event_loop().time() > deadline:
+                raise RuntimeError("uvicorn failed to start within timeout")
+            await asyncio.sleep(0.02)
 
-    # uvicorn binds inside serve(); wait until it's actually listening before
-    # we can read back the kernel-assigned port.
-    deadline = asyncio.get_event_loop().time() + STARTUP_TIMEOUT
-    while not server.started:
-        if serve_task.done():
-            raise RuntimeError(
-                f"uvicorn exited before binding: {serve_task.exception()}"
-            )
-        if asyncio.get_event_loop().time() > deadline:
-            raise RuntimeError("uvicorn failed to start within timeout")
-        await asyncio.sleep(0.02)
+        port = self._server.servers[0].sockets[0].getsockname()[1]
+        self.url = f"http://{host_ip}:{port}/sse"
+        return self
 
-    port = server.servers[0].sockets[0].getsockname()[1]
-    url = f"http://{host_ip}:{port}/sse"
-
-    async def stop() -> None:
-        server.should_exit = True
+    async def __aexit__(self, *_exc: object) -> None:
+        assert self._server is not None and self._task is not None
+        self._server.should_exit = True
         try:
-            await asyncio.wait_for(serve_task, timeout=5.0)
+            await asyncio.wait_for(self._task, timeout=5.0)
         except asyncio.TimeoutError:
-            server.force_exit = True
-            await serve_task
-
-    return url, stop
+            self._server.force_exit = True
+            await self._task
