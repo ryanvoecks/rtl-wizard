@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pyslang
 
-from common.config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig
+from common.config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig, Result
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -96,7 +96,7 @@ _AES_BUILD_TIMEOUT_S = 120
 _AES_RUN_TIMEOUT_S = 300
 
 
-def _run_aes_tb(repo_root: Path) -> tuple[str, int]:
+def _run_aes_tb(repo_root: Path) -> Result:
     """Build and run secworks/aes's tb_aes.v under <repo_root>/toolruns.
 
     tb_aes.v emits "*** All NN test cases completed successfully" on pass and

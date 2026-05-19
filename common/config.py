@@ -15,7 +15,13 @@ RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
 CORPUS = REPO_ROOT / "corpus"
+
+# EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
+YOSYS_BIN = Path("/") / "OpenROAD-flow-scripts" / "tools" / "install" / "yosys" / "bin" / "yosys"
+
+# Common types
+Result = tuple[str, int]    # Output message, return code tuple
 
 
 @dataclass(frozen=True)
@@ -38,27 +44,14 @@ class StudyConfig:
 class DesignConfig:
     """A single design instance produced by a DesignLoader."""
 
-    benchmark: str               # which loader/benchmark emitted this design
-    name: str                    # design's logical name
-    variant: str                 # distinguishes parameterizations sharing a name
-    root: Path                   # design's top-level directory (the repo root
-                                 # for designs with an upstream testbench, or
-                                 # simply rtl_dir for designs that ship only
-                                 # RTL). Must contain rtl_dir so the diff can
-                                 # be applied at `root_copy /
-                                 # rtl_dir.relative_to(root)`.
-    rtl_dir: Path                # directory the RTL lives under; each
-                                 # rtl_files entry must resolve to a path
-                                 # inside this dir. Diffs are written in
-                                 # this namespace so a (diff, DesignConfig)
-                                 # pair is enough to evaluate a candidate.
-    rtl_files: tuple[Path, ...]  # ordered RTL sources (absolute paths)
-    top_module: str              # Verilog top module
-    # Build+run the testbench under the given (already-overlaid) repo root and
-    # return (stdout, returncode). 0 == pass; the callable is responsible for
-    # synthesising the returncode from whatever signal is authoritative
-    # (simulator exit code, marker strings in stdout, timeout, etc.).
-    run_tb: Callable[[Path], tuple[str, int]] | None = None
+    benchmark: str                   # loader/benchmark that emitted this design
+    name: str                        # design's logical name
+    variant: str                     # parameterization tag within a name
+    root: Path                       # design's top-level dir
+    rtl_dir: Path                    # dir each rtl_files entry lives under
+    rtl_files: tuple[Path, ...]      # ordered RTL sources (absolute paths)
+    top_module: str                  # Verilog top module
+    run_tb: Callable[[Path], Result] # run the testbench in a given root
 
 @dataclass(frozen=True)
 class TargetConfig:

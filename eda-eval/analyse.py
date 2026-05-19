@@ -38,7 +38,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from common.config import ORFS_HOME, RUN_CONFIG_FILENAME
+from common.config import ORFS_HOME, RUN_CONFIG_FILENAME, YOSYS_BIN
 from extract_metrics import find_unique
 
 HERE = Path(__file__).resolve().parent
@@ -163,7 +163,7 @@ def dump_hierarchy(
         f"write_json {json_out}\n"
     )
     proc = subprocess.run(
-        ["yosys", "-q", "-p", script],
+        [YOSYS_BIN, "-q", "-p", script],
         text=True, capture_output=True,
     )
     if proc.returncode != 0 or not json_out.is_file():
