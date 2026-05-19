@@ -4,9 +4,9 @@ timing, seeded with the latest logical-paths report.
 
 For now the target is hardcoded to `secworks/aes`. The script:
 
-  1. Copies `external/aes/` to `outputs/<timestamp>/secworks/aes/`.
+  1. Copies `external/aes/` to `llm-results/<timestamp>/secworks/aes/`.
   2. Locates the most recent
-     `eda_runs/*/__iter_calibration__/secworks/aes/iter_0/.../logical_paths.rpt`.
+     `eda-results/*/__iter_calibration__/secworks/aes/iter_0/.../logical_paths.rpt`.
   3. Invokes `claude -p --dangerously-skip-permissions` in the staged
      copy with the report inlined into the prompt.
 """
@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 
 from calibrate import ITER_CAL_DIR
-from config import AES, EDA_RUNS, OUTPUTS
+from common.config import AES, EDA_RUNS, LLM_RESULTS
 
 BENCHMARK = "secworks"
 NAME = "aes"
@@ -73,7 +73,7 @@ def main() -> None:
     report_text = report_path.read_text()
 
     ts = time.strftime("%Y-%m-%d_%H-%M-%S")
-    target = OUTPUTS / ts / BENCHMARK / NAME
+    target = LLM_RESULTS / ts / BENCHMARK / NAME
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(AES, target)
     print(f"Staged {AES} -> {target}")

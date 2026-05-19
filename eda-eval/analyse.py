@@ -24,7 +24,7 @@ Reports land in `<phase_dir>/reports/<platform>/<design>/<variant>/`:
                                    overflow exposure
 
 Usage:
-    uv run eda_eval/analyse.py eda_runs/<batch>/<benchmark>/<name>/<variant>/
+    uv run eda_eval/analyse.py eda-results/<batch>/<benchmark>/<name>/<variant>/
     uv run eda_eval/analyse.py <phase_dir> --top-paths 20 --top-logical 10
 """
 from __future__ import annotations
@@ -38,9 +38,10 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from config import HERE, ORFS_HOME, RUN_CONFIG_FILENAME
+from common.config import ORFS_HOME, RUN_CONFIG_FILENAME, YOSYS_BIN
 from extract_metrics import find_unique
 
+HERE = Path(__file__).resolve().parent
 EXTRACT_TCL = HERE / "tcl" / "extract_critical_paths.tcl"
 EXTRACT_CONGEST_TCL = HERE / "tcl" / "extract_congestion.tcl"
 
@@ -162,7 +163,7 @@ def dump_hierarchy(
         f"write_json {json_out}\n"
     )
     proc = subprocess.run(
-        ["yosys", "-q", "-p", script],
+        [YOSYS_BIN, "-q", "-p", script],
         text=True, capture_output=True,
     )
     if proc.returncode != 0 or not json_out.is_file():

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Extract PPA metrics from the non-calibration phases of an ORFS batch.
 
-Run `./run.py` first to populate `eda_runs/<batch>/`; this walks every
+Run `./run.py` first to populate `eda-results/<batch>/`; this walks every
 variant phase dir (`<benchmark>/<name>/<variant>/`, excluding the
 `__calibration__` siblings) and emits one CSV row per variant with the
 post-synth and post-route metrics joined together.
@@ -23,7 +23,7 @@ import re
 import sys
 from pathlib import Path
 
-from config import EDA_RUNS
+from common.config import EDA_RUNS
 
 # Cell-name prefixes that count as flip-flops/latches in the standard-cell
 # libraries we use (nangate45 primarily; the prefix list is intentionally
@@ -199,7 +199,7 @@ def extract(phase_dir: Path, design: str) -> dict:
 
 
 def resolve_batch(arg: str) -> Path:
-    """Accept either a batch name (resolved under <repo>/eda_runs/) or a
+    """Accept either a batch name (resolved under <repo>/eda-results/) or a
     direct path to a batch dir."""
     p = Path(arg)
     if p.is_dir():
@@ -227,7 +227,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
         "batch",
-        help="Batch identifier — either a name under <repo>/eda_runs/ "
+        help="Batch identifier — either a name under <repo>/eda-results/ "
              "(e.g. 2026-05-12_17-29-08) or a direct path to a batch dir.",
     )
     ap.add_argument(

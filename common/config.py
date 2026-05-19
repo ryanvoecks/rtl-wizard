@@ -2,19 +2,27 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 # Config variables
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda_runs"
-OUTPUTS = REPO_ROOT / "outputs"
+EDA_RUNS = REPO_ROOT / "eda-results"
+LLM_EVAL = REPO_ROOT / "llm-eval"
+LLM_RESULTS = REPO_ROOT / "llm-results"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
 CORPUS = REPO_ROOT / "corpus"
+
+# EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
+YOSYS_BIN = Path("/") / "OpenROAD-flow-scripts" / "tools" / "install" / "yosys" / "bin" / "yosys"
+
+# Common types
+Result = tuple[str, int]    # Output message, return code tuple
 
 
 @dataclass(frozen=True)
@@ -37,11 +45,23 @@ class StudyConfig:
 class DesignConfig:
     """A single design instance produced by a DesignLoader."""
 
-    benchmark: str               # which loader/benchmark emitted this design
-    name: str                    # design's logical name
-    variant: str                 # distinguishes parameterizations sharing a name
-    rtl_files: tuple[Path, ...]  # ordered RTL sources making up the design
-    top_module: str              # Verilog top module
+    benchmark: str                   # loader/benchmark that emitted this design
+    name: str                        # design's logical name
+    variant: str                     # parameterization tag within a name
+    root: Path                       # design's top-level dir
+    rtl_dir: Path                    # dir each rtl_files entry lives under
+    rtl_files: tuple[Path, ...]      # ordered RTL sources (absolute paths)
+    top_module: str                  # Verilog top module
+    run_tb: Callable[[Path], Result] # run the testbench in a given root
+
+@dataclass(frozen=True)
+class TargetConfig:
+    """Parameters fully specifying a calibrated ORFS run."""
+
+    design: DesignConfig  # design being driven through the flow
+    period_ns: float      # clock period rendered into the SDC
+    side_um: float        # square floorplan side -> DIE_AREA/CORE_AREA
+    cfg: StudyConfig      # shared study-wide knobs
 
 
 @dataclass(frozen=True)
@@ -72,4 +92,6 @@ def dump_run_config(run: RunConfig, path: Path) -> None:
     """Serialise a RunConfig (and its nested DesignConfig + StudyConfig) to
     JSON. The artifact alone is enough to reproduce the run: every knob and
     derived parameter is captured. Paths are serialised as plain strings."""
-    path.write_text(json.dumps(asdict(run), default=str, indent=2))
+    payload = asdict(run)
+    payload["design"].pop("run_tb", None)
+    path.write_text(json.dumps(payload, default=str, indent=2))

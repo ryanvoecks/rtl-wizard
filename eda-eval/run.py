@@ -8,7 +8,7 @@ worst setup slack and cell area derive the period and floorplan used for
 the routed run of every variant in the group.
 
 Per-batch artifacts land under
-`eda_runs/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
+`eda-results/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
 plus a top-level `runs.csv` summarizing each run's error status.
 """
 from __future__ import annotations
@@ -26,9 +26,8 @@ from pathlib import Path
 
 from tqdm import tqdm
 
-from config import (
+from common.config import (
     EDA_RUNS,
-    HERE,
     ORFS_HOME,
     RUN_CONFIG_FILENAME,
     DesignConfig,
@@ -37,9 +36,10 @@ from config import (
     StudyConfig,
     dump_run_config,
 )
+from common.loader import AllDesigns, DesignTree
 from extract_metrics import extract
-from loader import AESLoader, CorpusLoader, DesignTree, RTLLMLoader, RTLOPTLoader
 
+HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
 
@@ -218,14 +218,8 @@ def main():
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    all_designs = (
-        RTLLMLoader().designs()
-        | RTLOPTLoader().designs()
-        | AESLoader().designs()
-        | CorpusLoader().designs()
-    )
     designs = filter_designs(
-        all_designs, args.benchmark, args.name, args.variant,
+        AllDesigns.designs(), args.benchmark, args.name, args.variant,
     )
     if not designs:
         raise ValueError("No designs matched specified filters")
