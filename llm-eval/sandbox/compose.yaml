@@ -12,11 +12,11 @@ services:
       context: .
       dockerfile: Dockerfile
     # `shared` is an external network the devcontainer also sits on, so the
-    # agent can reach the per-sample host MCP server (see host_mcp.py) on the
-    # devcontainer's IP. The network name is filled in at run time by
-    # `host_mcp._discover_shared_network()`; if it's empty (e.g. when running
-    # outside a devcontainer) the sandbox just uses the compose default
-    # network and the MCP URL falls back to `host.docker.internal`.
+    # agent can reach the per-sample host MCP server (see mcp_connect.py) on
+    # the devcontainer's IP. The network name is filled in at run time by
+    # `mcp_connect._discover_shared_network()`; if it's empty (e.g. when
+    # running outside a devcontainer) the sandbox just uses the compose
+    # default network and the MCP URL falls back to `host.docker.internal`.
     networks:
       - default
       - shared

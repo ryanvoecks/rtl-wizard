@@ -29,11 +29,12 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, sandbox, store
 
 from common.config import DesignConfig
-from host_mcp import start_run_testbench_server
+from mcp_connect import serve
+from mcp_servers import make_server
 
 _TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 
-# MCP namespace under which `host_mcp` registers its tools — the Claude CLI
+# MCP namespace the per-sample host server registers under — the Claude CLI
 # exposes a FastMCP server's tools as `mcp__<server-name>__<tool>`.
 _HOST_MCP_NAME = "rtl-wizard-host"
 _RUN_TB_TOOL = f"mcp__{_HOST_MCP_NAME}__run_testbench"
@@ -222,7 +223,8 @@ def claude_code_oauth(
         # over SSE at host.docker.internal:<port>. The testbench evaluator
         # itself runs on the host, so testbench sources never enter the
         # sandbox.
-        host_url, stop_host_mcp = await start_run_testbench_server(design)
+        host_mcp = make_server(_HOST_MCP_NAME, ["run_testbench"], design)
+        host_url, stop_host_mcp = await serve(host_mcp)
 
         try:
             sample_mcp_config = {

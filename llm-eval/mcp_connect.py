@@ -1,16 +1,13 @@
-"""Per-sample host-side MCP server exposing `run_testbench` to the agent.
+"""Network glue for hosting a per-sample MCP server reachable from the sandbox.
 
-The agent runs inside a Docker sandbox and cannot see the testbench code, but
-it should still be able to check whether its RTL edits pass the golden tests.
-We start a small FastMCP server in-process on the host for each sample, bound
-to an ephemeral port; the sandbox reaches it on a Docker bridge network the
-two containers share.
+The agent runs inside a Docker sandbox and can't see host filesystem state,
+but it should still be able to invoke host-side tools (e.g. running the
+hidden testbench). We start a small FastMCP server in-process on the host
+for each sample, bound to an ephemeral port; the sandbox reaches it on a
+Docker bridge network the two containers share.
 
-The single tool, `run_testbench`, calls the existing `evaluate_testbench`
-from `scorers.py`, which copies `design.root` to a host tempdir, applies the
-agent's current diff, and runs `design.run_tb` there. Only the testbench's
-exit code and stdout cross back into the sandbox; the testbench sources never
-do.
+Server contents are defined in `mcp_servers.py`; this module just handles
+network discovery and the uvicorn lifecycle.
 
 Networking note: in a devcontainer (docker-in-docker) setup,
 `host.docker.internal` from a sibling sandbox container does NOT resolve to
@@ -27,14 +24,6 @@ from typing import Awaitable, Callable
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
-
-from common.config import DesignConfig
-from scorers import build_diff_from_sandbox, evaluate_testbench
-
-# Matches the rtl_wizard MCP server's truncation budget so the agent's
-# context isn't blown out by a chatty testbench.
-OUTPUT_LIMIT = 20_000
 
 # How long to wait for uvicorn to bind the listener before giving up.
 _STARTUP_TIMEOUT_S = 5.0
@@ -98,10 +87,8 @@ def _discover_shared_network() -> tuple[str, str]:
 _discover_shared_network()
 
 
-async def start_run_testbench_server(
-    design: DesignConfig,
-) -> tuple[str, Callable[[], Awaitable[None]]]:
-    """Start an SSE MCP server bound to this sample.
+async def serve(mcp: FastMCP) -> tuple[str, Callable[[], Awaitable[None]]]:
+    """Serve a FastMCP instance over SSE on a kernel-assigned port.
 
     Returns `(url, stop)`. `url` is what the agent's MCP client should
     connect to, reachable from the sandbox container over a shared Docker
@@ -109,45 +96,10 @@ async def start_run_testbench_server(
     that shuts the server down and reaps its task.
 
     The current Inspect `sandbox()` contextvar is captured by
-    `asyncio.create_task`, so calls into `build_diff_from_sandbox` from the
-    tool body still resolve to the right sample's sandbox.
+    `asyncio.create_task`, so calls into sandbox-aware tool bodies still
+    resolve to the right sample's sandbox.
     """
     _, host_ip = _discover_shared_network()
-    # FastMCP defaults to DNS-rebinding protection that only allow-lists
-    # 127.0.0.1/localhost/[::1]. The sandbox reaches us at
-    # `host.docker.internal:<port>`, so without an explicit allow-list the
-    # SSE handshake is rejected before any tool is registered — and the
-    # rejection is silent on the CLI side (no stderr, no `mcp__*` tool ever
-    # appears). The server only lives for the duration of one sample on a
-    # kernel-assigned port, so we just disable the check.
-    mcp = FastMCP(
-        "rtl-wizard-host",
-        transport_security=TransportSecuritySettings(
-            enable_dns_rebinding_protection=False,
-        ),
-    )
-
-    @mcp.tool()
-    async def run_testbench() -> str:
-        """Run the design's hidden testbench against your current RTL.
-
-        Reads your current files out of the sandbox, applies them on top of
-        a host-side copy of the design, runs the upstream testbench, and
-        returns its exit code and stdout. The testbench sources themselves
-        are never sent into your environment. A return code of 0 means the
-        testbench passed.
-        """
-        try:
-            diff = await build_diff_from_sandbox(design)
-            log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)
-        except Exception as e:
-            return f"[tool error] {type(e).__name__}: {e}"
-
-        header = f"[rc={rc}]\n"
-        if len(log) > OUTPUT_LIMIT:
-            log = log[-OUTPUT_LIMIT:]
-            header += f"[output truncated to last {OUTPUT_LIMIT} chars]\n"
-        return header + log
 
     config = uvicorn.Config(
         mcp.sse_app(),
