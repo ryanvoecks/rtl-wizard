@@ -6,7 +6,7 @@ services:
     image: wollomatic/socket-proxy:1
     restart: unless-stopped
     # wollomatic's image uses a non-root user, but the Docker Desktop
-    # socket inside the Linux VM is mode 0660 root:docker — a non-root,
+    # socket inside the Linux VM is mode 0660 root:docker -- a non-root,
     # no-extra-group process gets EACCES on connect(). Run as root
     # inside the container so the proxy can dial the socket. The host
     # blast radius is still tiny: cap_drop ALL + no-new-privileges +
@@ -26,7 +26,7 @@ services:
       - '-loglevel=info'
       - '-listenip=0.0.0.0'
       # The socket-bus network is internal:true and contains only
-      # policy-proxy and socket-proxy. The compose network IS the ACL —
+      # policy-proxy and socket-proxy. The compose network IS the ACL --
       # nothing else can route here. We deliberately don't use a
       # hostname-based -allowfrom because wollomatic resolves it at
       # startup, before policy-proxy exists, which can leave the
@@ -37,12 +37,12 @@ services:
       # bug in policy-proxy can't bypass this control.
       - '-allowbindmountfrom=/tmp,/var/tmp'
       # Bare /_ping, /version, /info are sent unversioned during the
-      # docker CLI's API-version negotiation. Permitting them is safe —
+      # docker CLI's API-version negotiation. Permitting them is safe --
       # they're read-only metadata endpoints with no body, no host
       # effect, and no way to reach into the daemon's mutating surface.
       # `networks` and `volumes` use a bare path (no /json suffix) for
-      # the list endpoint — `GET /v1.x/networks` and `GET /v1.x/volumes`
-      # — so the trailing-slash form is optional. Containers/images list
+      # the list endpoint -- `GET /v1.x/networks` and `GET /v1.x/volumes`
+      # -- so the trailing-slash form is optional. Containers/images list
       # via /json so the slash-required form already matches.
       - '-allowGET=(/_ping|/version|/info|/v1\.[0-9]+/(_ping|version|info|events.*|containers/.*|images/.*|networks(/.*)?|volumes(/.*)?|exec/.*))'
       - '-allowHEAD=(/_ping|/v1\.[0-9]+/.*)'
@@ -95,13 +95,13 @@ services:
       CLAUDE_CONFIG_DIR: /home/wizard/.claude
       # Force `docker compose build` (and Inspect AI's docker sandbox
       # provider) to send images through the daemon's legacy /build
-      # endpoint — already allowlisted in socket-proxy and query-param
+      # endpoint -- already allowlisted in socket-proxy and query-param
       # checked by policy-proxy. The buildx default in modern Docker
       # would otherwise spawn a `moby/buildkit` sidecar with
       # Privileged=true, which policy-proxy rightly denies. Routing
       # through /build keeps builds inside the daemon's trust boundary
       # (no new privileged container) at the cost of BuildKit-only
-      # features like cache mounts and build secrets — fine for Inspect
+      # features like cache mounts and build secrets -- fine for Inspect
       # sandboxes.
       DOCKER_BUILDKIT: "0"
       COMPOSE_DOCKER_CLI_BUILD: "0"
@@ -112,7 +112,7 @@ services:
       # Track the host's wall-clock zone so `date`, file mtimes, and tool logs
       # match what the user sees outside the container. Without this, the image
       # falls back to UTC (the ARG TZ in Dockerfile is never wired up). Only
-      # /etc/localtime is mounted — /etc/timezone is Linux-specific and absent
+      # /etc/localtime is mounted -- /etc/timezone is Linux-specific and absent
       # on macOS hosts, where Docker Desktop would create a directory in its
       # place and break things. glibc reads zone info from /etc/localtime alone.
       - /etc/localtime:/etc/localtime:ro
@@ -127,12 +127,12 @@ services:
     command: sleep infinity
 
 networks:
-  # devcontainer ↔ policy-proxy. Marked internal so a misconfigured
+  # devcontainer <-> policy-proxy. Marked internal so a misconfigured
   # devcontainer cannot use this network for arbitrary internet egress.
   policy-bus:
     driver: bridge
     internal: true
-  # policy-proxy ↔ socket-proxy. devcontainer is NOT a member, so
+  # policy-proxy <-> socket-proxy. devcontainer is NOT a member, so
   # there is no L3 path from the devcontainer to socket-proxy.
   socket-bus:
     driver: bridge

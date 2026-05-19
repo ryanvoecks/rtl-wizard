@@ -1,4 +1,5 @@
 """Shared helpers for the rtl-wizard MCP server."""
+
 import os
 
 

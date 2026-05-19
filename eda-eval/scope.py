@@ -27,6 +27,7 @@ Usage:
     uv run eda_eval/scope.py --benchmark corpus --name counter_array \\
         --variant claude --scope-iters 6
 """
+
 from __future__ import annotations
 
 import argparse
@@ -50,6 +51,7 @@ ITER_SCOPE_DIR = "__iter_scope__"
 # --------------------------------------------------------------------------- #
 # Per-iteration plumbing                                                      #
 # --------------------------------------------------------------------------- #
+
 
 def design_scope_dir(design: DesignConfig, batch_dir: Path) -> Path:
     """Root for this design's scope artifacts (iter dirs + summary)."""
@@ -95,6 +97,7 @@ def run_one(
 # Fix-scope measurement                                                       #
 # --------------------------------------------------------------------------- #
 
+
 def measure_fix_scope(
     phase_dir: Path,
     top_module: str,
@@ -107,7 +110,7 @@ def measure_fix_scope(
     up modules / starting registers / LOC across every `slack<0` path.
 
     On OpenROAD/parse failure returns `{"scope_error": <msg>, ...}` with
-    the count fields set to None — the caller treats this as fix_ok=False
+    the count fields set to None -- the caller treats this as fix_ok=False
     but does not abort the whole scope run."""
     try:
         odb, sdc, spef = analyse.locate_post_route(phase_dir, top_module, platform)
@@ -117,13 +120,23 @@ def measure_fix_scope(
         congest_tsv = reports_dir / "congestion_hotspots_raw.tsv"
         congest_rpt = analyse.locate_congestion_rpt(reports_dir)
         analyse.run_openroad_extract(
-            odb, sdc, spef, libs, pool, raw_tsv, congest_rpt, congest_tsv,
+            odb,
+            sdc,
+            spef,
+            libs,
+            pool,
+            raw_tsv,
+            congest_rpt,
+            congest_tsv,
         )
         records = analyse.read_pool_tsv(raw_tsv)
     except Exception as exc:
         return {
-            "n_failing": None, "n_modules": None, "n_starts": None,
-            "total_loc": None, "modules": None,
+            "n_failing": None,
+            "n_modules": None,
+            "n_starts": None,
+            "total_loc": None,
+            "modules": None,
             "scope_error": f"{type(exc).__name__}: {exc}",
         }
 
@@ -148,6 +161,7 @@ def measure_fix_scope(
 class Budgets:
     """Suitability thresholds + the precomputed totals needed for the
     saturation guards."""
+
     max_modules: int
     max_starts: int
     max_loc: int
@@ -160,7 +174,7 @@ def classify_fix(ws_ns: float, scope_m: dict, b: Budgets) -> tuple[bool, str]:
     `"timing_met"` for `ws>=0`, `"ok"` when all budgets pass, or one of
     the rejection reasons otherwise."""
     if ws_ns >= 0:
-        # ws_ns>=0 means timing is met — no failing paths to fix. The
+        # ws_ns>=0 means timing is met -- no failing paths to fix. The
         # caller treats this as "still has headroom"; the period gets
         # shrunk and T_baseline is re-anchored to this period (see
         # Phase B body).
@@ -185,6 +199,7 @@ def classify_fix(ws_ns: float, scope_m: dict, b: Budgets) -> tuple[bool, str]:
 # Phase A: find T_baseline                                                    #
 # --------------------------------------------------------------------------- #
 
+
 def phase_a(
     design: DesignConfig,
     cfg: StudyConfig,
@@ -198,7 +213,7 @@ def phase_a(
 
     Convergence test: `|t_next - t| < eps`. Aborts (T_baseline=None,
     reason="baseline_not_met") if the final iter still has `ws < -eps`
-    after exhausting the budget — the design can't reach timing at any
+    after exhausting the budget -- the design can't reach timing at any
     period close to where the iteration landed, so headroom analysis
     is meaningless."""
     t = args.initial_period_ns
@@ -209,13 +224,23 @@ def phase_a(
         run, ws = run_one(design, batch_dir, i, t, args.die_side_um, cfg)
         t_next = t - ws
         converged = abs(t_next - t) < args.eps
-        history.append({
-            "iter": i, "phase": "A", "period_ns": t, "ws_ns": ws,
-            "n_failing": None, "n_modules": None, "n_starts": None,
-            "total_loc": None, "modules": None, "scope_error": None,
-            "fix_ok": None, "fix_reason": "baseline",
-            "output_dir": str(run.output_dir),
-        })
+        history.append(
+            {
+                "iter": i,
+                "phase": "A",
+                "period_ns": t,
+                "ws_ns": ws,
+                "n_failing": None,
+                "n_modules": None,
+                "n_starts": None,
+                "total_loc": None,
+                "modules": None,
+                "scope_error": None,
+                "fix_ok": None,
+                "fix_reason": "baseline",
+                "output_dir": str(run.output_dir),
+            }
+        )
         print(
             f"[A iter {i}] period={t:.4f} ns -> ws={ws:+.4f} ns"
             f"{'  (converged)' if converged else ''}"
@@ -233,6 +258,7 @@ def phase_a(
 # --------------------------------------------------------------------------- #
 # Phase B: step past T_baseline                                               #
 # --------------------------------------------------------------------------- #
+
 
 def phase_b(
     design: DesignConfig,
@@ -275,15 +301,26 @@ def phase_b(
         i = len(history)
         run, ws = run_one(design, batch_dir, i, t, args.die_side_um, cfg)
         scope_m = measure_fix_scope(
-            run.output_dir, design.top_module, cfg.platform,
-            hier, libs, args.pool,
+            run.output_dir,
+            design.top_module,
+            cfg.platform,
+            hier,
+            libs,
+            args.pool,
         )
         fix_ok, reason = classify_fix(ws, scope_m, budgets)
-        history.append({
-            "iter": i, "phase": "B", "period_ns": t, "ws_ns": ws,
-            **scope_m, "fix_ok": fix_ok, "fix_reason": reason,
-            "output_dir": str(run.output_dir),
-        })
+        history.append(
+            {
+                "iter": i,
+                "phase": "B",
+                "period_ns": t,
+                "ws_ns": ws,
+                **scope_m,
+                "fix_ok": fix_ok,
+                "fix_reason": reason,
+                "output_dir": str(run.output_dir),
+            }
+        )
         print(_fmt_scope_line("B", i, t, ws, scope_m, fix_ok, reason))
 
         if ws >= 0:
@@ -308,6 +345,7 @@ def phase_b(
 # Phase C: bisect                                                             #
 # --------------------------------------------------------------------------- #
 
+
 def phase_c(
     design: DesignConfig,
     cfg: StudyConfig,
@@ -330,15 +368,26 @@ def phase_c(
         i = len(history)
         run, ws = run_one(design, batch_dir, i, mid, args.die_side_um, cfg)
         scope_m = measure_fix_scope(
-            run.output_dir, design.top_module, cfg.platform,
-            hier, libs, args.pool,
+            run.output_dir,
+            design.top_module,
+            cfg.platform,
+            hier,
+            libs,
+            args.pool,
         )
         fix_ok, reason = classify_fix(ws, scope_m, budgets)
-        history.append({
-            "iter": i, "phase": "C", "period_ns": mid, "ws_ns": ws,
-            **scope_m, "fix_ok": fix_ok, "fix_reason": reason,
-            "output_dir": str(run.output_dir),
-        })
+        history.append(
+            {
+                "iter": i,
+                "phase": "C",
+                "period_ns": mid,
+                "ws_ns": ws,
+                **scope_m,
+                "fix_ok": fix_ok,
+                "fix_reason": reason,
+                "output_dir": str(run.output_dir),
+            }
+        )
         print(_fmt_scope_line("C", i, mid, ws, scope_m, fix_ok, reason))
         if fix_ok and ws < 0:
             hi = mid
@@ -352,9 +401,15 @@ def phase_c(
 # Output formatting                                                           #
 # --------------------------------------------------------------------------- #
 
+
 def _fmt_scope_line(
-    phase: str, i: int, t: float, ws: float,
-    scope_m: dict, fix_ok: bool, reason: str,
+    phase: str,
+    i: int,
+    t: float,
+    ws: float,
+    scope_m: dict,
+    fix_ok: bool,
+    reason: str,
 ) -> str:
     if scope_m.get("scope_error"):
         body = f"scope_error={scope_m['scope_error']}"
@@ -368,9 +423,13 @@ def _fmt_scope_line(
 
 
 def print_summary(
-    t_baseline: float | None, t_sweet: float | None, improvement: float | None,
-    area_um2: float | None, sweet_scope: dict | None,
-    suitable: bool, reason: str | None,
+    t_baseline: float | None,
+    t_sweet: float | None,
+    improvement: float | None,
+    area_um2: float | None,
+    sweet_scope: dict | None,
+    suitable: bool,
+    reason: str | None,
 ) -> None:
     print()
     if t_baseline is not None:
@@ -390,7 +449,11 @@ def print_summary(
         print(f"  modules:         {','.join(sweet_scope['modules'])}")
     print()
     verdict = "YES" if suitable else "NO"
-    detail = f"improvement {improvement * 100:.1f}%" if improvement is not None else "no headroom"
+    detail = (
+        f"improvement {improvement * 100:.1f}%"
+        if improvement is not None
+        else "no headroom"
+    )
     if not suitable and reason:
         detail = f"{detail}, {reason}"
     print(f"Suitable for optimisation: {verdict} ({detail})")
@@ -399,6 +462,7 @@ def print_summary(
 # --------------------------------------------------------------------------- #
 # Main entry point                                                            #
 # --------------------------------------------------------------------------- #
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -413,19 +477,34 @@ def main() -> None:
     parser.add_argument("--baseline-iters", type=int, default=3)
     parser.add_argument("--scope-iters", type=int, default=5)
     parser.add_argument("--bisect-iters", type=int, default=2)
-    parser.add_argument("--step", type=float, default=0.9,
-                        help="Period reduction factor per Phase B iter.")
-    parser.add_argument("--min-period-frac", type=float, default=0.4,
-                        help="Phase B halts when period drops below "
-                             "T_baseline * this fraction.")
-    parser.add_argument("--eps", type=float, default=0.02,
-                        help="Phase A convergence threshold on period delta (ns).")
+    parser.add_argument(
+        "--step",
+        type=float,
+        default=0.9,
+        help="Period reduction factor per Phase B iter.",
+    )
+    parser.add_argument(
+        "--min-period-frac",
+        type=float,
+        default=0.4,
+        help="Phase B halts when period drops below " "T_baseline * this fraction.",
+    )
+    parser.add_argument(
+        "--eps",
+        type=float,
+        default=0.02,
+        help="Phase A convergence threshold on period delta (ns).",
+    )
     parser.add_argument("--max-modules", type=int, default=6)
     parser.add_argument("--max-start-stems", type=int, default=5)
     parser.add_argument("--max-loc", type=int, default=2000)
     parser.add_argument("--min-improvement", type=float, default=0.10)
-    parser.add_argument("--pool", type=int, default=10000,
-                        help="OpenSTA path pool size for fix-scope measurement.")
+    parser.add_argument(
+        "--pool",
+        type=int,
+        default=10000,
+        help="OpenSTA path pool size for fix-scope measurement.",
+    )
     args = parser.parse_args()
 
     if not (ORFS_HOME / "Makefile").is_file():
@@ -487,15 +566,26 @@ def main() -> None:
 
     # Phase A
     t_baseline, last_ws, a_abort = phase_a(
-        design, cfg, args, batch_dir, history,
+        design,
+        cfg,
+        args,
+        batch_dir,
+        history,
     )
     if a_abort is not None:
-        summary.update({
-            "T_baseline_ns": t_baseline, "T_sweet_ns": None, "improvement": None,
-            "route_area_um2_at_sweet": None, "fix_scope_at_sweet": None,
-            "bracket_complete": False, "suitable": False, "reason": a_abort,
-            "history": history,
-        })
+        summary.update(
+            {
+                "T_baseline_ns": t_baseline,
+                "T_sweet_ns": None,
+                "improvement": None,
+                "route_area_um2_at_sweet": None,
+                "fix_scope_at_sweet": None,
+                "bracket_complete": False,
+                "suitable": False,
+                "reason": a_abort,
+                "history": history,
+            }
+        )
         _finalise(summary, scope_root)
         print_summary(t_baseline, None, None, None, None, False, a_abort)
         return
@@ -504,16 +594,32 @@ def main() -> None:
 
     # Phase B
     t_baseline, t_good, t_bad, sweet_run, b_abort = phase_b(
-        design, cfg, args, batch_dir, history, t_baseline,
-        hier, libs, budgets,
+        design,
+        cfg,
+        args,
+        batch_dir,
+        history,
+        t_baseline,
+        hier,
+        libs,
+        budgets,
     )
 
     # Phase C
     bracket_complete = t_bad is not None
     if t_bad is not None:
         t_sweet, sweet_run = phase_c(
-            design, cfg, args, batch_dir, history,
-            t_good, t_bad, sweet_run, hier, libs, budgets,
+            design,
+            cfg,
+            args,
+            batch_dir,
+            history,
+            t_good,
+            t_bad,
+            sweet_run,
+            hier,
+            libs,
+            budgets,
         )
     else:
         t_sweet = t_good if sweet_run is not None else None
@@ -525,18 +631,25 @@ def main() -> None:
     if t_sweet is not None and sweet_run is not None and t_sweet < t_baseline:
         improvement = (t_baseline - t_sweet) / t_baseline
         try:
-            area_um2 = extract(sweet_run.output_dir, design.top_module)["route_area_um2"]
+            area_um2 = extract(sweet_run.output_dir, design.top_module)[
+                "route_area_um2"
+            ]
         except Exception:
             traceback.print_exc()
             area_um2 = None
         # Find the history entry for the sweet run to surface the scope.
         sweet_dir = str(sweet_run.output_dir)
         for h in reversed(history):
-            if h.get("output_dir") == sweet_dir and h.get("phase") in ("B", "C") \
-               and h.get("fix_ok"):
+            if (
+                h.get("output_dir") == sweet_dir
+                and h.get("phase") in ("B", "C")
+                and h.get("fix_ok")
+            ):
                 sweet_scope = {
-                    "n_modules": h["n_modules"], "n_starts": h["n_starts"],
-                    "total_loc": h["total_loc"], "modules": h["modules"],
+                    "n_modules": h["n_modules"],
+                    "n_starts": h["n_starts"],
+                    "total_loc": h["total_loc"],
+                    "modules": h["modules"],
                 }
                 break
 
@@ -550,20 +663,28 @@ def main() -> None:
         suitable = False
         reason = b_abort if b_abort else "insufficient_headroom"
 
-    summary.update({
-        "T_baseline_ns": t_baseline,
-        "T_sweet_ns": t_sweet,
-        "improvement": improvement,
-        "route_area_um2_at_sweet": area_um2,
-        "fix_scope_at_sweet": sweet_scope,
-        "bracket_complete": bracket_complete,
-        "suitable": suitable,
-        "reason": reason,
-        "history": history,
-    })
+    summary.update(
+        {
+            "T_baseline_ns": t_baseline,
+            "T_sweet_ns": t_sweet,
+            "improvement": improvement,
+            "route_area_um2_at_sweet": area_um2,
+            "fix_scope_at_sweet": sweet_scope,
+            "bracket_complete": bracket_complete,
+            "suitable": suitable,
+            "reason": reason,
+            "history": history,
+        }
+    )
     _finalise(summary, scope_root)
     print_summary(
-        t_baseline, t_sweet, improvement, area_um2, sweet_scope, suitable, reason,
+        t_baseline,
+        t_sweet,
+        improvement,
+        area_um2,
+        sweet_scope,
+        suitable,
+        reason,
     )
 
 

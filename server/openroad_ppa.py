@@ -17,12 +17,13 @@ host (where `util.eda_env` is not on `sys.path`). `eda_env` is imported
 lazily inside `measure_ppa`, which is only called inside the sandbox where
 the flat `from util import ...` resolves.
 """
+
 import re
 import shutil
 import subprocess
 
 # nangate45 ships with the OpenROAD-flow-scripts build (see sandbox/Dockerfile).
-# Single-corner Liberty + matching tech/cell LEFs — OpenSTA needs all three
+# Single-corner Liberty + matching tech/cell LEFs -- OpenSTA needs all three
 # before `report_power` can model cells. ORFS bundles a TAPCELL with no LEF
 # master, which surfaces as a benign WARNING ORD-2056 we ignore.
 _NANGATE_DIR = "/OpenROAD-flow-scripts/flow/platforms/nangate45"
@@ -31,7 +32,7 @@ NANGATE_TECH_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.tech.lef"
 NANGATE_CELL_LEF = f"{_NANGATE_DIR}/lef/NangateOpenCellLibrary.macro.lef"
 
 # Sentinels printed between OpenSTA reports so each parser's regex is scoped
-# to its own section — report-format drift in one command can't bleed into
+# to its own section -- report-format drift in one command can't bleed into
 # another.
 PPA_DELAY_TAG = "===PPA_DELAY==="
 PPA_AREA_TAG = "===PPA_AREA==="
@@ -44,14 +45,12 @@ PPA_END_TAG = "===PPA_END==="
 # time`. The slack-section line below has the negated arrival, e.g.
 # `          -0.36   data arrival time`; the unsigned `[\d.]+` won't match
 # that, and `.search()` finds the positive (path-summary) line first anyway.
-_DELAY_ARRIVAL_RE = re.compile(
-    r"^\s+([\d.]+)\s+data arrival time\s*$", re.MULTILINE
-)
-# Total cell area in µm² from `report_design_area`, e.g.
+_DELAY_ARRIVAL_RE = re.compile(r"^\s+([\d.]+)\s+data arrival time\s*$", re.MULTILINE)
+# Total cell area in um^2 from `report_design_area`, e.g.
 # `Design area 60 um^2 100% utilization.` (utilization is meaningless without
 # a floorplan but report_design_area still prints it).
 _AREA_RE = re.compile(r"Design area\s+([\d.eE+-]+)\s+um\^2")
-# Last column of OpenSTA's `report_power` summary `Total` row — total
+# Last column of OpenSTA's `report_power` summary `Total` row -- total
 # power in Watts, e.g. `Total  8.01e-05  8.81e-06  1.78e-06  9.07e-05 100.0%`.
 _POWER_TOTAL_RE = re.compile(r"^\s*Total\s+\S+\s+\S+\s+\S+\s+(\S+)", re.MULTILINE)
 
@@ -113,7 +112,7 @@ exit
 def _section(text: str, start_tag: str, end_tag: str) -> str:
     """Slice OpenROAD stdout to the chunk between two sentinel tags.
 
-    Falls back to the empty string if either tag is missing — callers detect
+    Falls back to the empty string if either tag is missing -- callers detect
     the parse failure when their regex finds nothing.
     """
     s = text.find(start_tag)
@@ -124,7 +123,7 @@ def _section(text: str, start_tag: str, end_tag: str) -> str:
 
 
 def parse_ppa_report(stdout: str) -> tuple[dict[str, float] | None, str | None]:
-    """Parse `delay` (ns), `area` (µm²), `power` (µW) out of OpenSTA stdout.
+    """Parse `delay` (ns), `area` (um^2), `power` (uW) out of OpenSTA stdout.
 
     Returns ({delay, area, power}, None) on success or
     (None, error_msg) when a section is missing or non-numeric.
@@ -162,8 +161,8 @@ STA_TIMEOUT = 120
 
 def measure_ppa(verilog_paths: list[str], top: str | None = None) -> str:
     """Synthesize `verilog_paths` to nangate45 with yosys and run OpenSTA,
-    returning a formatted block with delay (ns), area (µm²), power (µW), and
-    `ppa_score = 1 / (delay·area·power)`.
+    returning a formatted block with delay (ns), area (um^2), power (uW), and
+    `ppa_score = 1 / (delay*area*power)`.
 
     Mirrors the benchmark scorer's PPA pipeline exactly so the agent sees the
     same numbers it will be graded on. On synth or STA failure, returns the

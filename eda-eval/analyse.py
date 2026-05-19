@@ -27,6 +27,7 @@ Usage:
     uv run eda_eval/analyse.py eda-results/<batch>/<benchmark>/<name>/<variant>/
     uv run eda_eval/analyse.py <phase_dir> --top-paths 20 --top-logical 10
 """
+
 from __future__ import annotations
 
 import argparse
@@ -63,7 +64,9 @@ def load_run_config(phase_dir: Path) -> dict:
 
 
 def locate_post_route(
-    phase_dir: Path, design: str, platform: str,
+    phase_dir: Path,
+    design: str,
+    platform: str,
 ) -> tuple[Path, Path, Path | None]:
     """Return (odb, sdc, spef_or_none) for this phase dir."""
     base = f"results/{platform}/{design}/*"
@@ -86,9 +89,14 @@ def liberty_files(platform: str) -> list[Path]:
 
 
 def run_openroad_extract(
-    odb: Path, sdc: Path, spef: Path | None, libs: list[Path],
-    pool: int, tsv_out: Path,
-    congest_rpt: Path | None, congest_tsv_out: Path,
+    odb: Path,
+    sdc: Path,
+    spef: Path | None,
+    libs: list[Path],
+    pool: int,
+    tsv_out: Path,
+    congest_rpt: Path | None,
+    congest_tsv_out: Path,
 ) -> None:
     """Pipe an STA + congestion driver script into openroad. One openroad
     invocation produces both `tsv_out` (timing pool) and
@@ -104,23 +112,26 @@ def run_openroad_extract(
     lines.append(f"source {EXTRACT_CONGEST_TCL}")
     script = "\n".join(lines)
 
-    env = {**os.environ,
-           "ANALYSE_OUT_TSV": str(tsv_out),
-           "ANALYSE_POOL": str(pool),
-           "ANALYSE_CONGEST_TSV": str(congest_tsv_out)}
+    env = {
+        **os.environ,
+        "ANALYSE_OUT_TSV": str(tsv_out),
+        "ANALYSE_POOL": str(pool),
+        "ANALYSE_CONGEST_TSV": str(congest_tsv_out),
+    }
     if congest_rpt is not None:
         env["ANALYSE_CONGEST_RPT"] = str(congest_rpt)
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
-        input=script, env=env, text=True,
+        input=script,
+        env=env,
+        text=True,
         capture_output=True,
     )
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         raise RuntimeError(
-            f"openroad extraction failed (rc={proc.returncode}). "
-            f"See output above."
+            f"openroad extraction failed (rc={proc.returncode}). " f"See output above."
         )
     if not tsv_out.is_file():
         raise RuntimeError(f"openroad did not write {tsv_out}")
@@ -146,7 +157,9 @@ _INDEX_RE = re.compile(r"\[\d+\]")
 
 
 def dump_hierarchy(
-    rtl_files: list[Path], top_module: str, json_out: Path,
+    rtl_files: list[Path],
+    top_module: str,
+    json_out: Path,
 ) -> None:
     """Have yosys read the RTL, elaborate the hierarchy, and dump it as JSON.
 
@@ -164,14 +177,13 @@ def dump_hierarchy(
     )
     proc = subprocess.run(
         [YOSYS_BIN, "-q", "-p", script],
-        text=True, capture_output=True,
+        text=True,
+        capture_output=True,
     )
     if proc.returncode != 0 or not json_out.is_file():
         sys.stderr.write(proc.stdout)
         sys.stderr.write(proc.stderr)
-        raise RuntimeError(
-            f"yosys hierarchy dump failed (rc={proc.returncode})."
-        )
+        raise RuntimeError(f"yosys hierarchy dump failed (rc={proc.returncode}).")
 
 
 def _module_loc(src_attr: str | None) -> int:
@@ -226,7 +238,9 @@ def _clean_instance(name: str) -> str:
 
 
 def cell_modules(
-    inst_path: str, top_module: str, hierarchy: dict[str, dict],
+    inst_path: str,
+    top_module: str,
+    hierarchy: dict[str, dict],
 ) -> set[str]:
     """Walk a hierarchical instance path and return every module type the
     cell touches along the way -- top + each submodule type traversed +
@@ -254,6 +268,7 @@ def logical_stem(full_name: str) -> str:
 
 # Report writers ---------------------------------------------------------------
 
+
 def read_pool_tsv(tsv: Path) -> list[tuple[float, str, str, list[str]]]:
     """Return [(slack_ns, startpoint, endpoint, cells_list), ...]."""
     records: list[tuple[float, str, str, list[str]]] = []
@@ -261,10 +276,14 @@ def read_pool_tsv(tsv: Path) -> list[tuple[float, str, str, list[str]]]:
         if not line or line.startswith("#"):
             continue
         slack_s, sp, ep, cells = line.split("\t")
-        records.append((
-            float(slack_s), sp, ep,
-            cells.split("|") if cells else [],
-        ))
+        records.append(
+            (
+                float(slack_s),
+                sp,
+                ep,
+                cells.split("|") if cells else [],
+            )
+        )
     records.sort(key=lambda r: r[0])
     return records
 
@@ -280,8 +299,12 @@ def write_critical_paths(records: list, out_path: Path, top_m: int) -> int:
 
 
 def write_logical_paths(
-    records: list, out_path: Path, top_n: int,
-    top_module: str, hierarchy: dict[str, dict], pool_size: int,
+    records: list,
+    out_path: Path,
+    top_n: int,
+    top_module: str,
+    hierarchy: dict[str, dict],
+    pool_size: int,
 ) -> int:
     groups: dict[tuple[str, str], dict] = {}
     for slack, sp, ep, cells in records:
@@ -314,9 +337,7 @@ def write_logical_paths(
         written = 0
         for rank, ((ss, es), g) in enumerate(ranked[:top_n], 1):
             mods = sorted(g["modules"])
-            total_loc = sum(
-                hierarchy.get(m, {}).get("line_count", 0) for m in mods
-            )
+            total_loc = sum(hierarchy.get(m, {}).get("line_count", 0) for m in mods)
             fh.write(
                 f"{rank}\t{g['worst']:.4f}\t{g['best']:.4f}\t{g['count']}"
                 f"\t{total_loc}\t{ss}\t{es}\t{','.join(mods)}\n"
@@ -327,17 +348,19 @@ def write_logical_paths(
 
 # Congestion ------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class CongestionTile:
     """One overflowing GR tile, post-enrichment by extract_congestion.tcl."""
-    direction: str            # "H" / "V" (or "?" if GR labelled unusually)
-    overflow: int             # usage - capacity, positive
+
+    direction: str  # "H" / "V" (or "?" if GR labelled unusually)
+    overflow: int  # usage - capacity, positive
     capacity: int
     usage: int
-    layer: str                # GR commonly writes "-" for per-direction aggregate
-    bbox_um: tuple[float, float, float, float]   # xL, yL, xH, yH
-    nets: tuple[str, ...]     # contributing nets per GR's `srcs:`
-    insts: tuple[str, ...]    # instance names connected to those nets
+    layer: str  # GR commonly writes "-" for per-direction aggregate
+    bbox_um: tuple[float, float, float, float]  # xL, yL, xH, yH
+    nets: tuple[str, ...]  # contributing nets per GR's `srcs:`
+    insts: tuple[str, ...]  # instance names connected to those nets
     io_pins: tuple[str, ...]  # "IO:<bterm_name>" markers
 
 
@@ -352,23 +375,27 @@ def read_congestion_tsv(tsv: Path) -> list[CongestionTile]:
         if len(parts) != 12:
             continue
         d, ovfl, cap, use, lyr, xL, yL, xH, yH, nets_s, insts_s, io_s = parts
-        tiles.append(CongestionTile(
-            direction=d,
-            overflow=int(ovfl),
-            capacity=int(cap),
-            usage=int(use),
-            layer=lyr,
-            bbox_um=(float(xL), float(yL), float(xH), float(yH)),
-            nets=tuple(nets_s.split("|")) if nets_s else (),
-            insts=tuple(insts_s.split("|")) if insts_s else (),
-            io_pins=tuple(io_s.split("|")) if io_s else (),
-        ))
+        tiles.append(
+            CongestionTile(
+                direction=d,
+                overflow=int(ovfl),
+                capacity=int(cap),
+                usage=int(use),
+                layer=lyr,
+                bbox_um=(float(xL), float(yL), float(xH), float(yH)),
+                nets=tuple(nets_s.split("|")) if nets_s else (),
+                insts=tuple(insts_s.split("|")) if insts_s else (),
+                io_pins=tuple(io_s.split("|")) if io_s else (),
+            )
+        )
     tiles.sort(key=lambda t: (-t.overflow, -t.usage))
     return tiles
 
 
 def write_congestion_hotspots(
-    tiles: list[CongestionTile], out_path: Path, top_m: int,
+    tiles: list[CongestionTile],
+    out_path: Path,
+    top_m: int,
 ) -> int:
     with out_path.open("w") as fh:
         fh.write(f"# total_overflow_tiles\t{len(tiles)}\n")
@@ -394,8 +421,11 @@ def write_congestion_hotspots(
 
 
 def write_logical_congestion(
-    tiles: list[CongestionTile], out_path: Path, top_n: int,
-    top_module: str, hierarchy: dict[str, dict],
+    tiles: list[CongestionTile],
+    out_path: Path,
+    top_n: int,
+    top_module: str,
+    hierarchy: dict[str, dict],
 ) -> int:
     """Group overflow tiles by the frozenset of RTL modules their
     contributing instances touch (via `cell_modules`). IO-pin contributions
@@ -410,8 +440,11 @@ def write_logical_congestion(
         g = groups.get(key)
         if g is None:
             g = {
-                "tile_count": 0, "max_overflow": t.overflow,
-                "sum_overflow": 0, "insts": set(), "io_driven": False,
+                "tile_count": 0,
+                "max_overflow": t.overflow,
+                "sum_overflow": 0,
+                "insts": set(),
+                "io_driven": False,
             }
             groups[key] = g
         g["tile_count"] += 1
@@ -439,9 +472,7 @@ def write_logical_congestion(
         written = 0
         for rank, (mods_key, g) in enumerate(ranked[:top_n], 1):
             mods = sorted(mods_key)
-            total_loc = sum(
-                hierarchy.get(m, {}).get("line_count", 0) for m in mods
-            )
+            total_loc = sum(hierarchy.get(m, {}).get("line_count", 0) for m in mods)
             mods_str = ",".join(mods) if mods else "(no instances)"
             fh.write(
                 f"{rank}\t{g['sum_overflow']}\t{g['max_overflow']}"
@@ -454,27 +485,51 @@ def write_logical_congestion(
 
 # Entry point ------------------------------------------------------------------
 
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
-        "phase_dir", type=Path,
+        "phase_dir",
+        type=Path,
         help="Variant phase dir (contains inputs/, results/, logs/, reports/).",
     )
-    ap.add_argument("--top-paths", type=int, default=50, metavar="M",
-                    help="How many worst-slack individual paths to report "
-                         "(default 50).")
-    ap.add_argument("--top-logical", type=int, default=50, metavar="N",
-                    help="How many logical register-to-register groups to "
-                         "report (default 50).")
-    ap.add_argument("--pool", type=int, default=1000, metavar="P",
-                    help="Path pool size for find_timing_paths (default 1000). "
-                         "Larger pools give better logical-group statistics.")
-    ap.add_argument("--top-tiles", type=int, default=50, metavar="M",
-                    help="How many worst-overflow congestion tiles to "
-                         "report (default 50).")
-    ap.add_argument("--top-modules-congest", type=int, default=50, metavar="N",
-                    help="How many RTL-module groups to report in the "
-                         "logical congestion rollup (default 50).")
+    ap.add_argument(
+        "--top-paths",
+        type=int,
+        default=50,
+        metavar="M",
+        help="How many worst-slack individual paths to report " "(default 50).",
+    )
+    ap.add_argument(
+        "--top-logical",
+        type=int,
+        default=50,
+        metavar="N",
+        help="How many logical register-to-register groups to " "report (default 50).",
+    )
+    ap.add_argument(
+        "--pool",
+        type=int,
+        default=1000,
+        metavar="P",
+        help="Path pool size for find_timing_paths (default 1000). "
+        "Larger pools give better logical-group statistics.",
+    )
+    ap.add_argument(
+        "--top-tiles",
+        type=int,
+        default=50,
+        metavar="M",
+        help="How many worst-overflow congestion tiles to " "report (default 50).",
+    )
+    ap.add_argument(
+        "--top-modules-congest",
+        type=int,
+        default=50,
+        metavar="N",
+        help="How many RTL-module groups to report in the "
+        "logical congestion rollup (default 50).",
+    )
     args = ap.parse_args(argv)
 
     phase_dir = args.phase_dir.resolve()
@@ -504,9 +559,13 @@ def main(argv: list[str] | None = None) -> int:
     print(f"==> Routed DB:   {odb}")
     print(f"==> SDC:         {sdc}")
     print(f"==> SPEF:        {spef if spef else '(absent; STA estimates parasitics)'}")
-    print(f"==> GR congest:  {congest_rpt if congest_rpt else '(absent; design routed clean)'}")
+    print(
+        f"==> GR congest:  {congest_rpt if congest_rpt else '(absent; design routed clean)'}"
+    )
     print(f"==> Reports:     {reports_dir}")
-    print(f"==> Pool / paths / logical: {args.pool} / {args.top_paths} / {args.top_logical}")
+    print(
+        f"==> Pool / paths / logical: {args.pool} / {args.top_paths} / {args.top_logical}"
+    )
     print(f"==> Tiles / module groups:  {args.top_tiles} / {args.top_modules_congest}")
 
     # Stage both tsv outputs to siblings of the final reports so the
@@ -515,8 +574,14 @@ def main(argv: list[str] | None = None) -> int:
     staging = raw_tsv.with_suffix(".tsv.partial")
     congest_staging = congest_raw_tsv.with_suffix(".tsv.partial")
     run_openroad_extract(
-        odb, sdc, spef, libs, args.pool, staging,
-        congest_rpt, congest_staging,
+        odb,
+        sdc,
+        spef,
+        libs,
+        args.pool,
+        staging,
+        congest_rpt,
+        congest_staging,
     )
     staging.replace(raw_tsv)
     congest_staging.replace(congest_raw_tsv)
@@ -543,8 +608,12 @@ def main(argv: list[str] | None = None) -> int:
 
     logical_path = reports_dir / "logical_paths.rpt"
     n_log = write_logical_paths(
-        records, logical_path, args.top_logical,
-        top_module, hierarchy, pool_size=len(records),
+        records,
+        logical_path,
+        args.top_logical,
+        top_module,
+        hierarchy,
+        pool_size=len(records),
     )
 
     tiles = read_congestion_tsv(congest_raw_tsv)
@@ -552,7 +621,11 @@ def main(argv: list[str] | None = None) -> int:
     n_tiles = write_congestion_hotspots(tiles, congest_path, args.top_tiles)
     logical_congest = reports_dir / "logical_congestion.rpt"
     n_lcong = write_logical_congestion(
-        tiles, logical_congest, args.top_modules_congest, top_module, hierarchy,
+        tiles,
+        logical_congest,
+        args.top_modules_congest,
+        top_module,
+        hierarchy,
     )
 
     print(f"==> Wrote {n_crit} worst paths to {crit_path}")

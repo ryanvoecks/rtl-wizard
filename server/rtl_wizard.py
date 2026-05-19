@@ -11,7 +11,7 @@ mcp = FastMCP("rtl-wizard")
 
 _RTL_GUIDANCE = (
     "Good RTL coding practice: keep combinational and sequential logic in "
-    "separate always blocks — use non-blocking assignments (<=) inside "
+    "separate always blocks -- use non-blocking assignments (<=) inside "
     "clocked always_ff/always @(posedge clk) blocks and blocking assignments "
     "(=) inside always_comb/always @(*). Assign every output on every path of "
     "a combinational block (else/default branches) to prevent inferred latches. "
@@ -91,13 +91,13 @@ def reconstruct_critical_path(verilog_path: str) -> str:
 @mcp.tool()
 def openroad_ppa(verilog_paths: list[str], top: str | None = None) -> str:
     """Synthesize the design to nangate45 with yosys and run OpenSTA, returning
-    delay (ns), area (µm²), power (µW), and ppa_score = 1 / (delay·area·power).
+    delay (ns), area (um^2), power (uW), and ppa_score = 1 / (delay*area*power).
 
     This is the same pipeline the benchmark scorer uses to grade your design,
     so the numbers it returns are the numbers you are graded on. Use it as
-    your primary feedback signal once your testbench passes — call it after
+    your primary feedback signal once your testbench passes -- call it after
     every meaningful change and iterate to drive ppa_score up (equivalently,
-    delay·area·power down). Higher ppa_score is better.
+    delay*area*power down). Higher ppa_score is better.
 
     The clock is the design's `clk`/`clock`/`i_clk`/`clk_i` port at 1 ns when
     one exists, else a virtual 1 ns clock. Absolute numbers are not physically

@@ -1,9 +1,10 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Entry point is `llm-eval/run.py` — it owns the per-run output dir and
+Entry point is `llm-eval/run.py` -- it owns the per-run output dir and
 forwards it into `optimize_timing(output_dir)`. Prerequisite:
 `claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
 """
+
 from pathlib import Path
 
 from inspect_ai import Task, task
@@ -50,7 +51,7 @@ def _build_sample(target: TargetConfig) -> Sample:
     if not rtl_files:
         raise FileNotFoundError(
             f"design {design.benchmark}/{design.name}/{design.variant} has no "
-            "RTL files — run `git submodule update --init` if the upstream "
+            "RTL files -- run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
     sandbox_paths = [_sandbox_rtl_path(design, p) for p in rtl_files]
@@ -62,11 +63,11 @@ def _build_sample(target: TargetConfig) -> Sample:
             f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
             f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
             "reduce the **longest combinational path** through the design "
-            "— the path that gates the achievable clock period.\n\n"
+            "-- the path that gates the achievable clock period.\n\n"
             "Constraints:\n"
             "- Preserve functional behaviour. You cannot read the "
             "testbench, but you can call the `run_testbench` MCP tool to "
-            "run it against your current RTL — it returns the testbench's "
+            "run it against your current RTL -- it returns the testbench's "
             "exit code and stdout so you can sanity-check edits before "
             "finishing.\n"
             "- The design must remain synthesisable by yosys (the scorer "

@@ -2,14 +2,14 @@ FROM ubuntu:22.04
 
 # Container time tracks the host: tzdata (installed below) supplies zoneinfo,
 # and docker-compose.yml bind-mounts /etc/localtime read-only from the host.
-# No TZ env var is needed — glibc reads /etc/localtime directly.
+# No TZ env var is needed -- glibc reads /etc/localtime directly.
 
 ARG CLAUDE_CODE_VERSION=latest
 ARG USERNAME=wizard
 
 # Create the non-root user. `tzdata` ships /usr/share/zoneinfo so that the
 # host's /etc/localtime bind-mount (see docker-compose.yml) resolves to a real
-# zone — without it, glibc has no zoneinfo to read and the container falls back
+# zone -- without it, glibc has no zoneinfo to read and the container falls back
 # to UTC regardless of TZ.
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
@@ -21,7 +21,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
   chmod 0440 /etc/sudoers.d/${USERNAME}
 
 # Install gh, firewall tooling, and HDL toolchain.
-# Note: yosys is intentionally NOT installed via apt — Ubuntu 22.04 ships an
+# Note: yosys is intentionally NOT installed via apt -- Ubuntu 22.04 ships an
 # old version, and the ORFS install below provides a much newer one on PATH.
 # iverilog stays for Icarus-based workflows (independent of Verilator).
 RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
@@ -41,7 +41,7 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
   && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Install Docker CLI only (no daemon). The container talks to a filtered
-# socket-proxy via DOCKER_HOST=tcp://socket-proxy:2375 — see docker-compose.yml.
+# socket-proxy via DOCKER_HOST=tcp://socket-proxy:2375 -- see docker-compose.yml.
 RUN install -m 0755 -d /etc/apt/keyrings && \
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc && \
   chmod a+r /etc/apt/keyrings/docker.asc && \

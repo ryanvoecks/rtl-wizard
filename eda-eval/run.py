@@ -11,6 +11,7 @@ Per-batch artifacts land under
 `eda-results/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
 plus a top-level `runs.csv` summarizing each run's error status.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -53,8 +54,10 @@ def filter_designs(
     """Keep designs whose benchmark/name/variant match at least one glob in
     each non-empty filter list. A `None` filter means that field is
     unconstrained, so an unfiltered call returns `designs` unchanged."""
+
     def matches(value: str, patterns: list[str] | None) -> bool:
         return patterns is None or any(fnmatch.fnmatchcase(value, p) for p in patterns)
+
     out: DesignTree = {}
     for b, names in designs.items():
         if not matches(b, benchmark_globs):
@@ -83,10 +86,7 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     die with a `core_margin_um` boundary on each edge."""
     inner = side_um - core_margin_um
     die_area = f"0 0 {side_um:.3f} {side_um:.3f}"
-    core_area = (
-        f"{core_margin_um:.3f} {core_margin_um:.3f} "
-        f"{inner:.3f} {inner:.3f}"
-    )
+    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} " f"{inner:.3f} {inner:.3f}"
     return die_area, core_area
 
 
@@ -106,9 +106,12 @@ def snapshot_inputs(run: RunConfig) -> Path:
 
     # Generate SDC with clock period
     sdc_dst = inputs / "constraint.sdc"
-    sdc_dst.write_text(SDC_TEMPLATE.read_text().format(
-        period_ns=run.period_ns, io_delay_ns=run.cfg.io_delay_ns,
-    ))
+    sdc_dst.write_text(
+        SDC_TEMPLATE.read_text().format(
+            period_ns=run.period_ns,
+            io_delay_ns=run.cfg.io_delay_ns,
+        )
+    )
 
     # Generate Makefile with design config
     die_area, core_area = render_floorplan(run.side_um, run.cfg.core_margin_um)
@@ -139,7 +142,8 @@ def run_job(run: RunConfig) -> int:
     with log_path.open("w") as log:
         return subprocess.run(
             ["make", "-C", str(makefile.parent)],
-            stdout=log, stderr=subprocess.STDOUT,
+            stdout=log,
+            stderr=subprocess.STDOUT,
         ).returncode
 
 
@@ -190,26 +194,36 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--benchmark", action="append", default=None, metavar="GLOB",
+        "--benchmark",
+        action="append",
+        default=None,
+        metavar="GLOB",
         help="Restrict to designs whose benchmark matches one of these globs. "
-             "Repeatable; a design matches if *any* given glob hits.",
+        "Repeatable; a design matches if *any* given glob hits.",
     )
     parser.add_argument(
-        "--name", action="append", default=None, metavar="GLOB",
+        "--name",
+        action="append",
+        default=None,
+        metavar="GLOB",
         help="Restrict to designs whose name matches one of these globs. "
-             "Repeatable.",
+        "Repeatable.",
     )
     parser.add_argument(
-        "--variant", action="append", default=None, metavar="GLOB",
+        "--variant",
+        action="append",
+        default=None,
+        metavar="GLOB",
         help="Restrict to designs whose variant matches one of these globs. "
-             "Repeatable.",
+        "Repeatable.",
     )
     parser.add_argument(
-        "--num-threads", type=int,
+        "--num-threads",
+        type=int,
         default=max(1, (os.cpu_count() or 2) // 2),
         help="Worker count for each parallel phase (default: half of host "
-             "CPU count). All calibrations run as one batch, then all finals "
-             "run as a second batch.",
+        "CPU count). All calibrations run as one batch, then all finals "
+        "run as a second batch.",
     )
     args = parser.parse_args()
 
@@ -218,8 +232,12 @@ def main():
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
+    all_designs = AllDesigns.designs()
     designs = filter_designs(
-        AllDesigns.designs(), args.benchmark, args.name, args.variant,
+        all_designs,
+        args.benchmark,
+        args.name,
+        args.variant,
     )
     if not designs:
         raise ValueError("No designs matched specified filters")
@@ -251,7 +269,9 @@ def main():
         for key in groups
     }
     cal_rcs = run_jobs(
-        list(cal_runs.values()), args.num_threads, "Calibration",
+        list(cal_runs.values()),
+        args.num_threads,
+        "Calibration",
     )
 
     # Build one RunJob per variant, and record each group's calibration as
@@ -279,12 +299,14 @@ def main():
                 side_um = derive_final_side_um(cell_area_um2, cfg)
             except Exception as exc:
                 error = f"calibration parse FAIL: {exc}"
-        runs_report.append({
-            "benchmark": b,
-            "name": n,
-            "variant": "__calibration__",
-            "error": error,
-        })
+        runs_report.append(
+            {
+                "benchmark": b,
+                "name": n,
+                "variant": "__calibration__",
+                "error": error,
+            }
+        )
         for d in variants:
             final_runs[d] = RunJob(
                 run=RunConfig(
@@ -306,12 +328,14 @@ def main():
         else:
             rc = final_rcs[job.run]
             error = f"final FAIL (rc={rc})" if rc != 0 else None
-        runs_report.append({
-            "benchmark": d.benchmark,
-            "name": d.name,
-            "variant": d.variant,
-            "error": error,
-        })
+        runs_report.append(
+            {
+                "benchmark": d.benchmark,
+                "name": d.name,
+                "variant": d.variant,
+                "error": error,
+            }
+        )
     runs_report.sort(key=lambda e: (e["benchmark"], e["name"], e["variant"]))
     with (batch_dir / "runs.csv").open("w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=["benchmark", "name", "variant", "error"])

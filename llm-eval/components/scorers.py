@@ -2,8 +2,9 @@
 
 Each scorer diffs the agent's sandbox RTL against on-disk originals, saves
 `diff.patch`, and hands `(design, diff)` to a pure evaluator that reapplies
-the diff into a tempdir and runs the check — so a saved diff can be replayed.
+the diff into a tempdir and runs the check -- so a saved diff can be replayed.
 """
+
 import asyncio
 import difflib
 import subprocess
@@ -25,8 +26,8 @@ from inspect_ai.util import sandbox
 from common.config import YOSYS_BIN, DesignConfig, Result
 
 # Config
-YOSYS_TIMEOUT = 60          # Timeout for synthesisability check
-SANDBOX_RTL_ROOT = "rtl"    # Root inside sandbox where agent edits design
+YOSYS_TIMEOUT = 60  # Timeout for synthesisability check
+SANDBOX_RTL_ROOT = "rtl"  # Root inside sandbox where agent edits design
 
 
 def _rel(design: DesignConfig, rtl_file: Path) -> Path:
@@ -71,7 +72,9 @@ def _apply_diff(diff: str, dest_dir: Path) -> None:
     """Apply a unified diff (paths `a/<rel>` `b/<rel>`) under `dest_dir`."""
     proc = subprocess.run(
         ["patch", "-p1", "--no-backup-if-mismatch", "-d", str(dest_dir)],
-        input=diff, text=True, capture_output=True,
+        input=diff,
+        text=True,
+        capture_output=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"patch failed:\n{proc.stdout}\n{proc.stderr}")
@@ -83,7 +86,8 @@ def _create_copy(design: DesignConfig, diff: str) -> Path:
     dest = Path(tempfile.mkdtemp()) / design.root.name
     proc = subprocess.run(
         ["cp", "-R", "--reflink=auto", str(design.root), str(dest)],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"copy failed:\n{proc.stderr}")
@@ -105,7 +109,9 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
         )
         proc = subprocess.run(
             [YOSYS_BIN, "-q", "-p", script],
-            cwd=rtl_path, capture_output=True, text=True,
+            cwd=rtl_path,
+            capture_output=True,
+            text=True,
             timeout=YOSYS_TIMEOUT,
         )
     except RuntimeError as e:

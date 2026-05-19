@@ -6,6 +6,7 @@ tool schema). `make_server` picks a subset of methods to register on a fresh
 FastMCP instance. The network transport is handled separately by
 `mcp_connect.py`.
 """
+
 import asyncio
 
 from mcp.server.fastmcp import FastMCP
@@ -14,7 +15,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 from common.config import DesignConfig
 from .scorers import build_diff_from_sandbox, evaluate_testbench
 
-OUTPUT_LIMIT = 20_000   # Truncate overly long testbenches
+OUTPUT_LIMIT = 20_000  # Truncate overly long testbenches
 
 
 class Tools:
@@ -26,9 +27,7 @@ class Tools:
         code of 0 means the testbench passed."""
         try:
             diff = await build_diff_from_sandbox(self.design)
-            log, rc = await asyncio.to_thread(
-                evaluate_testbench, self.design, diff
-            )
+            log, rc = await asyncio.to_thread(evaluate_testbench, self.design, diff)
         except Exception as e:
             return f"[tool error] {type(e).__name__}: {e}"
 
@@ -39,9 +38,7 @@ class Tools:
         return header + log
 
 
-def make_server(
-    name: str, method_names: list[str], design: DesignConfig
-) -> FastMCP:
+def make_server(name: str, method_names: list[str], design: DesignConfig) -> FastMCP:
     """Build a FastMCP server exposing the named `Tools` methods.
     DNS-rebinding protection is disabled for docker-in-docker support."""
 
