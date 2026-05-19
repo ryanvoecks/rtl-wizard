@@ -67,8 +67,8 @@ async def build_diff_from_sandbox(design: DesignConfig) -> str:
     """Unified diff of the agent's edits against `design`'s on-disk originals.
 
     Output paths are relative to `design.rtl_dir`, so the diff applies
-    cleanly with `patch -p1` against either a copy of `rtl_dir` itself or a
-    `tb_repo_root` copy patched at `rtl_dir.relative_to(tb_repo_root)`."""
+    cleanly with `patch -p1` against a copy of `design.root` patched at
+    `rtl_dir.relative_to(root)`."""
     parts: list[str] = []
     for rtl_file in design.rtl_files:
         rel = _rel(design, rtl_file)
@@ -97,13 +97,20 @@ def _apply_diff(diff: str, dest_dir: Path) -> None:
         raise RuntimeError(f"patch failed:\n{proc.stdout}\n{proc.stderr}")
 
 
-def _stage_rtl(design: DesignConfig, dest_dir: Path) -> None:
-    """Copy the design's original RTL into `dest_dir`, preserving each
-    file's path relative to `rtl_dir`."""
-    for rtl_file in design.rtl_files:
-        dest = dest_dir / _rel(design, rtl_file)
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(rtl_file, dest)
+def _create_copy(design: DesignConfig, diff: str) -> Path:
+    """Reflink-copy `design.root` into a fresh tempdir and apply `diff` at
+    the rtl_dir location inside the copy. Returns the path to the copy
+    root, ready to run yosys / testbench commands against. Raises
+    RuntimeError on copy or patch failure."""
+    dest = Path(tempfile.mkdtemp()) / design.root.name
+    proc = subprocess.run(
+        ["cp", "-R", "--reflink=auto", str(design.root), str(dest)],
+        capture_output=True, text=True,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(f"copy failed:\n{proc.stderr}")
+    _apply_diff(diff, dest / design.rtl_dir.relative_to(design.root))
+    return dest
 
 
 def _resolve_yosys() -> str | None:
@@ -116,16 +123,9 @@ def _resolve_yosys() -> str | None:
 
 
 def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[str, int]:
-    """Stage `design.rtl_files` into a tempdir, apply `diff`, and run yosys
-    `hierarchy -check -top <top>; proc; opt; clean`. Returns (log, rc); rc
-    == 0 iff yosys succeeded, non-zero (with the failure reason in `log`)
-    for any setup error — missing yosys, patch failure, diff that drops
-    every RTL file, yosys timeout, etc. The function never raises so the
-    caller can treat the return value as the single source of truth.
-
-    Pure function modulo filesystem + subprocess — no TaskState, no sandbox,
-    no Inspect imports. Drives the Inspect scorer and can also be called
-    from a replay tool with a saved diff.patch."""
+    """Apply `diff` to a shallow copy of `design.rtl_dir` and run yosys
+    `hierarchy -check -top <top>; proc; opt; clean`. Returns (log, rc):
+    rc == 0 on success, non-zero (reason in `log`) on any failure."""
     yosys = _resolve_yosys()
     if yosys is None:
         return (
@@ -133,66 +133,49 @@ def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[str, int]:
             f"{_DEVCONTAINER_YOSYS}); cannot run synthesisability check",
             1,
         )
-    with tempfile.TemporaryDirectory() as td:
-        td_path = Path(td)
-        _stage_rtl(design, td_path)
-        try:
-            _apply_diff(diff, td_path)
-        except RuntimeError as e:
-            return str(e), 1
-
-        rel_paths = [str(_rel(design, f)) for f in design.rtl_files]
-        existing = [p for p in rel_paths if (td_path / p).is_file()]
-        if not existing:
-            return "diff removed every RTL file in the design", 1
-        script = (
-            f"read_verilog -sv {' '.join(existing)}; "
-            f"hierarchy -check -top {design.top_module}; proc; opt; clean"
+    try:
+        root = _create_copy(design, diff)
+    except RuntimeError as e:
+        return str(e), 1
+    rtl_path = root / design.rtl_dir.relative_to(design.root)
+    rel_paths = [str(_rel(design, f)) for f in design.rtl_files]
+    existing = [p for p in rel_paths if (rtl_path / p).is_file()]
+    if not existing:
+        return "diff removed every RTL file in the design", 1
+    script = (
+        f"read_verilog -sv {' '.join(existing)}; "
+        f"hierarchy -check -top {design.top_module}; proc; opt; clean"
+    )
+    try:
+        proc = subprocess.run(
+            [yosys, "-q", "-p", script],
+            cwd=rtl_path, capture_output=True, text=True,
+            timeout=_YOSYS_TIMEOUT_S,
         )
-        try:
-            proc = subprocess.run(
-                [yosys, "-q", "-p", script],
-                cwd=td_path, capture_output=True, text=True,
-                timeout=_YOSYS_TIMEOUT_S,
-            )
-        except subprocess.TimeoutExpired:
-            return f"yosys timed out after {_YOSYS_TIMEOUT_S}s", 124
+    except subprocess.TimeoutExpired:
+        return f"yosys timed out after {_YOSYS_TIMEOUT_S}s", 124
 
-    log = (proc.stdout or "") + (proc.stderr or "")
-    return log, proc.returncode
+    return (proc.stdout or "") + (proc.stderr or ""), proc.returncode
 
 
 def evaluate_functional(design: DesignConfig, diff: str) -> tuple[str, int]:
-    """Apply `diff` into a copy of `design.tb_repo_root` and run the
-    upstream testbench. Returns (stdout, rc); rc == 0 iff the testbench
-    passed, non-zero (with the failure reason in `stdout`) for any setup
-    error — missing harness, missing repo, patch failure, etc. The
-    function never raises so the caller can treat the return value as
-    the single source of truth."""
-    if design.tb_repo_root is None or design.run_tb is None:
+    """Apply `diff` into a copy of `design.root` and run the upstream
+    testbench. Returns (stdout, rc); rc == 0 iff the testbench passed,
+    non-zero (with the failure reason in `stdout`) for any setup error
+    — missing harness, missing repo, patch failure, etc. Never raises."""
+    if design.run_tb is None:
         return f"design {design.name} has no testbench harness", 1
-    if not design.tb_repo_root.exists():
+    if not design.root.exists():
         return (
-            f"{design.tb_repo_root} not found — run "
+            f"{design.root} not found — run "
             "`git submodule update --init` to fetch the upstream repo",
             1,
         )
-    rtl_dir_rel = design.rtl_dir.relative_to(design.tb_repo_root)
-
-    with tempfile.TemporaryDirectory() as td:
-        repo_copy = Path(td) / design.tb_repo_root.name
-        # Exclude .git (it's a submodule pointer file) and any stale build
-        # artifacts so the copy is a clean tree to build against.
-        shutil.copytree(
-            design.tb_repo_root,
-            repo_copy,
-            ignore=shutil.ignore_patterns(".git", "*.sim", "*.vcd"),
-        )
-        try:
-            _apply_diff(diff, repo_copy / rtl_dir_rel)
-        except RuntimeError as e:
-            return str(e), 1
-        return design.run_tb(repo_copy)
+    try:
+        repo_copy = _create_copy(design, diff)
+    except RuntimeError as e:
+        return str(e), 1
+    return design.run_tb(repo_copy)
 
 
 async def _save_diff(state: TaskState, design: DesignConfig) -> str:

@@ -41,20 +41,19 @@ class DesignConfig:
     benchmark: str               # which loader/benchmark emitted this design
     name: str                    # design's logical name
     variant: str                 # distinguishes parameterizations sharing a name
-    rtl_dir: Path                # common root the RTL lives under; each
+    root: Path                   # design's top-level directory (the repo root
+                                 # for designs with an upstream testbench, or
+                                 # simply rtl_dir for designs that ship only
+                                 # RTL). Must contain rtl_dir so the diff can
+                                 # be applied at `root_copy /
+                                 # rtl_dir.relative_to(root)`.
+    rtl_dir: Path                # directory the RTL lives under; each
                                  # rtl_files entry must resolve to a path
                                  # inside this dir. Diffs are written in
                                  # this namespace so a (diff, DesignConfig)
                                  # pair is enough to evaluate a candidate.
     rtl_files: tuple[Path, ...]  # ordered RTL sources (absolute paths)
     top_module: str              # Verilog top module
-
-    # Optional upstream testbench harness. Populated for designs that ship a
-    # runnable simulator harness (e.g. AESLoader); left at None for designs
-    # where only RTL is available. tb_repo_root must contain rtl_dir so the
-    # diff (written relative to rtl_dir) can be applied at
-    # `tb_repo_root_copy / rtl_dir.relative_to(tb_repo_root)`.
-    tb_repo_root: Path | None = None
     # Build+run the testbench under the given (already-overlaid) repo root and
     # return (stdout, returncode). 0 == pass; the callable is responsible for
     # synthesising the returncode from whatever signal is authoritative

@@ -41,49 +41,55 @@ class DesignLoader(ABC):
         `{benchmark: {name: {variant: design}}}`."""
 
 
-class RTLLMLoader(DesignLoader):
-    """Get designs from RTLLM benchmark."""
-
-    benchmark = "rtllm"
-
-    # Mapping of variant-name prefix to subdir
-    TRIAL_GROUPS = (
-        ("chatgpt35", "_chatgpt35"),
-        ("chatgpt4", "_chatgpt4"),
-    )
-
-    def __init__(self, rtllm_root: Path = RTLLM):
-        self.rtllm_root = rtllm_root
-
-    def designs(self) -> DesignTree:
-        names: dict[str, dict[str, DesignConfig]] = {}
-        for desc in sorted(self.rtllm_root.rglob("design_description.txt")):
-            design_dir = desc.parent
-            name = design_dir.name
-            verified = sorted(design_dir.glob("verified_*.v"))
-            variants: dict[str, DesignConfig] = {
-                "reference": DesignConfig(
-                    benchmark=self.benchmark,
-                    name=name,
-                    variant="reference",
-                    rtl_dir=design_dir,
-                    rtl_files=tuple(verified),
-                    top_module=detect_top_module(verified),
-                ),
-            }
-            for prefix, subdir in self.TRIAL_GROUPS:
-                for cand in sorted((self.rtllm_root / subdir).glob(f"t*/{name}.v")):
-                    variant = f"{prefix}_{cand.parent.name}"
-                    variants[variant] = DesignConfig(
-                        benchmark=self.benchmark,
-                        name=name,
-                        variant=variant,
-                        rtl_dir=cand.parent,
-                        rtl_files=(cand,),
-                        top_module=name,
-                    )
-            names[name] = variants
-        return {self.benchmark: names}
+# RTLLM, RTL-OPT, and Corpus loaders are commented out for now: their
+# designs ship only RTL (no separate testbench harness), so the new
+# required `root` field has no obvious value distinct from `rtl_dir`.
+# Re-enable by adding `root=<repo or rtl dir>` to each DesignConfig and
+# putting the loader back into AllDesigns.LOADERS.
+#
+# class RTLLMLoader(DesignLoader):
+#     """Get designs from RTLLM benchmark."""
+#
+#     benchmark = "rtllm"
+#
+#     # Mapping of variant-name prefix to subdir
+#     TRIAL_GROUPS = (
+#         ("chatgpt35", "_chatgpt35"),
+#         ("chatgpt4", "_chatgpt4"),
+#     )
+#
+#     def __init__(self, rtllm_root: Path = RTLLM):
+#         self.rtllm_root = rtllm_root
+#
+#     def designs(self) -> DesignTree:
+#         names: dict[str, dict[str, DesignConfig]] = {}
+#         for desc in sorted(self.rtllm_root.rglob("design_description.txt")):
+#             design_dir = desc.parent
+#             name = design_dir.name
+#             verified = sorted(design_dir.glob("verified_*.v"))
+#             variants: dict[str, DesignConfig] = {
+#                 "reference": DesignConfig(
+#                     benchmark=self.benchmark,
+#                     name=name,
+#                     variant="reference",
+#                     rtl_dir=design_dir,
+#                     rtl_files=tuple(verified),
+#                     top_module=detect_top_module(verified),
+#                 ),
+#             }
+#             for prefix, subdir in self.TRIAL_GROUPS:
+#                 for cand in sorted((self.rtllm_root / subdir).glob(f"t*/{name}.v")):
+#                     variant = f"{prefix}_{cand.parent.name}"
+#                     variants[variant] = DesignConfig(
+#                         benchmark=self.benchmark,
+#                         name=name,
+#                         variant=variant,
+#                         rtl_dir=cand.parent,
+#                         rtl_files=(cand,),
+#                         top_module=name,
+#                     )
+#             names[name] = variants
+#         return {self.benchmark: names}
 
 
 _AES_BUILD_TIMEOUT_S = 120
@@ -144,116 +150,116 @@ class AESLoader(DesignLoader):
             benchmark=self.benchmark,
             name="aes",
             variant="reference",
+            root=self.aes_root,
             rtl_dir=rtl_dir,
             rtl_files=tuple(rtl_files),
             top_module=detect_top_module(rtl_files),
-            tb_repo_root=self.aes_root,
             run_tb=_run_aes_tb,
         )
         return {self.benchmark: {"aes": {"reference": design}}}
 
 
-class RTLOPTLoader(DesignLoader):
-    """Get designs from the RTL-OPT benchmark."""
-
-    benchmark = "rtl-opt"
-
-    # LLM-generated optimization attempts shipped alongside the benchmark
-    LLM_VARIANTS = ("ds", "dsr", "gpt", "mini")
-
-    def __init__(self, rtl_opt_root: Path = RTL_OPT):
-        self.rtl_opt_root = rtl_opt_root
-
-    @staticmethod
-    def _rtl_in(d: Path) -> list[Path]:
-        return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
-
-    def designs(self) -> DesignTree:
-        bench_dir = self.rtl_opt_root / "benchmark"
-        llm_dir = self.rtl_opt_root / "Results" / "LLM_Test_result" / "Code"
-        names: dict[str, dict[str, DesignConfig]] = {}
-        for ref_dir in sorted(bench_dir.glob("*_ref")):
-            name = ref_dir.name[: -len("_ref")]
-            sub_dir = bench_dir / name
-            ref_files = self._rtl_in(ref_dir)
-            sub_files = self._rtl_in(sub_dir)
-
-            # Add hand-written variants
-            variants: dict[str, DesignConfig] = {
-                "reference": DesignConfig(
-                    benchmark=self.benchmark,
-                    name=name,
-                    variant="reference",
-                    rtl_dir=ref_dir,
-                    rtl_files=tuple(ref_files),
-                    top_module=detect_top_module(ref_files),
-                ),
-                "suboptimal": DesignConfig(
-                    benchmark=self.benchmark,
-                    name=name,
-                    variant="suboptimal",
-                    rtl_dir=sub_dir,
-                    rtl_files=tuple(sub_files),
-                    top_module=detect_top_module(sub_files),
-                ),
-            }
-
-            # Add LLM-generated variants
-            for suffix in self.LLM_VARIANTS:
-                variant_dir = llm_dir / f"{name}_{suffix}"
-                llm_files = self._rtl_in(variant_dir)
-                variants[suffix] = DesignConfig(
-                    benchmark=self.benchmark,
-                    name=name,
-                    variant=suffix,
-                    rtl_dir=variant_dir,
-                    rtl_files=tuple(llm_files),
-                    top_module=detect_top_module(llm_files),
-                )
-            names[name] = variants
-        return {self.benchmark: names}
-
-
-class CorpusLoader(DesignLoader):
-    """Get designs from the in-repo `corpus/` tree.
-
-    Layout: `corpus/<subdir>/<name>/*.v`, where each subdir maps to one
-    variant (`default` → `reference`, `opt` → `claude`)."""
-
-    benchmark = "corpus"
-
-    # Mapping of on-disk subdir to variant name
-    VARIANT_DIRS = (
-        ("default", "reference"),
-        ("opt", "claude"),
-    )
-
-    def __init__(self, corpus_root: Path = CORPUS):
-        self.corpus_root = corpus_root
-
-    @staticmethod
-    def _rtl_in(d: Path) -> list[Path]:
-        return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
-
-    def designs(self) -> DesignTree:
-        names: dict[str, dict[str, DesignConfig]] = {}
-        for subdir, variant in self.VARIANT_DIRS:
-            for design_dir in sorted((self.corpus_root / subdir).glob("*")):
-                if not design_dir.is_dir():
-                    continue
-                rtl_files = self._rtl_in(design_dir)
-                if not rtl_files:
-                    continue
-                name = design_dir.name
-                names.setdefault(name, {})[variant] = DesignConfig(
-                    benchmark=self.benchmark,
-                    name=name,
-                    variant=variant,
-                    rtl_dir=design_dir,
-                    rtl_files=tuple(rtl_files),
-                    top_module=detect_top_module(rtl_files),
-                )
-        return {self.benchmark: names}
+# class RTLOPTLoader(DesignLoader):
+#     """Get designs from the RTL-OPT benchmark."""
+#
+#     benchmark = "rtl-opt"
+#
+#     # LLM-generated optimization attempts shipped alongside the benchmark
+#     LLM_VARIANTS = ("ds", "dsr", "gpt", "mini")
+#
+#     def __init__(self, rtl_opt_root: Path = RTL_OPT):
+#         self.rtl_opt_root = rtl_opt_root
+#
+#     @staticmethod
+#     def _rtl_in(d: Path) -> list[Path]:
+#         return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
+#
+#     def designs(self) -> DesignTree:
+#         bench_dir = self.rtl_opt_root / "benchmark"
+#         llm_dir = self.rtl_opt_root / "Results" / "LLM_Test_result" / "Code"
+#         names: dict[str, dict[str, DesignConfig]] = {}
+#         for ref_dir in sorted(bench_dir.glob("*_ref")):
+#             name = ref_dir.name[: -len("_ref")]
+#             sub_dir = bench_dir / name
+#             ref_files = self._rtl_in(ref_dir)
+#             sub_files = self._rtl_in(sub_dir)
+#
+#             # Add hand-written variants
+#             variants: dict[str, DesignConfig] = {
+#                 "reference": DesignConfig(
+#                     benchmark=self.benchmark,
+#                     name=name,
+#                     variant="reference",
+#                     rtl_dir=ref_dir,
+#                     rtl_files=tuple(ref_files),
+#                     top_module=detect_top_module(ref_files),
+#                 ),
+#                 "suboptimal": DesignConfig(
+#                     benchmark=self.benchmark,
+#                     name=name,
+#                     variant="suboptimal",
+#                     rtl_dir=sub_dir,
+#                     rtl_files=tuple(sub_files),
+#                     top_module=detect_top_module(sub_files),
+#                 ),
+#             }
+#
+#             # Add LLM-generated variants
+#             for suffix in self.LLM_VARIANTS:
+#                 variant_dir = llm_dir / f"{name}_{suffix}"
+#                 llm_files = self._rtl_in(variant_dir)
+#                 variants[suffix] = DesignConfig(
+#                     benchmark=self.benchmark,
+#                     name=name,
+#                     variant=suffix,
+#                     rtl_dir=variant_dir,
+#                     rtl_files=tuple(llm_files),
+#                     top_module=detect_top_module(llm_files),
+#                 )
+#             names[name] = variants
+#         return {self.benchmark: names}
+#
+#
+# class CorpusLoader(DesignLoader):
+#     """Get designs from the in-repo `corpus/` tree.
+#
+#     Layout: `corpus/<subdir>/<name>/*.v`, where each subdir maps to one
+#     variant (`default` → `reference`, `opt` → `claude`)."""
+#
+#     benchmark = "corpus"
+#
+#     # Mapping of on-disk subdir to variant name
+#     VARIANT_DIRS = (
+#         ("default", "reference"),
+#         ("opt", "claude"),
+#     )
+#
+#     def __init__(self, corpus_root: Path = CORPUS):
+#         self.corpus_root = corpus_root
+#
+#     @staticmethod
+#     def _rtl_in(d: Path) -> list[Path]:
+#         return sorted(p for ext in ("*.v", "*.sv") for p in d.glob(ext))
+#
+#     def designs(self) -> DesignTree:
+#         names: dict[str, dict[str, DesignConfig]] = {}
+#         for subdir, variant in self.VARIANT_DIRS:
+#             for design_dir in sorted((self.corpus_root / subdir).glob("*")):
+#                 if not design_dir.is_dir():
+#                     continue
+#                 rtl_files = self._rtl_in(design_dir)
+#                 if not rtl_files:
+#                     continue
+#                 name = design_dir.name
+#                 names.setdefault(name, {})[variant] = DesignConfig(
+#                     benchmark=self.benchmark,
+#                     name=name,
+#                     variant=variant,
+#                     rtl_dir=design_dir,
+#                     rtl_files=tuple(rtl_files),
+#                     top_module=detect_top_module(rtl_files),
+#                 )
+#         return {self.benchmark: names}
 
 
 class AllDesigns:
@@ -262,10 +268,10 @@ class AllDesigns:
     by hand."""
 
     LOADERS: tuple[type[DesignLoader], ...] = (
-        RTLLMLoader,
-        RTLOPTLoader,
         AESLoader,
-        CorpusLoader,
+        # RTLLMLoader, RTLOPTLoader, CorpusLoader — commented out pending
+        # a meaningful `root` value (see DesignConfig). Their loader
+        # classes are still defined (but commented) above.
     )
 
     @classmethod
