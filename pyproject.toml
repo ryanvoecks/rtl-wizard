@@ -11,14 +11,11 @@ dependencies = [
     "inspect-swe>=0.2.47",
     "mcp>=1.27.0",
     "openai>=2.32.0",
+    "pyright[nodejs]>=1.1.409",
     "pyslang>=10",
+    "pytest>=8.0",
     "ruff>=0.15.13",
     "tqdm>=4.67",
-]
-
-[dependency-groups]
-dev = [
-    "pytest>=8.0",
 ]
 
 [build-system]

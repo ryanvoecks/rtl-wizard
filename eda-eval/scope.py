@@ -488,7 +488,7 @@ def main() -> None:
         "--min-period-frac",
         type=float,
         default=0.4,
-        help="Phase B halts when period drops below " "T_baseline * this fraction.",
+        help="Phase B halts when period drops below T_baseline * this fraction.",
     )
     parser.add_argument(
         "--eps",

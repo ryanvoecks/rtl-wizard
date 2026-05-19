@@ -307,7 +307,8 @@ def claude_code_solver() -> Solver:
     """Per-sample Solver wrapper around `claude_code_oauth`."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        design = state.metadata.get("design")
+        design = state.metadata["design"]
+        assert isinstance(design, DesignConfig)
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(design=design)
         result = await agent_fn(agent_state)

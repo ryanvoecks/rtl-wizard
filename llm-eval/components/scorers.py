@@ -143,7 +143,8 @@ def synthesis(output_dir: Path) -> Scorer:
     """Cheap synthesisability check for an arbitrary RTL design."""
 
     async def score(state: TaskState, target: Target) -> Score:
-        design = state.metadata.get("design")
+        design = state.metadata["design"]
+        assert isinstance(design, DesignConfig)
         sample_dir = _sample_dir(output_dir, state)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)
@@ -168,7 +169,8 @@ def testbench(output_dir: Path) -> Scorer:
     """Run the design's upstream testbench against the agent's RTL."""
 
     async def score(state: TaskState, target: Target) -> Score:
-        design = state.metadata.get("design")
+        design = state.metadata["design"]
+        assert isinstance(design, DesignConfig)
         sample_dir = _sample_dir(output_dir, state)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)

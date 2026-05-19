@@ -132,7 +132,7 @@ def run_openroad_extract(
         sys.stderr.write(proc.stdout)
         sys.stderr.write(proc.stderr)
         raise RuntimeError(
-            f"openroad extraction failed (rc={proc.returncode}). " f"See output above."
+            f"openroad extraction failed (rc={proc.returncode}). See output above."
         )
     if not tsv_out.is_file():
         raise RuntimeError(f"openroad did not write {tsv_out}")
@@ -337,11 +337,13 @@ def write_logical_paths(
         )
         written = 0
         for rank, ((ss, es), g) in enumerate(ranked[:top_n], 1):
-            mods = sorted(g["modules"])
-            total_loc = sum(hierarchy.get(m, {}).get("line_count", 0) for m in mods)
+            mods_sorted = sorted(g["modules"])
+            total_loc = sum(
+                hierarchy.get(m, {}).get("line_count", 0) for m in mods_sorted
+            )
             fh.write(
                 f"{rank}\t{g['worst']:.4f}\t{g['best']:.4f}\t{g['count']}"
-                f"\t{total_loc}\t{ss}\t{es}\t{','.join(mods)}\n"
+                f"\t{total_loc}\t{ss}\t{es}\t{','.join(mods_sorted)}\n"
             )
             written += 1
     return written
@@ -472,9 +474,11 @@ def write_logical_congestion(
             return 0
         written = 0
         for rank, (mods_key, g) in enumerate(ranked[:top_n], 1):
-            mods = sorted(mods_key)
-            total_loc = sum(hierarchy.get(m, {}).get("line_count", 0) for m in mods)
-            mods_str = ",".join(mods) if mods else "(no instances)"
+            mods_sorted = sorted(mods_key)
+            total_loc = sum(
+                hierarchy.get(m, {}).get("line_count", 0) for m in mods_sorted
+            )
+            mods_str = ",".join(mods_sorted) if mods_sorted else "(no instances)"
             fh.write(
                 f"{rank}\t{g['sum_overflow']}\t{g['max_overflow']}"
                 f"\t{g['tile_count']}\t{len(g['insts'])}"
@@ -499,14 +503,14 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=50,
         metavar="M",
-        help="How many worst-slack individual paths to report " "(default 50).",
+        help="How many worst-slack individual paths to report (default 50).",
     )
     ap.add_argument(
         "--top-logical",
         type=int,
         default=50,
         metavar="N",
-        help="How many logical register-to-register groups to " "report (default 50).",
+        help="How many logical register-to-register groups to report (default 50).",
     )
     ap.add_argument(
         "--pool",
@@ -521,7 +525,7 @@ def main(argv: list[str] | None = None) -> int:
         type=int,
         default=50,
         metavar="M",
-        help="How many worst-overflow congestion tiles to " "report (default 50).",
+        help="How many worst-overflow congestion tiles to report (default 50).",
     )
     ap.add_argument(
         "--top-modules-congest",

@@ -86,7 +86,7 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     die with a `core_margin_um` boundary on each edge."""
     inner = side_um - core_margin_um
     die_area = f"0 0 {side_um:.3f} {side_um:.3f}"
-    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} " f"{inner:.3f} {inner:.3f}"
+    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} {inner:.3f} {inner:.3f}"
     return die_area, core_area
 
 
@@ -206,8 +206,7 @@ def main():
         action="append",
         default=None,
         metavar="GLOB",
-        help="Restrict to designs whose name matches one of these globs. "
-        "Repeatable.",
+        help="Restrict to designs whose name matches one of these globs. Repeatable.",
     )
     parser.add_argument(
         "--variant",
