@@ -1,5 +1,5 @@
 x-sandbox-base: &sandbox-base
-  image: new-benchmark-sandbox:latest
+  image: llm-eval-sandbox:latest
   command: "tail -f /dev/null"
   init: true
 
@@ -10,12 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # `shared` is an external network the devcontainer also sits on, so the
-    # agent can reach the per-sample host MCP server (see mcp_connect.py) on
-    # the devcontainer's IP. The concrete network name is injected into this
-    # config by `tasks._build_sandbox_compose()` before Inspect launches the
-    # sandbox; the `bridge` default below is what direct `docker compose`
-    # invocations get and the MCP URL falls back to `host.docker.internal`.
+    # `shared.name` is rewritten by tasks.py to a shared host network.
     networks:
       - default
       - shared
