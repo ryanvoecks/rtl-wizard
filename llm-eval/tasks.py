@@ -27,7 +27,7 @@ from solvers import claude_code_solver
 
 REPO_ROOT = Path(__file__).parent.parent
 NB_ROOT = Path(__file__).parent
-SANDBOX_COMPOSE = NB_ROOT / "compose.yaml"
+SANDBOX_COMPOSE = NB_ROOT / "sandbox" / "compose.yaml"
 
 
 def _sandbox_rtl_path(design, host_path: Path) -> str:
