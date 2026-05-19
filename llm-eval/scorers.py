@@ -115,18 +115,23 @@ def _resolve_yosys() -> str | None:
     return None
 
 
-def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[bool, str]:
+def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[str, int]:
     """Stage `design.rtl_files` into a tempdir, apply `diff`, and run yosys
-    `hierarchy -check -top <top>; proc; opt; clean`. Returns (ok, message).
+    `hierarchy -check -top <top>; proc; opt; clean`. Returns (log, rc); rc
+    == 0 iff yosys succeeded, non-zero (with the failure reason in `log`)
+    for any setup error — missing yosys, patch failure, diff that drops
+    every RTL file, yosys timeout, etc. The function never raises so the
+    caller can treat the return value as the single source of truth.
 
     Pure function modulo filesystem + subprocess — no TaskState, no sandbox,
     no Inspect imports. Drives the Inspect scorer and can also be called
     from a replay tool with a saved diff.patch."""
     yosys = _resolve_yosys()
     if yosys is None:
-        return False, (
+        return (
             "yosys not found on host (PATH or "
-            f"{_DEVCONTAINER_YOSYS}); cannot run synthesisability check"
+            f"{_DEVCONTAINER_YOSYS}); cannot run synthesisability check",
+            1,
         )
     with tempfile.TemporaryDirectory() as td:
         td_path = Path(td)
@@ -134,12 +139,12 @@ def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[bool, str]:
         try:
             _apply_diff(diff, td_path)
         except RuntimeError as e:
-            return False, str(e)
+            return str(e), 1
 
         rel_paths = [str(_rel(design, f)) for f in design.rtl_files]
         existing = [p for p in rel_paths if (td_path / p).is_file()]
         if not existing:
-            return False, "diff removed every RTL file in the design"
+            return "diff removed every RTL file in the design", 1
         script = (
             f"read_verilog -sv {' '.join(existing)}; "
             f"hierarchy -check -top {design.top_module}; proc; opt; clean"
@@ -151,12 +156,10 @@ def evaluate_synthesisable(design: DesignConfig, diff: str) -> tuple[bool, str]:
                 timeout=_YOSYS_TIMEOUT_S,
             )
         except subprocess.TimeoutExpired:
-            return False, f"yosys timed out after {_YOSYS_TIMEOUT_S}s"
+            return f"yosys timed out after {_YOSYS_TIMEOUT_S}s", 124
 
-    if proc.returncode != 0:
-        tail = (proc.stderr or proc.stdout)[-1000:]
-        return False, f"yosys exited rc={proc.returncode}:\n{tail}"
-    return True, ""
+    log = (proc.stdout or "") + (proc.stderr or "")
+    return log, proc.returncode
 
 
 def evaluate_functional(design: DesignConfig, diff: str) -> tuple[str, int]:
@@ -206,11 +209,14 @@ def synthesisable() -> Scorer:
     async def score(state: TaskState, target: Target) -> Score:
         design = state.metadata.get("design")
         diff = await _save_diff(state, design)
-        ok, msg = await asyncio.to_thread(evaluate_synthesisable, design, diff)
-        if ok:
+        log, rc = await asyncio.to_thread(evaluate_synthesisable, design, diff)
+
+        out_dir = sample_output_dir(str(state.sample_id))
+        (out_dir / "synthesis.log").write_text(log)
+        if rc == 0:
             return Score(value=CORRECT)
         else:
-            return Score(value=INCORRECT, explanation=msg)
+            return Score(value=INCORRECT, explanation="synthesis failed")
 
     return score
 
@@ -227,7 +233,7 @@ def functional() -> Scorer:
         out_dir = sample_output_dir(str(state.sample_id))
         (out_dir / "testbench.log").write_text(log)
         if rc == 0:
-            return Score(value=CORRECT, answer="testbench passed")
+            return Score(value=CORRECT)
         else:
             return Score(value=INCORRECT, explanation=f"testbench failed")
 
