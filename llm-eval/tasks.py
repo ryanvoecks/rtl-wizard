@@ -8,9 +8,12 @@ from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
+from inspect_ai.util import SandboxEnvironmentSpec
+from inspect_ai.util._sandbox.compose import ComposeConfig, parse_compose_yaml
 
 from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
+from mcp_connect import discover_shared_network
 from scorers import (
     SANDBOX_RTL_ROOT,
     synthesis,
@@ -19,6 +22,16 @@ from scorers import (
 from solvers import claude_code_solver
 
 SANDBOX_COMPOSE = LLM_EVAL / "sandbox" / "compose.yaml"
+
+
+def _build_sandbox_compose() -> ComposeConfig:
+    """Load the compose template and inject the discovered shared-network
+    name directly into the config."""
+    config = parse_compose_yaml(str(SANDBOX_COMPOSE))
+    network, _ = discover_shared_network()
+    if config.networks and "shared" in config.networks:
+        config.networks["shared"]["name"] = network
+    return config
 
 
 def _sandbox_rtl_path(design, host_path: Path) -> str:
@@ -74,10 +87,13 @@ def optimize_timing(output_dir: Path) -> Task:
     # 2 requirements for progress: synthesisable and functionally correct
     scorers = [synthesis(output_dir), testbench(output_dir)]
 
+    # Sandbox needs network config to access MCP servers
+    sandbox = SandboxEnvironmentSpec("docker", config=_build_sandbox_compose())
+
     return Task(
         dataset=dataset,
         solver=claude_code_solver(),
         scorer=scorers,
-        sandbox=("docker", str(SANDBOX_COMPOSE)),
+        sandbox=sandbox,
         tags=["claude-code"],
     )

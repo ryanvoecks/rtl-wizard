@@ -53,7 +53,5 @@ def make_server(
     )
     t = Tools(design)
     for m in method_names:
-        # `mcp.tool` is the decorator factory and refuses a function arg
-        # (it thinks you forgot the parens). `add_tool` is the direct form.
         mcp.add_tool(getattr(t, m))
     return mcp
