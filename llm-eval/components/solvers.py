@@ -32,38 +32,30 @@ from common.config import DesignConfig
 from .mcp_connect import MCPService
 from .mcp_servers import make_server
 
-_TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+# Claude config
+TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
+DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 
-# MCP namespace the per-sample host server registers under — the Claude CLI
-# exposes a FastMCP server's tools as `mcp__<server-name>__<tool>`.
-_HOST_MCP_NAME = "rtl-wizard-host"
-_RUN_TB_TOOL = f"mcp__{_HOST_MCP_NAME}__run_testbench"
-
-# Fallback if Inspect resolves no model (e.g. neither `--model` nor
-# `INSPECT_EVAL_MODEL` is set). With the repo's .env in play the latter is
-# always set, so this is mostly a defensive default.
-DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-5"
+# MCP config
+HOST_MCP_NAME = "rtl-wizard-host"
+MCP_TOOLS = ["run_testbench"]
 
 
-def _resolve_claude_model() -> str:
+def _resolve_model() -> str:
     """Bare model name to pass to `claude --model`, sourced from Inspect's
-    `--model` flag (or `INSPECT_EVAL_MODEL`) at solve time.
-
-    Inspect prefixes model strings with a provider (e.g. `none/claude-sonnet-4-5`,
-    `anthropic/claude-sonnet-4-5`). Claude Code's CLI wants the bare name only.
-    `active_model().name` already returns the post-prefix portion."""
+    `--model` flag (or `INSPECT_EVAL_MODEL`) at solve time."""
     m = active_model()
     if m is None or m.name in ("none", ""):
-        return DEFAULT_CLAUDE_MODEL
+        raise ValueError("model name is not set")
     return m.name
 
 
 def _require_token() -> str:
-    tok = os.environ.get(_TOKEN_ENV_VAR)
+    tok = os.environ.get(TOKEN_ENV_VAR)
     if not tok:
         raise RuntimeError(
-            f"{_TOKEN_ENV_VAR} is not set. Run `claude setup-token` on the host, "
-            f"then `export {_TOKEN_ENV_VAR}=<token>` before `inspect eval`."
+            f"{TOKEN_ENV_VAR} is not set. Run `claude setup-token` on the host, "
+            f"then `export {TOKEN_ENV_VAR}=<token>` before `inspect eval`."
         )
     return tok
 
@@ -202,37 +194,29 @@ def _build_usage(final: dict) -> ModelUsage:
 @agent
 def claude_code_oauth(
     design: DesignConfig,
-    mcp_config: dict | None = None,
-    allowed_tools: str = f"Bash,Read,Write,Edit,{_RUN_TB_TOOL}",
-    timeout_s: int = 1800,
+    timeout: int = 1800,
     max_turns: int = 8,
 ):
     token = _require_token()
-    base_mcp_config = mcp_config if mcp_config is not None else {"mcpServers": {}}
 
     async def execute(state: AgentState) -> AgentState:
-        # Pull the model from Inspect's active model at solve time, so the
-        # `--model` CLI flag (or INSPECT_EVAL_MODEL) drives both the viewer
-        # label and the actual `claude --model` invocation. Use `none/<name>`
-        # in the flag (e.g. `--model none/claude-sonnet-4-5`) to keep Inspect
-        # from trying to instantiate an API client — the agent shells out.
-        model = _resolve_claude_model()
+        # Fetch model name and sandbox
+        model = _resolve_model()
         sb = sandbox()
 
-        # Per-sample host-side MCP server: the agent reaches `run_testbench`
-        # over SSE at host.docker.internal:<port>. The testbench evaluator
-        # itself runs on the host, so testbench sources never enter the
-        # sandbox.
-        host_mcp = make_server(_HOST_MCP_NAME, ["run_testbench"], design)
+        # MCP server and tools config
+        host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, design)
+        mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{tool}" for tool in MCP_TOOLS]
+        allowed_tools = ",".join(DEFAULT_TOOLS + mcp_tool_names)
 
+        # Start MCP server and run Claude Code CLI
         async with MCPService(host_mcp) as host_service:
-            sample_mcp_config = {
+            mcp_config = {
                 "mcpServers": {
-                    **base_mcp_config.get("mcpServers", {}),
-                    _HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
+                    HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
                 }
             }
-            await sb.write_file("/tmp/mcp.json", json.dumps(sample_mcp_config))
+            await sb.write_file("/tmp/mcp.json", json.dumps(mcp_config))
 
             prompt = state.messages[-1].text
             sid = store().get("cc_session_id")
@@ -253,30 +237,19 @@ def claude_code_oauth(
                 cmd,
                 input=prompt,
                 env={
-                    _TOKEN_ENV_VAR: token,
+                    TOKEN_ENV_VAR: token,
                     "IS_SANDBOX": "1",
                 },
-                timeout=timeout_s,
+                timeout=timeout,
             )
 
-        # Claude CLI logs MCP connection failures to stderr (the stream-json
-        # transcript on stdout doesn't mention them). Stash the stderr tail so
-        # eval logs surface "MCP server unreachable" / "tool not registered"
-        # diagnostics without needing a fresh run.
-        if result.stderr:
-            store().set("cc_stderr_tail", result.stderr[-4000:])
+        # Claude CLI logs MCP connection failures to stderr
+        store().set("cc_stderr_tail", result.stderr[-4000:])
 
-        # `claude -p` exits non-zero when it hits --max-turns, but stdout still
-        # carries the full stream-json transcript including the terminating
-        # `result` event. Parse stdout first and only treat the run as a hard
-        # failure if stdout is unusable.
-        events = _parse_stream_json(result.stdout) if result.stdout else []
+        # `claude -p` errors when it hits --max-turns, stdout contains stream
+        events = _parse_stream_json(result.stdout)
         if not events:
-            stderr_tail = (result.stderr or "")[-2000:]
-            raise RuntimeError(
-                f"claude failed (rc={result.returncode}) with no parseable "
-                f"stdout. stderr: {stderr_tail}"
-            )
+            raise RuntimeError(f"claude failed (rc={result.returncode})")
 
         # The final `result` event carries the aggregate summary (result text,
         # session id, usage, cost, num_turns, subtype). Always last; present
@@ -352,38 +325,22 @@ def claude_code_oauth(
 
 @solver
 def claude_code_solver() -> Solver:
-    """Per-sample Solver wrapper around `claude_code_oauth`.
-
-    Pulls the sample's `DesignConfig` out of `TaskState.metadata` and threads
-    it into the agent so the host-side MCP server can be scoped to this
-    sample. Bypasses `as_solver` because that wrapper strips everything from
-    TaskState except the message list.
-    """
+    """Per-sample Solver wrapper around `claude_code_oauth`."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         design = state.metadata.get("design")
-        if design is None:
-            raise RuntimeError(
-                "claude_code_solver requires `state.metadata['design']` "
-                "(set in tasks.py:_build_sample)"
-            )
-
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(design=design)
         try:
             result = await agent_fn(agent_state)
         except LimitExceededError:
-            # The agent populates state.messages/output before re-raising so
-            # the partial transcript is preserved. Mirror that into TaskState
-            # and let the limit propagate.
+            # Preserve partial transcript
             state.messages = agent_state.messages
-            if agent_state.output is not None:
-                state.output = agent_state.output
+            state.output = agent_state.output
             raise
 
         state.messages = result.messages
-        if result.output is not None:
-            state.output = result.output
+        state.output = result.output
         return state
 
     return solve
