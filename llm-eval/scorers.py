@@ -1,6 +1,6 @@
 """Scorers for llm-eval tasks.
 
-Both scorers share the diff-persistence pattern: before the correctness check
+All scorers share the diff-persistence pattern: before the correctness check
 they read each file in `metadata["original_files"]` back out of the sandbox,
 compute a unified diff against the host-side original, and write a single
 `diff.patch` into `llm-results/<RUN_TIMESTAMP>/<sample_id>/`. This lands on disk
@@ -31,9 +31,6 @@ from inspect_ai.util import sandbox
 
 from common.config import DesignConfig
 from outputs import sample_output_dir
-
-_EXPECTED = "Hello, World!"
-_RUN_TIMEOUT_S = 30
 
 # Devcontainer's ORFS-bundled yosys, used as a fallback when `yosys` isn't on
 # PATH. The lightweight llm-eval sandbox image deliberately doesn't ship
@@ -71,35 +68,6 @@ async def _save_artifacts(state: TaskState) -> None:
         final = await _read_final(fname)
         diff_parts.append(_file_diff(fname, original, final))
     (out_dir / "diff.patch").write_text("".join(diff_parts))
-
-
-@scorer(metrics=[accuracy(), stderr()])
-def hello_world_runs() -> Scorer:
-    async def score(state: TaskState, target: Target) -> Score:
-        # Persist artifacts first so a failed scoring run is still inspectable.
-        await _save_artifacts(state)
-
-        result = await sandbox().exec(
-            ["python3", "hello.py"], timeout=_RUN_TIMEOUT_S
-        )
-        stdout = (result.stdout or "").strip()
-        stderr_tail = (result.stderr or "")[-1000:]
-
-        if not result.success:
-            return Score(
-                value=INCORRECT,
-                answer=stdout,
-                explanation=f"python3 hello.py exited with rc={result.returncode}:\n{stderr_tail}",
-            )
-        if stdout != _EXPECTED:
-            return Score(
-                value=INCORRECT,
-                answer=stdout,
-                explanation=f"stdout mismatch: expected {_EXPECTED!r}, got {stdout!r}",
-            )
-        return Score(value=CORRECT, answer=stdout)
-
-    return score
 
 
 def _resolve_yosys() -> str | None:
