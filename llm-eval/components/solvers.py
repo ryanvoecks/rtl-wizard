@@ -5,6 +5,7 @@ translates each event into Inspect chat-message form so the .eval log is
 viewable in `inspect view`. `CLAUDE_CODE_OAUTH_TOKEN` is injected per
 `sb.exec(env=...)`; ANTHROPIC_API_KEY is *not* forwarded (CLI prefers it).
 """
+
 import json
 import os
 
@@ -219,12 +220,20 @@ def claude_code_oauth(
             sid = store().get("cc_session_id")
 
             cmd = [
-                "claude", "-p",
-                "--output-format", "stream-json", "--verbose",
-                "--model", model,
-                "--mcp-config", "/tmp/mcp.json", "--strict-mcp-config",
-                "--allowedTools", allowed_tools,
-                "--max-turns", str(max_turns),
+                "claude",
+                "-p",
+                "--output-format",
+                "stream-json",
+                "--verbose",
+                "--model",
+                model,
+                "--mcp-config",
+                "/tmp/mcp.json",
+                "--strict-mcp-config",
+                "--allowedTools",
+                allowed_tools,
+                "--max-turns",
+                str(max_turns),
                 "--dangerously-skip-permissions",
             ]
             if sid:
@@ -249,9 +258,7 @@ def claude_code_oauth(
             raise RuntimeError(f"claude failed (rc={result.returncode})")
 
         # The final `result` event carries the summary. Always last.
-        final = next(
-            (e for e in reversed(events) if e.get("type") == "result"), None
-        )
+        final = next((e for e in reversed(events) if e.get("type") == "result"), None)
         if final is None:
             raise RuntimeError("claude transcript contained no `result` event")
 
@@ -278,9 +285,7 @@ def claude_code_oauth(
         state.output = ModelOutput(
             model=model,
             choices=[
-                ChatCompletionChoice(
-                    message=last_assistant, stop_reason=stop_reason
-                )
+                ChatCompletionChoice(message=last_assistant, stop_reason=stop_reason)
             ],
             usage=usage,
         )

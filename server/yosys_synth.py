@@ -56,7 +56,11 @@ def yosys_synth(verilog_path: str, top: str | None = None) -> str:
 
     stats = _extract_stats(result.stdout)
     if stats is None:
-        return header + "error: could not locate stat block in yosys output\n" + out[-2000:]
+        return (
+            header
+            + "error: could not locate stat block in yosys output\n"
+            + out[-2000:]
+        )
     return header + stats
 
 

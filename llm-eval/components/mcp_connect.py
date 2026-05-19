@@ -3,6 +3,7 @@ sandbox to reach over a shared Docker bridge network. In a devcontainer
 setup `host.docker.internal` from a sibling sandbox resolves to the Docker
 VM gateway, not us, so we bind to our own IP on the shared network and
 inject that network name into the sandbox compose config via `tasks.py`."""
+
 import asyncio
 import functools
 import socket
@@ -25,16 +26,23 @@ def discover_shared_network() -> tuple[str, str]:
     try:
         out = subprocess.check_output(
             [
-                "docker", "inspect", hostname,
+                "docker",
+                "inspect",
+                hostname,
                 "--format",
                 "{{range $k, $v := .NetworkSettings.Networks}}"
                 "{{if $v.IPAddress}}{{$k}}\t{{$v.IPAddress}}\n{{end}}"
                 "{{end}}",
             ],
-            text=True, stderr=subprocess.DEVNULL, timeout=5,
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
         )
-    except (FileNotFoundError, subprocess.CalledProcessError,
-            subprocess.TimeoutExpired):
+    except (
+        FileNotFoundError,
+        subprocess.CalledProcessError,
+        subprocess.TimeoutExpired,
+    ):
         out = ""
 
     for line in out.splitlines():

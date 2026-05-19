@@ -17,6 +17,7 @@ Usage:
     uv run eda_eval/calibrate.py --benchmark corpus --name counter_array \\
         --variant claude --k -0.5 --initial-period-ns 1.0 --iterations 3
 """
+
 from __future__ import annotations
 
 import argparse
@@ -99,9 +100,7 @@ def iterate(
     t = t0
     rows: list[dict] = []
     for i in range(n):
-        print(
-            f"[iter {i}] running at period={t:.4f} ns, side={side_um:.1f} um ..."
-        )
+        print(f"[iter {i}] running at period={t:.4f} ns, side={side_um:.1f} um ...")
         _, ws = run_iteration(design, batch_dir, i, t, side_um, cfg)
         t_next = (t - ws) / (1.0 - k)
         rows.append({"iter": i, "t_in": t, "ws": ws, "t_next": t_next})
@@ -132,8 +131,9 @@ def main() -> None:
     parser.add_argument("--benchmark", default="corpus")
     parser.add_argument("--name", default="counter_array")
     parser.add_argument("--variant", default="claude")
-    parser.add_argument("--k", type=float, default=-0.5,
-                        help="Target worst-slack / period ratio.")
+    parser.add_argument(
+        "--k", type=float, default=-0.5, help="Target worst-slack / period ratio."
+    )
     parser.add_argument("--initial-period-ns", type=float, default=1.0)
     parser.add_argument("--iterations", type=int, default=3)
     parser.add_argument("--die-side-um", type=float, default=1000.0)

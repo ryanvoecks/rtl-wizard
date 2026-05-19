@@ -14,6 +14,7 @@ Usage:
     ./extract_metrics.py 2026-05-12_17-29-08
     ./extract_metrics.py 2026-05-12_17-29-08 -o metrics.csv
 """
+
 from __future__ import annotations
 
 import argparse
@@ -36,22 +37,34 @@ SEQUENTIAL_PREFIXES = ("DFF", "SDFF", "EDFF", "TDFF", "DLH", "DLL", "LATCH")
 # yosys prints below the per-cell breakdown carries the same number to
 # full precision.
 _CHIP_AREA_RE = re.compile(
-    r"^\s*Chip area for module\s+'[^']+'\s*:\s*([\d.eE+-]+)\s*$", re.MULTILINE,
+    r"^\s*Chip area for module\s+'[^']+'\s*:\s*([\d.eE+-]+)\s*$",
+    re.MULTILINE,
 )
 
 COLUMNS = [
-    "batch", "design", "variant", "target_period_ps",
-    "synth_area_um2", "synth_cell_count", "synth_ff_count",
-    "synth_wns_ns", "synth_tns_ns",
-    "route_area_um2", "route_cell_count",
-    "route_ws_ns", "route_wns_ns", "route_tns_ns",
-    "route_wirelength_um", "route_power_mw", "route_drc_count",
+    "batch",
+    "design",
+    "variant",
+    "target_period_ps",
+    "synth_area_um2",
+    "synth_cell_count",
+    "synth_ff_count",
+    "synth_wns_ns",
+    "synth_tns_ns",
+    "route_area_um2",
+    "route_cell_count",
+    "route_ws_ns",
+    "route_wns_ns",
+    "route_tns_ns",
+    "route_wirelength_um",
+    "route_power_mw",
+    "route_drc_count",
 ]
 
 
 def parse_period_ps(sdc_path: Path) -> int:
     """Read `create_clock -period <ns>` out of an SDC. Multi-clock designs
-    take the first occurrence — same convention as ORFS's
+    take the first occurrence -- same convention as ORFS's
     ABC_CLOCK_PERIOD_IN_PS extraction."""
     m = re.search(r"-period\s+([\d.]+)", sdc_path.read_text())
     if not m:
@@ -153,17 +166,24 @@ def resolve_design_name(phase_dir: Path) -> str:
 
 def extract(phase_dir: Path, design: str) -> dict:
     synth_stat = find_unique(
-        phase_dir, f"reports/*/{design}/*/synth_stat.txt", "synth_stat.txt",
+        phase_dir,
+        f"reports/*/{design}/*/synth_stat.txt",
+        "synth_stat.txt",
     )
     post_synth = find_unique(
-        phase_dir, f"reports/*/{design}/*/1_Post_synthesis.rpt",
+        phase_dir,
+        f"reports/*/{design}/*/1_Post_synthesis.rpt",
         "1_Post_synthesis.rpt",
     )
     finish_log = find_unique(
-        phase_dir, f"logs/*/{design}/*/6_report.json", "6_report.json",
+        phase_dir,
+        f"logs/*/{design}/*/6_report.json",
+        "6_report.json",
     )
     route_log = find_unique(
-        phase_dir, f"logs/*/{design}/*/5_2_route.json", "5_2_route.json",
+        phase_dir,
+        f"logs/*/{design}/*/5_2_route.json",
+        "5_2_route.json",
     )
 
     synth_area, synth_cells, synth_ff = parse_synth_stat(synth_stat)
@@ -213,10 +233,11 @@ def resolve_batch(arg: str) -> Path:
 def iter_variant_phases(batch_dir: Path) -> list[Path]:
     """Every `<benchmark>/<name>/<variant>/` phase dir under the batch,
     sorted for deterministic CSV order. Skips the `__calibration__`
-    siblings, and anything without a rendered SDC — that catches both
+    siblings, and anything without a rendered SDC -- that catches both
     spurious matches and phases that aborted before snapshot_inputs ran."""
     return sorted(
-        p for p in batch_dir.glob("*/*/*")
+        p
+        for p in batch_dir.glob("*/*/*")
         if p.is_dir()
         and p.name != "__calibration__"
         and (p / "inputs" / "constraint.sdc").is_file()
@@ -227,11 +248,14 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
         "batch",
-        help="Batch identifier — either a name under <repo>/eda-results/ "
-             "(e.g. 2026-05-12_17-29-08) or a direct path to a batch dir.",
+        help="Batch identifier -- either a name under <repo>/eda-results/ "
+        "(e.g. 2026-05-12_17-29-08) or a direct path to a batch dir.",
     )
     ap.add_argument(
-        "--output", "-o", type=Path, default=None,
+        "--output",
+        "-o",
+        type=Path,
+        default=None,
         help="Write CSV here in addition to stdout.",
     )
     args = ap.parse_args(argv)
@@ -253,13 +277,15 @@ def main(argv: list[str] | None = None) -> int:
                 f"warning: skipping {phase_dir.relative_to(batch_dir)}: {exc}\n"
             )
             continue
-        rows.append({
-            "batch": batch_dir.name,
-            "design": design,
-            "variant": phase_dir.name,
-            "target_period_ps": period_ps,
-            **metrics,
-        })
+        rows.append(
+            {
+                "batch": batch_dir.name,
+                "design": design,
+                "variant": phase_dir.name,
+                "target_period_ps": period_ps,
+                **metrics,
+            }
+        )
 
     writer = csv.DictWriter(sys.stdout, fieldnames=COLUMNS)
     writer.writeheader()

@@ -27,7 +27,7 @@ MAX_BODY = int(os.environ.get("MAX_BODY_BYTES", str(4 * 1024 * 1024)))
 
 # Bind-mount source paths the policy will accept. Sibling containers
 # spawned through this proxy can only mount these prefixes from the
-# host. Every entry is a potential host-escape vector — keep minimal.
+# host. Every entry is a potential host-escape vector - keep minimal.
 ALLOWED_BIND_PREFIXES = tuple(
     p.rstrip("/") or "/"
     for p in os.environ.get("ALLOWED_BIND_PREFIXES", "/tmp,/var/tmp").split(",")
@@ -57,9 +57,15 @@ def check_create(body: bytes) -> None:
     if hc.get("Privileged") is True:
         raise PolicyViolation("HostConfig.Privileged=true is not permitted")
 
-    # Host namespace sharing — any one of these collapses container isolation.
-    for ns in ("PidMode", "NetworkMode", "IpcMode", "UTSMode",
-               "UsernsMode", "CgroupnsMode"):
+    # Host namespace sharing -- any one of these collapses container isolation.
+    for ns in (
+        "PidMode",
+        "NetworkMode",
+        "IpcMode",
+        "UTSMode",
+        "UsernsMode",
+        "CgroupnsMode",
+    ):
         v = hc.get(ns)
         if isinstance(v, str) and (v == "host" or v.startswith("host:")):
             raise PolicyViolation(f"HostConfig.{ns}={v!r} is not permitted")
@@ -82,15 +88,17 @@ def check_create(body: bytes) -> None:
 
     for so in hc.get("SecurityOpt") or []:
         s = str(so).lower().replace(" ", "")
-        if (s.startswith("seccomp=unconfined")
-                or s.startswith("apparmor=unconfined")
-                or s in ("no-new-privileges:false", "no-new-privileges=false")
-                or s.startswith("systempaths=unconfined")):
+        if (
+            s.startswith("seccomp=unconfined")
+            or s.startswith("apparmor=unconfined")
+            or s in ("no-new-privileges:false", "no-new-privileges=false")
+            or s.startswith("systempaths=unconfined")
+        ):
             raise PolicyViolation(f"HostConfig.SecurityOpt={so!r} is not permitted")
 
     # User-namespace-safe sysctls are net.ipv4.* etc. kernel/vm/fs
     # tuning lets a container influence host kernel state.
-    for k in (hc.get("Sysctls") or {}):
+    for k in hc.get("Sysctls") or {}:
         if k.startswith(("kernel.", "vm.", "fs.", "abi.")):
             raise PolicyViolation(f"Sysctl {k} is not permitted")
 
@@ -133,7 +141,7 @@ def check_volume_create(body: bytes) -> None:
     if driver != "local":
         raise PolicyViolation(f"volume Driver={driver!r} is not permitted")
     # The local driver with o=bind,device=/host/path is a bind mount in
-    # disguise — gate the device path through the same allowlist.
+    # disguise -- gate the device path through the same allowlist.
     do = spec.get("DriverOpts") or {}
     device = do.get("device")
     if device and not _path_allowed(str(device)):
@@ -151,7 +159,7 @@ def check_build(path: str) -> None:
     `RUN --security=insecure` are gated by daemon-level entitlements
     (network.host, security.insecure) that Docker Desktop does not grant
     by default, so blocking the build-wide knobs here is sufficient.
-    /session is intentionally not checked — it's a hijacked gRPC stream
+    /session is intentionally not checked -- it's a hijacked gRPC stream
     used for context filesync, secrets, and SSH forwarding, none of
     which expand the daemon's host-escape surface.
     """
@@ -190,6 +198,7 @@ URL_CHECKS = [
 
 
 # ---- HTTP plumbing ----
+
 
 async def _read_headers(reader: asyncio.StreamReader):
     request_line = await reader.readline()
@@ -252,7 +261,9 @@ def _set_header(raw: bytes, name: str, value: str) -> bytes:
     return raw + b"\r\n" + insertion + b"\r\n"
 
 
-async def _write_status(writer: asyncio.StreamWriter, code: int, reason: str, msg: str) -> None:
+async def _write_status(
+    writer: asyncio.StreamWriter, code: int, reason: str, msg: str
+) -> None:
     body = json.dumps({"message": msg}).encode()
     writer.write(
         f"HTTP/1.1 {code} {reason}\r\n".encode()
@@ -272,8 +283,13 @@ async def _splice(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
                 break
             dst.write(data)
             await dst.drain()
-    except (ConnectionResetError, BrokenPipeError, OSError, asyncio.IncompleteReadError):
-        # Routine for proxied connections — the peer or upstream just
+    except (
+        ConnectionResetError,
+        BrokenPipeError,
+        OSError,
+        asyncio.IncompleteReadError,
+    ):
+        # Routine for proxied connections -- the peer or upstream just
         # went away. Caller decides whether that's an error.
         pass
     finally:
@@ -284,22 +300,24 @@ async def _splice(src: asyncio.StreamReader, dst: asyncio.StreamWriter) -> None:
             pass
 
 
-async def _tunnel(creader, cwriter, request_line: bytes, raw_headers: bytes, headers: dict) -> None:
+async def _tunnel(
+    creader, cwriter, request_line: bytes, raw_headers: bytes, headers: dict
+) -> None:
     # CRITICAL: force Connection: close on every non-hijacked tunneled
     # request. Without this, the docker SDK reuses one TCP connection
     # for many API calls (HTTP/1.1 keep-alive). After the first call
     # we'd be in byte-pipe mode for the connection's whole lifetime,
-    # so every subsequent request — including containers/create with
-    # Privileged: true — would byte-relay through us without ever
+    # so every subsequent request -- including containers/create with
+    # Privileged: true -- would byte-relay through us without ever
     # being parsed or inspected. This is a fail-open hole.
     #
     # Forcing Connection: close on the request makes upstream close
-    # after responding (RFC 7230 §6.6: receiver echoes Connection:
+    # after responding (RFC 7230 sec.6.6: receiver echoes Connection:
     # close in the response). The SDK sees that, closes its end, and
-    # opens a fresh TCP connection for the next call — which lands
+    # opens a fresh TCP connection for the next call -- which lands
     # back in handle() and goes through inspection if it matches.
     #
-    # Hijacked endpoints (Connection: Upgrade — attach, exec/start)
+    # Hijacked endpoints (Connection: Upgrade -- attach, exec/start)
     # MUST NOT have this rewrite, or the upgrade dance breaks. Those
     # are dedicated bidirectional streams anyway, so the SDK doesn't
     # reuse them for further API calls.
@@ -329,7 +347,9 @@ async def _tunnel(creader, cwriter, request_line: bytes, raw_headers: bytes, hea
             pass
 
 
-async def _forward_inspected(cwriter, request_line: bytes, raw_headers: bytes, body: bytes) -> None:
+async def _forward_inspected(
+    cwriter, request_line: bytes, raw_headers: bytes, body: bytes
+) -> None:
     # We've already consumed the body, so re-frame the request as a
     # plain content-length POST and force-close upstream after to keep
     # connection bookkeeping simple.
@@ -358,7 +378,9 @@ async def handle(creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -
         if not request_line:
             return
         try:
-            method, path, _ = request_line.decode("iso-8859-1").rstrip("\r\n").split(" ", 2)
+            method, path, _ = (
+                request_line.decode("iso-8859-1").rstrip("\r\n").split(" ", 2)
+            )
         except ValueError:
             await _write_status(cwriter, 400, "Bad Request", "malformed request line")
             return
@@ -381,12 +403,18 @@ async def handle(creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -
                 body = await _read_body(creader, headers)
                 body_check(body)
             except PolicyViolation as e:
-                print(f"[deny]   {peer} {method} {path}: {e}", file=sys.stderr, flush=True)
+                print(
+                    f"[deny]   {peer} {method} {path}: {e}", file=sys.stderr, flush=True
+                )
                 await _write_status(cwriter, 403, "Forbidden", str(e))
                 return
             except (json.JSONDecodeError, asyncio.IncompleteReadError, ValueError) as e:
-                print(f"[err]    {peer} {method} {path}: {e}", file=sys.stderr, flush=True)
-                await _write_status(cwriter, 400, "Bad Request", f"unparseable body: {e}")
+                print(
+                    f"[err]    {peer} {method} {path}: {e}", file=sys.stderr, flush=True
+                )
+                await _write_status(
+                    cwriter, 400, "Bad Request", f"unparseable body: {e}"
+                )
                 return
             print(f"[allow]  {peer} {method} {path}", file=sys.stderr, flush=True)
             await _forward_inspected(cwriter, request_line, raw_headers, body)
@@ -394,7 +422,9 @@ async def handle(creader: asyncio.StreamReader, cwriter: asyncio.StreamWriter) -
             try:
                 url_check(path)
             except PolicyViolation as e:
-                print(f"[deny]   {peer} {method} {path}: {e}", file=sys.stderr, flush=True)
+                print(
+                    f"[deny]   {peer} {method} {path}: {e}", file=sys.stderr, flush=True
+                )
                 await _write_status(cwriter, 403, "Forbidden", str(e))
                 return
             print(f"[allow]  {peer} {method} {path}", file=sys.stderr, flush=True)
@@ -423,7 +453,8 @@ async def main() -> None:
         f"docker-policy-proxy listening on {LISTEN_HOST}:{LISTEN_PORT} "
         f"-> {UPSTREAM_HOST}:{UPSTREAM_PORT}; "
         f"bind allowlist={ALLOWED_BIND_PREFIXES}",
-        file=sys.stderr, flush=True,
+        file=sys.stderr,
+        flush=True,
     )
     async with server:
         await server.serve_forever()

@@ -76,8 +76,10 @@ def verilator_sim(verilog_paths: list[str]) -> str:
             "--binary",
             "--timing",
             "-Wno-fatal",
-            "-j", "0",
-            "-o", "simv",
+            "-j",
+            "0",
+            "-o",
+            "simv",
         ]
         if top:
             cmd += ["--top-module", top]

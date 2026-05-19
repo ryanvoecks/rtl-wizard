@@ -1,4 +1,5 @@
 """Discover the designs available for each supported benchmark."""
+
 from __future__ import annotations
 
 import subprocess
@@ -8,7 +9,7 @@ from pathlib import Path
 
 import pyslang
 
-from common.config import AES, CORPUS, RTL_OPT, RTLLM, DesignConfig, Result
+from common.config import AES, DesignConfig, Result
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -106,8 +107,11 @@ def _run_aes_tb(repo_root: Path) -> Result:
     workdir = repo_root / "toolruns"
     try:
         build = subprocess.run(
-            ["make", "top.sim"], cwd=workdir,
-            capture_output=True, text=True, timeout=_AES_BUILD_TIMEOUT_S,
+            ["make", "top.sim"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=_AES_BUILD_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as e:
         return f"build timed out after {e.timeout}s\n{e.stdout or ''}", 124
@@ -119,8 +123,11 @@ def _run_aes_tb(repo_root: Path) -> Result:
         )
     try:
         run = subprocess.run(
-            ["./top.sim"], cwd=workdir,
-            capture_output=True, text=True, timeout=_AES_RUN_TIMEOUT_S,
+            ["./top.sim"],
+            cwd=workdir,
+            capture_output=True,
+            text=True,
+            timeout=_AES_RUN_TIMEOUT_S,
         )
     except subprocess.TimeoutExpired as e:
         return f"sim timed out after {e.timeout}s\n{e.stdout or ''}", 124
@@ -224,7 +231,7 @@ class AESLoader(DesignLoader):
 #     """Get designs from the in-repo `corpus/` tree.
 #
 #     Layout: `corpus/<subdir>/<name>/*.v`, where each subdir maps to one
-#     variant (`default` → `reference`, `opt` → `claude`)."""
+#     variant (`default` -> `reference`, `opt` -> `claude`)."""
 #
 #     benchmark = "corpus"
 #
@@ -269,7 +276,7 @@ class AllDesigns:
 
     LOADERS: tuple[type[DesignLoader], ...] = (
         AESLoader,
-        # RTLLMLoader, RTLOPTLoader, CorpusLoader — commented out pending
+        # RTLLMLoader, RTLOPTLoader, CorpusLoader -- commented out pending
         # a meaningful `root` value (see DesignConfig). Their loader
         # classes are still defined (but commented) above.
     )

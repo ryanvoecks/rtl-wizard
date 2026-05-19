@@ -10,6 +10,7 @@ For now the target is hardcoded to `secworks/aes`. The script:
   3. Invokes `claude -p --dangerously-skip-permissions` in the staged
      copy with the report inlined into the prompt.
 """
+
 from __future__ import annotations
 
 import argparse
