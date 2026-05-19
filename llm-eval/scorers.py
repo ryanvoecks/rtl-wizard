@@ -42,11 +42,6 @@ _RUN_TIMEOUT_S = 30
 _DEVCONTAINER_YOSYS = "/OpenROAD-flow-scripts/tools/install/yosys/bin/yosys"
 _YOSYS_TIMEOUT_S = 60
 
-# Protocol-agnostic timeouts for the upstream-testbench scorer. The actual
-# build/run commands come from `DesignConfig.tb_build_cmd` / `tb_run_cmd`.
-_TB_BUILD_TIMEOUT_S = 120
-_TB_RUN_TIMEOUT_S = 300
-
 
 async def _read_final(filename: str) -> str:
     """Return the agent's final version of `filename` from the sandbox, or
@@ -183,31 +178,6 @@ def yosys_synthesisable(design: DesignConfig) -> Scorer:
     return score
 
 
-async def _run(
-    *cmd: str,
-    cwd: Path | None = None,
-    timeout: float,
-) -> tuple[int | None, str, str]:
-    """Spawn a subprocess and return (returncode, stdout, stderr) or ('TIMEOUT')."""
-    proc = await asyncio.create_subprocess_exec(
-        *cmd,
-        cwd=str(cwd) if cwd else None,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    try:
-        out_b, err_b = await asyncio.wait_for(proc.communicate(), timeout)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        return None, "", f"timed out after {timeout}s"
-    return (
-        proc.returncode,
-        out_b.decode(errors="replace"),
-        err_b.decode(errors="replace"),
-    )
-
-
 def _rtl_overlay_targets(design: DesignConfig) -> dict[str, Path]:
     """Map each sandbox path (`rtl/<basename>`) to the repo-relative
     destination under `design.tb_repo_root` where the agent's modified file
@@ -226,19 +196,18 @@ def testbench_passes(design: DesignConfig) -> Scorer:
     """Run the design's upstream testbench against the agent's RTL.
 
     Copies `design.tb_repo_root` to a tempdir, overlays the agent's final
-    `rtl/*.v` onto each file's repo-relative location, then runs
-    `design.tb_build_cmd` (if set) and `design.tb_run_cmd` from
-    `design.tb_workdir_rel`. CORRECT iff stdout contains
-    `design.tb_pass_marker` and does *not* contain `design.tb_fail_marker`.
-    The full simulator stdout is saved to
+    `rtl/*.v` onto each file's repo-relative location, then calls
+    `design.run_tb(repo_copy)` and grades on its returncode (0 == pass). The
+    full testbench stdout is saved to
     `llm-results/<RUN_TIMESTAMP>/<sample_id>/testbench.log` for debugging.
     """
-    if design.tb_repo_root is None or design.tb_run_cmd is None:
+    if design.tb_repo_root is None or design.run_tb is None:
         raise ValueError(
             f"design {design.name} has no testbench harness configured "
-            "(tb_repo_root / tb_run_cmd are None) — don't register this scorer"
+            "(tb_repo_root / run_tb are None) — don't register this scorer"
         )
     overlay_map = _rtl_overlay_targets(design)
+    run_tb = design.run_tb
 
     async def score(state: TaskState, target: Target) -> Score:
         await _save_artifacts(state)
@@ -266,8 +235,6 @@ def testbench_passes(design: DesignConfig) -> Scorer:
                 ignore=shutil.ignore_patterns(".git", "*.sim", "*.vcd"),
             )
 
-            # Overlay agent's final RTL back into the upstream layout. Each
-            # rtl_file's repo-relative path was precomputed in overlay_map.
             for sandbox_path in rtl_paths:
                 dest_rel = overlay_map.get(sandbox_path)
                 if dest_rel is None:
@@ -282,63 +249,16 @@ def testbench_passes(design: DesignConfig) -> Scorer:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(await _read_final(sandbox_path))
 
-            workdir = (
-                repo_copy / design.tb_workdir_rel
-                if design.tb_workdir_rel
-                else repo_copy
-            )
+            stdout, rc = await asyncio.to_thread(run_tb, repo_copy)
 
-            if design.tb_build_cmd is not None:
-                rc, b_out, b_err = await _run(
-                    *design.tb_build_cmd, cwd=workdir, timeout=_TB_BUILD_TIMEOUT_S
-                )
-                if rc != 0:
-                    tail = (b_err or b_out)[-2000:]
-                    (out_dir / "testbench.log").write_text(
-                        f"# build failed (rc={rc}): "
-                        f"{' '.join(design.tb_build_cmd)}\n{b_out}\n"
-                        f"--- stderr ---\n{b_err}"
-                    )
-                    return Score(
-                        value=INCORRECT,
-                        explanation=f"testbench build failed (rc={rc}):\n{tail}",
-                    )
-
-            rc, r_out, r_err = await _run(
-                *design.tb_run_cmd, cwd=workdir, timeout=_TB_RUN_TIMEOUT_S
-            )
-            (out_dir / "testbench.log").write_text(
-                f"# rc={rc}: {' '.join(design.tb_run_cmd)}\n{r_out}\n"
-                f"--- stderr ---\n{r_err}"
-            )
-            if rc is None:
-                return Score(
-                    value=INCORRECT,
-                    explanation=f"testbench timed out after {_TB_RUN_TIMEOUT_S}s",
-                )
-            if rc != 0:
-                tail = (r_err or r_out)[-2000:]
-                return Score(
-                    value=INCORRECT,
-                    explanation=f"testbench exited rc={rc}:\n{tail}",
-                )
-
-        # Fail marker takes precedence: for some testbenches (e.g. tb_aes.v)
-        # the pass and fail lines both contain the pass substring, so checking
-        # the fail marker first is the only correct ordering.
-        if design.tb_fail_marker and design.tb_fail_marker in r_out:
-            tail = r_out[-1500:]
-            return Score(
-                value=INCORRECT,
-                answer="testbench reported failures",
-                explanation=f"testbench reported failures:\n{tail}",
-            )
-        if design.tb_pass_marker and design.tb_pass_marker in r_out:
+        (out_dir / "testbench.log").write_text(stdout)
+        if rc == 0:
             return Score(value=CORRECT, answer="testbench passed")
-        tail = r_out[-1500:]
+        tail = stdout[-1500:]
         return Score(
             value=INCORRECT,
-            explanation=f"no pass/fail marker in testbench output:\n{tail}",
+            answer="testbench failed",
+            explanation=f"testbench failed (rc={rc}):\n{tail}",
         )
 
     return score

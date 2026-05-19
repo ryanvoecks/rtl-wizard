@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -45,17 +46,16 @@ class DesignConfig:
 
     # Optional upstream testbench harness. Populated for designs that ship a
     # runnable simulator harness (e.g. AESLoader); left at None for designs
-    # where only RTL is available. When tb_run_cmd is set, llm-eval's
-    # testbench_passes scorer copies the repo to a tempdir, overlays the
-    # agent's modified rtl_files onto their original locations, then runs the
-    # build/run commands from tb_workdir_rel and grades stdout against the
-    # pass/fail markers.
-    tb_repo_root: Path | None = None             # upstream repo root on host
-    tb_workdir_rel: str | None = None            # cwd for build/run, relative to tb_repo_root
-    tb_build_cmd: tuple[str, ...] | None = None  # argv to build the sim (None = skip)
-    tb_run_cmd: tuple[str, ...] | None = None    # argv to invoke the sim
-    tb_pass_marker: str | None = None            # substring on stdout signalling pass
-    tb_fail_marker: str | None = None            # substring on stdout signalling fail (overrides pass)
+    # where only RTL is available. When run_tb is set, llm-eval's
+    # testbench_passes scorer copies tb_repo_root to a tempdir, overlays the
+    # agent's modified rtl_files onto their original locations, then invokes
+    # run_tb(repo_copy) and grades on its returncode.
+    tb_repo_root: Path | None = None
+    # Build+run the testbench under the given (already-overlaid) repo root and
+    # return (stdout, returncode). 0 == pass; the callable is responsible for
+    # synthesising the returncode from whatever signal is authoritative
+    # (simulator exit code, marker strings in stdout, timeout, etc.).
+    run_tb: Callable[[Path], tuple[str, int]] | None = None
 
 @dataclass(frozen=True)
 class TargetConfig:
@@ -95,4 +95,6 @@ def dump_run_config(run: RunConfig, path: Path) -> None:
     """Serialise a RunConfig (and its nested DesignConfig + StudyConfig) to
     JSON. The artifact alone is enough to reproduce the run: every knob and
     derived parameter is captured. Paths are serialised as plain strings."""
-    path.write_text(json.dumps(asdict(run), default=str, indent=2))
+    payload = asdict(run)
+    payload["design"].pop("run_tb", None)
+    path.write_text(json.dumps(payload, default=str, indent=2))

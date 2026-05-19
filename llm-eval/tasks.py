@@ -120,9 +120,9 @@ def optimize_aes(
     design = target.design
     scorers = [yosys_synthesisable(design)]
     # Gate the testbench scorer on the design actually shipping a runnable
-    # harness. Designs from RTLLM/RTL-OPT/Corpus loaders leave tb_run_cmd
-    # None and grade on synthesisability alone.
-    if design.tb_run_cmd is not None:
+    # harness. Designs from RTLLM/RTL-OPT/Corpus loaders leave run_tb None
+    # and grade on synthesisability alone.
+    if design.run_tb is not None:
         scorers.append(testbench_passes(design))
     return Task(
         dataset=_build_aes_dataset(target),

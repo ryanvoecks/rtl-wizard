@@ -1,6 +1,7 @@
 """Discover the designs available for each supported benchmark."""
 from __future__ import annotations
 
+import subprocess
 from abc import ABC, abstractmethod
 from collections.abc import Iterable
 from pathlib import Path
@@ -83,6 +84,47 @@ class RTLLMLoader(DesignLoader):
         return {self.benchmark: names}
 
 
+_AES_BUILD_TIMEOUT_S = 120
+_AES_RUN_TIMEOUT_S = 300
+
+
+def _run_aes_tb(repo_root: Path) -> tuple[str, int]:
+    """Build and run secworks/aes's tb_aes.v under <repo_root>/toolruns.
+
+    tb_aes.v emits "*** All NN test cases completed successfully" on pass and
+    "*** NN tests completed - MM test cases did not complete successfully." on
+    fail. The two phrases overlap on "test cases ... successfully", so the
+    fail substring is checked first."""
+    workdir = repo_root / "toolruns"
+    try:
+        build = subprocess.run(
+            ["make", "top.sim"], cwd=workdir,
+            capture_output=True, text=True, timeout=_AES_BUILD_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        return f"build timed out after {e.timeout}s\n{e.stdout or ''}", 124
+    if build.returncode != 0:
+        return (
+            f"# build failed (rc={build.returncode})\n"
+            f"{build.stdout}\n--- stderr ---\n{build.stderr}",
+            build.returncode,
+        )
+    try:
+        run = subprocess.run(
+            ["./top.sim"], cwd=workdir,
+            capture_output=True, text=True, timeout=_AES_RUN_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        return f"sim timed out after {e.timeout}s\n{e.stdout or ''}", 124
+
+    stdout = run.stdout
+    if "did not complete successfully" in stdout:
+        return stdout, 1
+    if "test cases completed successfully" in stdout:
+        return stdout, 0
+    return stdout, 1
+
+
 class AESLoader(DesignLoader):
     """Get the secworks/aes core. Single design, single variant."""
 
@@ -95,11 +137,6 @@ class AESLoader(DesignLoader):
         rtl_files = sorted((self.aes_root / "src" / "rtl").glob("*.v"))
         if not rtl_files:
             return {self.benchmark: {}}
-        # tb_aes.v emits "*** All NN test cases completed successfully" on
-        # pass, "*** NN tests completed - MM test cases did not complete
-        # successfully." on fail. The two phrases overlap on the suffix
-        # "test cases ... successfully", so the fail marker is the
-        # authoritative check and takes precedence over pass.
         design = DesignConfig(
             benchmark=self.benchmark,
             name="aes",
@@ -107,11 +144,7 @@ class AESLoader(DesignLoader):
             rtl_files=tuple(rtl_files),
             top_module=detect_top_module(rtl_files),
             tb_repo_root=self.aes_root,
-            tb_workdir_rel="toolruns",
-            tb_build_cmd=("make", "top.sim"),
-            tb_run_cmd=("./top.sim",),
-            tb_pass_marker="test cases completed successfully",
-            tb_fail_marker="did not complete successfully",
+            run_tb=_run_aes_tb,
         )
         return {self.benchmark: {"aes": {"reference": design}}}
 
