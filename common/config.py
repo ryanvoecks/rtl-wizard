@@ -49,6 +49,7 @@ class StudyConfig:
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
     io_delay_ns: float = 0.2  # fixed IO delay at each boundary
+    seed: int = 0  # seed passed to detailed routing
 
 
 @dataclass(frozen=True)

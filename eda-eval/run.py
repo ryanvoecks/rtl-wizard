@@ -128,6 +128,8 @@ def snapshot_inputs(run: RunConfig) -> Path:
             place_density=run.cfg.place_density,
             die_area=die_area,
             core_area=core_area,
+            seed=run.cfg.seed,
+            flow_targets="synth synth-report floorplan place cts route do-finish",
         )
     )
     return makefile_dst
