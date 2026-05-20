@@ -10,9 +10,9 @@ from pathlib import Path
 # Config variables
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda-results"
-LLM_EVAL = REPO_ROOT / "llm-eval"
-LLM_RESULTS = REPO_ROOT / "llm-results"
+EDA_RUNS = REPO_ROOT / "eda_results"
+LLM_EVAL = REPO_ROOT / "llm_eval"
+LLM_RESULTS = REPO_ROOT / "llm_results"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"

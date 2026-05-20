@@ -1,9 +1,9 @@
-"""Run llm-eval's task via the inspect_ai Python API.
+"""Run llm_eval's task via the inspect_ai Python API.
 
 Owns the per-run output dir so the .eval log and per-sample artifacts
-(diff.patch, *.log) all land under `llm-results/<timestamp>/`.
+(diff.patch, *.log) all land under `llm_results/<timestamp>/`.
 
-    uv run python llm-eval/run.py
+    uv run python llm_eval/run.py
 """
 
 from datetime import datetime

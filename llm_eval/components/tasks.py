@@ -1,6 +1,6 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Entry point is `llm-eval/run.py` -- it owns the per-run output dir and
+Entry point is `llm_eval/run.py` -- it owns the per-run output dir and
 forwards it into `optimize_timing(output_dir)`. Prerequisite:
 `claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
 """

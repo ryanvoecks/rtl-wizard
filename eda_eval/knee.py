@@ -8,7 +8,7 @@ where effort is taken as the number of distinct modules plus the number
 of distinct start->end pairs that would need to be revisited.
 
 Usage:
-    uv run eda-eval/knee.py <path-to-logical_paths.rpt>
+    uv run eda_eval/knee.py <path-to-logical_paths.rpt>
 """
 
 from __future__ import annotations

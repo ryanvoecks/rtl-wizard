@@ -1,4 +1,4 @@
-"""Diff-based scorers for llm-eval tasks.
+"""Diff-based scorers for llm_eval tasks.
 
 Each scorer diffs the agent's sandbox RTL against on-disk originals, saves
 `diff.patch`, and hands `(design, diff)` to a pure evaluator that reapplies
