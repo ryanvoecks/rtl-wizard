@@ -8,8 +8,6 @@ FastMCP instance. The network transport is handled separately by
 """
 
 import asyncio
-import contextlib
-import io
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -18,7 +16,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import RunConfig, TargetConfig
-from eda_eval import analyse_synth
+from eda_eval.analyse_synth import analyse_synth
 from eda_eval.run import run_job
 
 from .scorers import _create_copy, build_diff_from_sandbox, evaluate_testbench
@@ -29,11 +27,36 @@ OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
 # Floorplan/CTS/route are skipped; this is post-synth, pre-P&R.
 SYNTH_FLOW_TARGETS = ("synth", "synth-report")
 
-# How aggressively analyse_synth samples timing paths. Logical-group count
-# is what we surface; the per-path pool stays large so the grouping is
-# statistically meaningful, but we don't need the raw critical-paths report.
-_ANALYSE_TOP_LOGICAL = 10
-_ANALYSE_POOL = 1000
+
+def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
+    """Apply `diff` to a copy of the design root, drive the ORFS synth flow
+    into a fresh tempdir, then run analyse_synth and return its logical-
+    paths report."""
+
+    # Create a modified target for the agent's RTL
+    patched_root = _create_copy(synth_target.design, diff)
+    patched_design = replace(synth_target.design, root=patched_root)
+    patched_target = replace(synth_target, design=patched_design)
+
+    # Run synthesis
+    output_dir = Path(tempfile.mkdtemp())
+    run = RunConfig(
+        synth_target=patched_target,
+        output_dir=output_dir,
+        flow_targets=SYNTH_FLOW_TARGETS,
+    )
+    rc = run_job(run)
+    if rc != 0:
+        log_path = output_dir / "flow.log"
+        log = log_path.read_text() if log_path.is_file() else ""
+        raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
+
+    return analyse_synth(
+        output_dir,
+        patched_design.top_module,
+        patched_target.cfg.platform,
+        patched_design.rtl_abs_paths,
+    )
 
 
 class Tools:
@@ -70,66 +93,6 @@ class Tools:
                 + f"\n[output truncated to last {OUTPUT_LIMIT} chars]"
             )
         return report
-
-
-def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
-    """Apply `diff` to a copy of the design root, drive the ORFS synth flow
-    into a fresh tempdir, then run analyse_synth and return its logical-
-    paths report."""
-    design = synth_target.design
-
-    # Patch the agent's edits onto a working copy of design.root. Swapping
-    # `root` is enough -- `rtl_dir` and `rtl_files` are stored relative to
-    # it, so they automatically follow.
-    patched_root = _create_copy(design, diff)
-    patched_design = replace(design, root=patched_root)
-    patched_target = replace(synth_target, design=patched_design)
-
-    output_dir = Path(tempfile.mkdtemp(prefix="synth_timing_"))
-    run = RunConfig(
-        synth_target=patched_target,
-        output_dir=output_dir,
-        flow_targets=SYNTH_FLOW_TARGETS,
-    )
-    rc = run_job(run)
-    if rc != 0:
-        log_path = output_dir / "flow.log"
-        tail = log_path.read_text()[-OUTPUT_LIMIT:] if log_path.is_file() else ""
-        return f"[synth failed, rc={rc}] see {log_path}\n{tail}"
-
-    # analyse_synth.main prints status to stdout; capture it so it doesn't
-    # bleed into the MCP server's logs, and grab its rc to detect zero-path
-    # outcomes (purely combinational designs, etc.).
-    sink = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(sink):
-            rc_an = analyse_synth.main(
-                [
-                    str(output_dir),
-                    "--top-logical",
-                    str(_ANALYSE_TOP_LOGICAL),
-                    "--pool",
-                    str(_ANALYSE_POOL),
-                ]
-            )
-    except SystemExit as exc:
-        rc_an = exc.code if isinstance(exc.code, int) else 2
-    if rc_an != 0:
-        return f"[analyse_synth failed, rc={rc_an}]\n{sink.getvalue()[-OUTPUT_LIMIT:]}"
-
-    top_module = patched_design.top_module
-    platform = patched_target.cfg.platform
-    logical_rpt = (
-        output_dir
-        / "reports"
-        / platform
-        / top_module
-        / "base"
-        / "logical_paths_synth.rpt"
-    )
-    if not logical_rpt.is_file():
-        return f"[missing logical_paths_synth.rpt under {logical_rpt.parent}]"
-    return logical_rpt.read_text()
 
 
 def make_server(

@@ -88,6 +88,64 @@ def run_openroad_extract(
         raise RuntimeError(f"openroad did not write {tsv_out}")
 
 
+def analyse_synth(
+    phase_dir: Path,
+    top_module: str,
+    platform: str,
+    rtl_files: list[Path],
+    *,
+    top_paths: int = 50,
+    top_logical: int = 50,
+    pool: int = 1000,
+) -> str:
+    """Run post-synth STA on the netlist staged under `phase_dir`, write the
+    critical-paths and logical-paths reports next to ORFS's own outputs, and
+    return the logical-paths report's contents. `rtl_files` are the absolute
+    on-disk RTL paths used to dump the module hierarchy. Raises `RuntimeError`
+    when STA returns no paths or yosys can't see the top module."""
+    odb, sdc = locate_post_synth(phase_dir, top_module, platform)
+    libs = liberty_files(platform)
+
+    reports_dir = phase_dir / "reports" / platform / top_module / "base"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    raw_tsv = reports_dir / "critical_paths_raw_synth.tsv"
+
+    staging = raw_tsv.with_suffix(".tsv.partial")
+    run_openroad_extract(odb, sdc, libs, pool, staging)
+    staging.replace(raw_tsv)
+
+    records = read_pool_tsv(raw_tsv)
+    if not records:
+        raise RuntimeError(
+            "OpenSTA returned zero paths -- is the design purely combinational "
+            "with no constrained outputs?"
+        )
+
+    hier_json = reports_dir / "hierarchy.json"
+    dump_hierarchy(rtl_files, top_module, hier_json)
+    hierarchy = load_hierarchy(hier_json)
+    if top_module not in hierarchy:
+        raise RuntimeError(
+            f"top module {top_module!r} not found in yosys-dumped hierarchy: "
+            f"{sorted(hierarchy)}"
+        )
+
+    crit_path = reports_dir / "critical_paths_synth.rpt"
+    write_critical_paths(records, crit_path, top_paths)
+
+    logical_path = reports_dir / "logical_paths_synth.rpt"
+    write_logical_paths(
+        records,
+        logical_path,
+        top_logical,
+        top_module,
+        hierarchy,
+        pool_size=len(records),
+        clock_period_ns=parse_period_ps(sdc) / 1000,
+    )
+    return logical_path.read_text()
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument(
@@ -134,62 +192,19 @@ def main(argv: list[str] | None = None) -> int:
     if missing:
         ap.error(f"missing RTL files referenced from {RUN_CONFIG_FILENAME}: {missing}")
 
-    odb, sdc = locate_post_synth(phase_dir, top_module, platform)
-    libs = liberty_files(platform)
-
-    reports_dir = phase_dir / "reports" / platform / top_module / "base"
-    reports_dir.mkdir(parents=True, exist_ok=True)
-    raw_tsv = reports_dir / "critical_paths_raw_synth.tsv"
-
-    print(f"==> Phase dir:   {phase_dir}")
-    print(f"==> Platform:    {platform}")
-    print(f"==> Design:      {top_module}")
-    print(f"==> Synth DB:    {odb}")
-    print(f"==> SDC:         {sdc}")
-    print(f"==> Reports:     {reports_dir}")
-    print(
-        f"==> Pool / paths / logical:"
-        f" {args.pool} / {args.top_paths} / {args.top_logical}"
-    )
-
-    staging = raw_tsv.with_suffix(".tsv.partial")
-    run_openroad_extract(odb, sdc, libs, args.pool, staging)
-    staging.replace(raw_tsv)
-
-    records = read_pool_tsv(raw_tsv)
-    if not records:
-        sys.stderr.write(
-            "warning: OpenSTA returned zero paths -- is the design purely "
-            "combinational with no constrained outputs?\n"
+    try:
+        analyse_synth(
+            phase_dir,
+            top_module,
+            platform,
+            rtl_files,
+            top_paths=args.top_paths,
+            top_logical=args.top_logical,
+            pool=args.pool,
         )
+    except RuntimeError as exc:
+        sys.stderr.write(f"{exc}\n")
         return 1
-
-    hier_json = reports_dir / "hierarchy.json"
-    dump_hierarchy(rtl_files, top_module, hier_json)
-    hierarchy = load_hierarchy(hier_json)
-    if top_module not in hierarchy:
-        ap.error(
-            f"top module {top_module!r} not found in yosys-dumped hierarchy: "
-            f"{sorted(hierarchy)}"
-        )
-
-    crit_path = reports_dir / "critical_paths_synth.rpt"
-    n_crit = write_critical_paths(records, crit_path, args.top_paths)
-
-    logical_path = reports_dir / "logical_paths_synth.rpt"
-    n_log = write_logical_paths(
-        records,
-        logical_path,
-        args.top_logical,
-        top_module,
-        hierarchy,
-        pool_size=len(records),
-        clock_period_ns=parse_period_ps(sdc) / 1000,
-    )
-
-    print(f"==> Wrote {n_crit} worst paths to {crit_path}")
-    print(f"==> Wrote {n_log} logical groups to {logical_path}")
-    print(f"==> Raw timing pool ({len(records)} paths): {raw_tsv}")
     return 0
 
 
