@@ -23,7 +23,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import sandbox, store
 
-from common.config import DesignConfig
+from common.config import DesignConfig, TargetConfig
 
 from .mcp_connect import MCPService
 from .mcp_servers import make_server
@@ -307,10 +307,10 @@ def claude_code_solver() -> Solver:
     """Per-sample Solver wrapper around `claude_code_oauth`."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        design = state.metadata["design"]
-        assert isinstance(design, DesignConfig)
+        synth_target = state.metadata["synth_target"]
+        assert isinstance(synth_target, TargetConfig)
         agent_state = AgentState(messages=state.messages)
-        agent_fn = claude_code_oauth(design=design)
+        agent_fn = claude_code_oauth(design=synth_target.design)
         result = await agent_fn(agent_state)
         state.messages = result.messages
         state.output = result.output

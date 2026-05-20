@@ -81,7 +81,7 @@ def _build_sample(target: TargetConfig) -> Sample:
             sandbox_path: str(host_path.resolve())
             for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
         },
-        metadata={"design": design},
+        metadata={"synth_target": target},
     )
 
 
