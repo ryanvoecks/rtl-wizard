@@ -10,3 +10,9 @@
 	path = external/aes
 	url = git@github.com:secworks/aes.git
 	ignore = all
+[submodule "external/double_fpu"]
+	path = external/double_fpu
+	url = git@github.com:klyone/opencores-ip.git
+	branch = arithmetic_core_double_fpu_verilog
+	shallow = true
+	ignore = all

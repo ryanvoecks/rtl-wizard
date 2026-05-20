@@ -16,7 +16,7 @@ LLM_RESULTS = REPO_ROOT / "llm-results"
 RTLLM = REPO_ROOT / "external" / "RTLLM"
 RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
-DOUBLE_FPU = REPO_ROOT / "opencores-ip"
+DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
 CORPUS = REPO_ROOT / "corpus"
 
 # EDA tools and PDK
