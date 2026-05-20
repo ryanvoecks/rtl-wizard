@@ -82,9 +82,7 @@ def analyse(report: Path) -> pd.DataFrame:
     # fmax_old = 1 / target_period_ns; new period after fixing the top i
     # paths is target_period_ns - slack_gain_ns. Report the fractional
     # uplift (new_fmax / old_fmax - 1) so 0.05 = a 5% frequency push.
-    df["fmax_improvement"] = (
-        target_period_ns / (target_period_ns - slack_gain_ns) - 1.0
-    )
+    df["fmax_improvement"] = target_period_ns / (target_period_ns - slack_gain_ns) - 1.0
     df["improvement_per_effort"] = df["fmax_improvement"] / df["effort"]
     return df
 
