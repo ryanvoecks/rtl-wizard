@@ -23,7 +23,7 @@ from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import sandbox, store
 
-from common.config import DesignConfig, TargetConfig
+from common.config import TargetConfig
 
 from .mcp_connect import MCPService
 from .mcp_servers import make_server
@@ -192,7 +192,7 @@ def _build_usage(final: dict) -> ModelUsage:
 
 @agent
 def claude_code_oauth(
-    design: DesignConfig,
+    synth_target: TargetConfig,
     timeout: int = 1800,
     max_turns: int = 8,
 ):
@@ -204,7 +204,7 @@ def claude_code_oauth(
         sb = sandbox()
 
         # MCP server and tools config
-        host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, design)
+        host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target)
         mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{tool}" for tool in MCP_TOOLS]
         allowed_tools = ",".join(DEFAULT_TOOLS + mcp_tool_names)
 
@@ -310,7 +310,7 @@ def claude_code_solver() -> Solver:
         synth_target = state.metadata["synth_target"]
         assert isinstance(synth_target, TargetConfig)
         agent_state = AgentState(messages=state.messages)
-        agent_fn = claude_code_oauth(design=synth_target.design)
+        agent_fn = claude_code_oauth(synth_target=synth_target)
         result = await agent_fn(agent_state)
         state.messages = result.messages
         state.output = result.output

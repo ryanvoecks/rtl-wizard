@@ -26,7 +26,7 @@ import time
 from pathlib import Path
 
 from extract_metrics import extract
-from run import run_job
+from run import FULL_FLOW_TARGETS, run_job
 
 from common.config import (
     EDA_RUNS,
@@ -73,6 +73,7 @@ def run_iteration(
         output_dir=iter_output_dir(design, batch_dir, i),
         period_ns=period_ns,
         side_um=side_um,
+        flow_targets=FULL_FLOW_TARGETS,
         cfg=cfg,
     )
     rc = run_job(run)
