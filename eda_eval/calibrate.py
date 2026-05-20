@@ -25,8 +25,8 @@ import math
 import time
 from pathlib import Path
 
-from extract_metrics import extract
-from run import FULL_FLOW_TARGETS, run_job
+from .extract_metrics import extract
+from .run import FULL_FLOW_TARGETS, run_job
 
 from common.config import (
     EDA_RUNS,

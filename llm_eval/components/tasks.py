@@ -74,7 +74,13 @@ def _build_sample(target: TargetConfig) -> Sample:
             "- The design must remain synthesisable by yosys (the scorer "
             f"runs yosys over `{SANDBOX_RTL_ROOT}/` after you finish).\n"
             f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
-            "rename them."
+            "rename them.\n\n"
+            "To measure your progress, call the `synth_timing_report` MCP "
+            "tool: it synthesises your current RTL through ORFS and returns "
+            "a post-synth logical-paths report -- the worst register-to-"
+            "register groups ranked by slack, with their containing modules "
+            "and LOC. Use it to find which paths to attack and to confirm "
+            "an edit actually shortened the longest combinational path."
         ),
         target="",
         files={

@@ -34,7 +34,7 @@ DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 
 # MCP config
 HOST_MCP_NAME = "rtl-wizard-host"
-MCP_TOOLS = ["run_testbench"]
+MCP_TOOLS = ["run_testbench", "synth_timing_report"]
 
 
 def _resolve_model() -> str:

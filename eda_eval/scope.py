@@ -39,10 +39,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-import analyse
-from calibrate import resolve_design
-from extract_metrics import extract
-from run import run_job
+from . import analyse
+from .calibrate import resolve_design
+from .extract_metrics import extract
+from .run import run_job
 
 from common.config import (
     EDA_RUNS,

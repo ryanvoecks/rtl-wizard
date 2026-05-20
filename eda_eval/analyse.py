@@ -39,7 +39,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from extract_metrics import find_unique, parse_period_ps
+from .extract_metrics import find_unique, parse_period_ps
 
 from common.config import ORFS_HOME, RUN_CONFIG_FILENAME, YOSYS_BIN
 

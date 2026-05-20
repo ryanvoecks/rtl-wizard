@@ -25,7 +25,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from extract_metrics import extract
+from .extract_metrics import extract
 from tqdm import tqdm
 
 from common.config import (
