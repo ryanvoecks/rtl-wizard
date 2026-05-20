@@ -15,17 +15,13 @@ from pathlib import Path
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from common.config import RunConfig, TargetConfig
+from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
 from eda_eval.analyse_synth import analyse_synth
 from eda_eval.run import run_job
 
 from .scorers import _create_copy, build_diff_from_sandbox, evaluate_testbench
 
 OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
-
-# ORFS targets that land 1_synth.odb/sdc -- the inputs analyse_synth needs.
-# Floorplan/CTS/route are skipped; this is post-synth, pre-P&R.
-SYNTH_FLOW_TARGETS = ("synth", "synth-report")
 
 
 def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:

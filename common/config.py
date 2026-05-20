@@ -31,6 +31,15 @@ YOSYS_BIN = (
     / "bin"
     / "yosys"
 )
+SYNTH_FLOW_TARGETS = ("synth", "synth-report")
+PNR_FLOW_TARGETS = (
+    "floorplan",
+    "place",
+    "cts",
+    "route",
+    "do-finish",
+)
+ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
 
 # Common types
 Result = tuple[str, int]  # Output message, return code tuple

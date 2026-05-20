@@ -25,10 +25,8 @@ import math
 import time
 from pathlib import Path
 
-from .extract_metrics import extract
-from .run import FULL_FLOW_TARGETS, run_job
-
 from common.config import (
+    ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
     DesignConfig,
@@ -37,6 +35,9 @@ from common.config import (
     TargetConfig,
 )
 from common.loader import AllDesigns
+
+from .extract_metrics import extract
+from .run import run_job
 
 ITER_CAL_DIR = "__iter_calibration__"
 
@@ -77,7 +78,7 @@ def run_iteration(
             cfg=cfg,
         ),
         output_dir=iter_output_dir(design, batch_dir, i),
-        flow_targets=FULL_FLOW_TARGETS,
+        flow_targets=ALL_FLOW_TARGETS,
     )
     rc = run_job(run)
     if rc != 0:

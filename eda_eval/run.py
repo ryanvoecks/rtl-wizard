@@ -25,10 +25,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from .extract_metrics import extract
 from tqdm import tqdm
 
 from common.config import (
+    ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
     RUN_CONFIG_FILENAME,
@@ -41,19 +41,11 @@ from common.config import (
 )
 from common.loader import AllDesigns, DesignTree
 
+from .extract_metrics import extract
+
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
-
-FULL_FLOW_TARGETS = (
-    "synth",
-    "synth-report",
-    "floorplan",
-    "place",
-    "cts",
-    "route",
-    "do-finish",
-)
 
 
 def filter_designs(
@@ -282,7 +274,7 @@ def main():
                 cfg=cfg,
             ),
             output_dir=design_calibration_dir(references[key], batch_dir),
-            flow_targets=FULL_FLOW_TARGETS,
+            flow_targets=ALL_FLOW_TARGETS,
         )
         for key in groups
     }
@@ -337,7 +329,7 @@ def main():
                         cfg=cfg,
                     ),
                     output_dir=design_variant_dir(d, batch_dir),
-                    flow_targets=FULL_FLOW_TARGETS,
+                    flow_targets=ALL_FLOW_TARGETS,
                 ),
                 error=error,
             )
