@@ -34,6 +34,7 @@ from common.config import (
     DesignConfig,
     RunConfig,
     StudyConfig,
+    TargetConfig,
 )
 from common.loader import AllDesigns
 
@@ -69,12 +70,14 @@ def run_iteration(
     """Single ORFS pass at `period_ns`. Returns the run plus its
     post-route worst slack in ns."""
     run = RunConfig(
-        design=design,
+        synth_target=TargetConfig(
+            design=design,
+            period_ns=period_ns,
+            side_um=side_um,
+            cfg=cfg,
+        ),
         output_dir=iter_output_dir(design, batch_dir, i),
-        period_ns=period_ns,
-        side_um=side_um,
         flow_targets=FULL_FLOW_TARGETS,
-        cfg=cfg,
     )
     rc = run_job(run)
     if rc != 0:

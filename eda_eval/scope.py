@@ -44,7 +44,14 @@ from calibrate import resolve_design
 from extract_metrics import extract
 from run import run_job
 
-from common.config import EDA_RUNS, ORFS_HOME, DesignConfig, RunConfig, StudyConfig
+from common.config import (
+    EDA_RUNS,
+    ORFS_HOME,
+    DesignConfig,
+    RunConfig,
+    StudyConfig,
+    TargetConfig,
+)
 
 ITER_SCOPE_DIR = "__iter_scope__"
 
@@ -76,11 +83,13 @@ def run_one(
     """One ORFS pass at `period_ns`. Returns the RunConfig and the
     post-route worst slack (ns)."""
     run = RunConfig(
-        design=design,
+        synth_target=TargetConfig(
+            design=design,
+            period_ns=period_ns,
+            side_um=side_um,
+            cfg=cfg,
+        ),
         output_dir=iter_output_dir(design, batch_dir, i),
-        period_ns=period_ns,
-        side_um=side_um,
-        cfg=cfg,
     )
     rc = run_job(run)
     if rc != 0:

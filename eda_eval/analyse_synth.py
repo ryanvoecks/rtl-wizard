@@ -124,9 +124,10 @@ def main(argv: list[str] | None = None) -> int:
         ap.error(f"not a directory: {phase_dir}")
 
     run_cfg = load_run_config(phase_dir)
-    top_module = run_cfg["design"]["top_module"]
-    platform = run_cfg["cfg"]["platform"]
-    rtl_files = [Path(p) for p in run_cfg["design"]["rtl_files"]]
+    target = run_cfg["synth_target"]
+    top_module = target["design"]["top_module"]
+    platform = target["cfg"]["platform"]
+    rtl_files = [Path(p) for p in target["design"]["rtl_files"]]
     missing = [p for p in rtl_files if not p.is_file()]
     if missing:
         ap.error(f"missing RTL files referenced from {RUN_CONFIG_FILENAME}: {missing}")

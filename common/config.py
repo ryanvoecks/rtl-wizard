@@ -80,12 +80,9 @@ class TargetConfig:
 class RunConfig:
     """Parameters that vary per phase invocation of the ORFS flow."""
 
-    design: DesignConfig  # design being driven through the flow
+    synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
-    period_ns: float  # clock period rendered into the SDC
-    side_um: float  # square floorplan side -> DIE_AREA/CORE_AREA
     flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
-    cfg: StudyConfig  # shared study-wide knobs
 
 
 @dataclass(frozen=True)
@@ -102,9 +99,10 @@ RUN_CONFIG_FILENAME = "run_config.json"
 
 
 def dump_run_config(run: RunConfig, path: Path) -> None:
-    """Serialise a RunConfig (and its nested DesignConfig + StudyConfig) to
-    JSON. The artifact alone is enough to reproduce the run: every knob and
-    derived parameter is captured. Paths are serialised as plain strings."""
+    """Serialise a RunConfig (and its nested TargetConfig -> DesignConfig +
+    StudyConfig) to JSON. The artifact alone is enough to reproduce the run:
+    every knob and derived parameter is captured. Paths are serialised as
+    plain strings."""
     payload = asdict(run)
-    payload["design"].pop("run_tb", None)
+    payload["synth_target"]["design"].pop("run_tb", None)
     path.write_text(json.dumps(payload, default=str, indent=2))
