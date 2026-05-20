@@ -55,10 +55,23 @@ def analyse(report: Path) -> pd.DataFrame:
         cum_modules.append(len(seen))
     df["cum_modules"] = cum_modules
 
-    # One start->end pair per row, so cumulative count == rank.
-    df["cum_endpoints"] = df["rank"]
+    # Cumulative number of unique module->module paths. Each stem's
+    # owning module is everything before the trailing leaf identifier
+    # (e.g. `core.keymem.prev_key1_reg` -> `core.keymem`); a top-level
+    # stem like `reset_n` lives in the top module (empty prefix). Two
+    # rows count as the same module-path iff their (src, dst) module
+    # prefixes match exactly.
+    def module_of(stem: str) -> str:
+        return stem.rsplit(".", 1)[0] if "." in stem else ""
 
-    df["effort"] = df["cum_modules"] + df["cum_endpoints"]
+    paths_seen: set[tuple[str, str]] = set()
+    cum_module_paths: list[int] = []
+    for sp, ep in zip(df["start_stem"], df["end_stem"], strict=True):
+        paths_seen.add((module_of(sp), module_of(ep)))
+        cum_module_paths.append(len(paths_seen))
+    df["cum_module_paths"] = cum_module_paths
+
+    df["effort"] = df["cum_module_paths"]
 
     # Fixing rows 1..i lifts the binding slack to the next row's worst.
     # Assume fixing the entire list lands at 0 ns slack.
@@ -67,8 +80,11 @@ def analyse(report: Path) -> pd.DataFrame:
     slack_gain_ns = next_slack - baseline
 
     # fmax_old = 1 / target_period_ns; new period after fixing the top i
-    # paths is target_period_ns - slack_gain_ns, so the ratio simplifies.
-    df["fmax_improvement"] = target_period_ns / (target_period_ns - slack_gain_ns)
+    # paths is target_period_ns - slack_gain_ns. Report the fractional
+    # uplift (new_fmax / old_fmax - 1) so 0.05 = a 5% frequency push.
+    df["fmax_improvement"] = (
+        target_period_ns / (target_period_ns - slack_gain_ns) - 1.0
+    )
     df["improvement_per_effort"] = df["fmax_improvement"] / df["effort"]
     return df
 
