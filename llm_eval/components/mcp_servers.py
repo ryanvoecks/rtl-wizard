@@ -61,9 +61,7 @@ class Tools:
         timing report. Optimistic vs. post-route, but useful for ranking edits."""
         try:
             diff = await build_diff_from_sandbox(self.synth_target.design)
-            report = await asyncio.to_thread(
-                _synth_and_report, self.synth_target, diff
-            )
+            report = await asyncio.to_thread(_synth_and_report, self.synth_target, diff)
         except Exception as e:
             return f"[tool error] {type(e).__name__}: {e}"
         if len(report) > OUTPUT_LIMIT:
@@ -80,20 +78,11 @@ def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
     paths report."""
     design = synth_target.design
 
-    # Patch the agent's edits onto a working copy of design.root, then build
-    # a parallel DesignConfig anchored under it so run_job's snapshot picks
-    # up the modified sources instead of the originals.
+    # Patch the agent's edits onto a working copy of design.root. Swapping
+    # `root` is enough -- `rtl_dir` and `rtl_files` are stored relative to
+    # it, so they automatically follow.
     patched_root = _create_copy(design, diff)
-    rel_rtl_dir = design.rtl_dir.relative_to(design.root)
-    patched_rtl_dir = patched_root / rel_rtl_dir
-    patched_design = replace(
-        design,
-        root=patched_root,
-        rtl_dir=patched_rtl_dir,
-        rtl_files=tuple(
-            patched_rtl_dir / f.relative_to(design.rtl_dir) for f in design.rtl_files
-        ),
-    )
+    patched_design = replace(design, root=patched_root)
     patched_target = replace(synth_target, design=patched_design)
 
     output_dir = Path(tempfile.mkdtemp(prefix="synth_timing_"))
@@ -131,7 +120,12 @@ def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
     top_module = patched_design.top_module
     platform = patched_target.cfg.platform
     logical_rpt = (
-        output_dir / "reports" / platform / top_module / "base" / "logical_paths_synth.rpt"
+        output_dir
+        / "reports"
+        / platform
+        / top_module
+        / "base"
+        / "logical_paths_synth.rpt"
     )
     if not logical_rpt.is_file():
         return f"[missing logical_paths_synth.rpt under {logical_rpt.parent}]"

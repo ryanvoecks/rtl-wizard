@@ -545,9 +545,11 @@ def main(argv: list[str] | None = None) -> int:
 
     run_cfg = load_run_config(phase_dir)
     target = run_cfg["synth_target"]
-    top_module = target["design"]["top_module"]
+    design = target["design"]
+    top_module = design["top_module"]
     platform = target["cfg"]["platform"]
-    rtl_files = [Path(p) for p in target["design"]["rtl_files"]]
+    abs_rtl_dir = Path(design["root"]) / design["rtl_dir"]
+    rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
     missing = [p for p in rtl_files if not p.is_file()]
     if missing:
         ap.error(f"missing RTL files referenced from {RUN_CONFIG_FILENAME}: {missing}")

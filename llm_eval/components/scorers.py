@@ -30,12 +30,8 @@ YOSYS_TIMEOUT = 60  # Timeout for synthesisability check
 SANDBOX_RTL_ROOT = "rtl"  # Root inside sandbox where agent edits design
 
 
-def _rel(design: DesignConfig, rtl_file: Path) -> Path:
-    return rtl_file.relative_to(design.rtl_dir)
-
-
-def _sandbox_path(design: DesignConfig, rtl_file: Path) -> str:
-    return f"{SANDBOX_RTL_ROOT}/{_rel(design, rtl_file)}"
+def _sandbox_path(rel_file: Path) -> str:
+    return f"{SANDBOX_RTL_ROOT}/{rel_file}"
 
 
 async def _read_sandbox_file(path: str) -> str:
@@ -51,17 +47,16 @@ async def build_diff_from_sandbox(design: DesignConfig) -> str:
     Output paths are relative to `design.rtl_dir`, so diff applies cleanly."""
 
     parts: list[str] = []
-    for rtl_file in design.rtl_files:
-        rel = _rel(design, rtl_file)
-        original = rtl_file.read_text()
-        final = await _read_sandbox_file(_sandbox_path(design, rtl_file))
+    for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
+        original = abs_file.read_text()
+        final = await _read_sandbox_file(_sandbox_path(rel_file))
         parts.append(
             "".join(
                 difflib.unified_diff(
                     original.splitlines(keepends=True),
                     final.splitlines(keepends=True),
-                    fromfile=f"a/{rel}",
-                    tofile=f"b/{rel}",
+                    fromfile=f"a/{rel_file}",
+                    tofile=f"b/{rel_file}",
                 )
             )
         )
@@ -91,7 +86,7 @@ def _create_copy(design: DesignConfig, diff: str) -> Path:
     )
     if proc.returncode != 0:
         raise RuntimeError(f"copy failed:\n{proc.stderr}")
-    _apply_diff(diff, dest / design.rtl_dir.relative_to(design.root))
+    _apply_diff(diff, dest / design.rtl_dir)
     return dest
 
 
@@ -101,8 +96,8 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
     rc == 0 on success, non-zero (reason in `log`) on any failure."""
     try:
         root = _create_copy(design, diff)
-        rtl_path = root / design.rtl_dir.relative_to(design.root)
-        rel_paths = [str(_rel(design, f)) for f in design.rtl_files]
+        rtl_path = root / design.rtl_dir
+        rel_paths = [str(f) for f in design.rtl_files]
         script = (
             f"read_verilog -sv {' '.join(rel_paths)}; "
             f"hierarchy -check -top {design.top_module}; proc; opt; clean"

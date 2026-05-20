@@ -39,11 +39,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from . import analyse
-from .calibrate import resolve_design
-from .extract_metrics import extract
-from .run import run_job
-
 from common.config import (
     EDA_RUNS,
     ORFS_HOME,
@@ -52,6 +47,11 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
+
+from . import analyse
+from .calibrate import resolve_design
+from .extract_metrics import extract
+from .run import run_job
 
 ITER_SCOPE_DIR = "__iter_scope__"
 
@@ -537,7 +537,7 @@ def main() -> None:
     # original RTL sources from disk (not the snapshotted copies under
     # each iter's inputs/), so this is design-invariant across all iters.
     hier_json = scope_root / "hierarchy.json"
-    analyse.dump_hierarchy(list(design.rtl_files), design.top_module, hier_json)
+    analyse.dump_hierarchy(design.rtl_abs_paths, design.top_module, hier_json)
     hier = analyse.load_hierarchy(hier_json)
     if design.top_module not in hier:
         raise RuntimeError(

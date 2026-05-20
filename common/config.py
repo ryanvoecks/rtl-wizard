@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from functools import cached_property
 from pathlib import Path
 
 # Config variables
@@ -59,11 +60,16 @@ class DesignConfig:
     benchmark: str  # loader/benchmark that emitted this design
     name: str  # design's logical name
     variant: str  # parameterization tag within a name
-    root: Path  # design's top-level dir
-    rtl_dir: Path  # dir each rtl_files entry lives under
-    rtl_files: tuple[Path, ...]  # ordered RTL sources (absolute paths)
+    root: Path  # absolute path to design's top-level dir
+    rtl_dir: Path  # RTL source dir, relative to `root`
+    rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
     run_tb: Callable[[Path], Result]  # run the testbench in a given root
+
+    @cached_property
+    def rtl_abs_paths(self) -> list[Path]:
+        """Absolute on-disk path to each RTL source file."""
+        return [self.root / self.rtl_dir / f for f in self.rtl_files]
 
 
 @dataclass(frozen=True)

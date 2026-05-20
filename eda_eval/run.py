@@ -113,7 +113,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
     rtl_dst = inputs / "rtl"
     rtl_dst.mkdir(parents=True)
     verilog_dsts: list[Path] = []
-    for src in design.rtl_files:
+    for src in design.rtl_abs_paths:
         dst = rtl_dst / src.name
         shutil.copy2(src, dst)
         verilog_dsts.append(dst)

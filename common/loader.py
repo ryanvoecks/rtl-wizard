@@ -149,9 +149,10 @@ class AESLoader(DesignLoader):
         self.aes_root = aes_root
 
     def designs(self) -> DesignTree:
-        rtl_dir = self.aes_root / "src" / "rtl"
-        rtl_files = sorted(rtl_dir.glob("*.v"))
-        if not rtl_files:
+        rtl_dir = Path("src") / "rtl"
+        abs_rtl_dir = self.aes_root / rtl_dir
+        abs_files = sorted(abs_rtl_dir.glob("*.v"))
+        if not abs_files:
             return {self.benchmark: {}}
         design = DesignConfig(
             benchmark=self.benchmark,
@@ -159,8 +160,8 @@ class AESLoader(DesignLoader):
             variant="reference",
             root=self.aes_root,
             rtl_dir=rtl_dir,
-            rtl_files=tuple(rtl_files),
-            top_module=detect_top_module(rtl_files),
+            rtl_files=tuple(f.relative_to(abs_rtl_dir) for f in abs_files),
+            top_module=detect_top_module(abs_files),
             run_tb=_run_aes_tb,
         )
         return {self.benchmark: {"aes": {"reference": design}}}
@@ -241,17 +242,17 @@ class DoubleFPULoader(DesignLoader):
         self.fpu_root = fpu_root
 
     def designs(self) -> DesignTree:
-        rtl_files = tuple(self.fpu_root / f for f in _DOUBLE_FPU_RTL)
-        if not all(p.exists() for p in rtl_files):
+        abs_files = tuple(self.fpu_root / f for f in _DOUBLE_FPU_RTL)
+        if not all(p.exists() for p in abs_files):
             return {self.benchmark: {}}
         design = DesignConfig(
             benchmark=self.benchmark,
             name="double_fpu",
             variant="reference",
             root=self.fpu_root,
-            rtl_dir=self.fpu_root,
-            rtl_files=rtl_files,
-            top_module=detect_top_module(rtl_files),
+            rtl_dir=Path("."),
+            rtl_files=tuple(Path(f) for f in _DOUBLE_FPU_RTL),
+            top_module=detect_top_module(abs_files),
             run_tb=_run_double_fpu_tb,
         )
         return {self.benchmark: {"double_fpu": {"reference": design}}}

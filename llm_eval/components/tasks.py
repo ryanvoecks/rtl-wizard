@@ -40,24 +40,23 @@ def _build_sandbox_compose() -> ComposeConfig:
     return config
 
 
-def _sandbox_rtl_path(design, host_path: Path) -> str:
-    """Sandbox location for an RTL file: mirrors its path relative to
-    `design.rtl_dir`, anchored at `SANDBOX_RTL_ROOT`."""
-    return f"{SANDBOX_RTL_ROOT}/{host_path.relative_to(design.rtl_dir)}"
+def _sandbox_rtl_path(rel_file: Path) -> str:
+    """Sandbox location for an RTL file, anchored at `SANDBOX_RTL_ROOT`."""
+    return f"{SANDBOX_RTL_ROOT}/{rel_file}"
 
 
 def _build_sample(target: TargetConfig) -> Sample:
     design = target.design
-    rtl_files = list(design.rtl_files)
-    if not rtl_files:
+    rel_files = list(design.rtl_files)
+    if not rel_files:
         raise FileNotFoundError(
             f"design {design.benchmark}/{design.name}/{design.variant} has no "
             "RTL files -- run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
-    sandbox_paths = [_sandbox_rtl_path(design, p) for p in rtl_files]
-    top_file = next((p for p in rtl_files if p.stem == design.top_module), rtl_files[0])
-    top_sandbox = _sandbox_rtl_path(design, top_file)
+    sandbox_paths = [_sandbox_rtl_path(p) for p in rel_files]
+    top_file = next((p for p in rel_files if p.stem == design.top_module), rel_files[0])
+    top_sandbox = _sandbox_rtl_path(top_file)
     return Sample(
         id=f"{design.benchmark}/{design.name}/{design.variant}",
         input=(
@@ -85,7 +84,7 @@ def _build_sample(target: TargetConfig) -> Sample:
         target="",
         files={
             sandbox_path: str(host_path.resolve())
-            for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
+            for sandbox_path, host_path in zip(sandbox_paths, design.rtl_abs_paths)
         },
         metadata={"synth_target": target},
     )
