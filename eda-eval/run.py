@@ -44,6 +44,16 @@ HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = HERE / "templates" / "Makefile.template"
 
+FULL_FLOW_TARGETS = (
+    "synth",
+    "synth-report",
+    "floorplan",
+    "place",
+    "cts",
+    "route",
+    "do-finish",
+)
+
 
 def filter_designs(
     designs: DesignTree,
@@ -129,7 +139,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
             die_area=die_area,
             core_area=core_area,
             seed=run.cfg.seed,
-            flow_targets="synth synth-report floorplan place cts route do-finish",
+            flow_targets=" ".join(run.flow_targets),
         )
     )
     return makefile_dst
@@ -265,6 +275,7 @@ def main():
             output_dir=design_calibration_dir(references[key], batch_dir),
             period_ns=cfg.calibration_period_ns,
             side_um=cfg.calibration_side_um,
+            flow_targets=FULL_FLOW_TARGETS,
             cfg=cfg,
         )
         for key in groups
@@ -315,6 +326,7 @@ def main():
                     output_dir=design_variant_dir(d, batch_dir),
                     period_ns=period_ns,
                     side_um=side_um,
+                    flow_targets=FULL_FLOW_TARGETS,
                     cfg=cfg,
                 ),
                 error=error,
