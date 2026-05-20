@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pyslang
 
-from common.config import AES, DesignConfig, Result
+from common.config import AES, DOUBLE_FPU, DesignConfig, Result
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
@@ -166,6 +166,97 @@ class AESLoader(DesignLoader):
         return {self.benchmark: {"aes": {"reference": design}}}
 
 
+_DOUBLE_FPU_BUILD_TIMEOUT_S = 300
+_DOUBLE_FPU_RUN_TIMEOUT_S = 600
+_DOUBLE_FPU_RTL = (
+    "fpu_double.v",
+    "fpu_add.v",
+    "fpu_sub.v",
+    "fpu_mul.v",
+    "fpu_div.v",
+    "fpu_round.v",
+    "fpu_exceptions.v",
+)
+_DOUBLE_FPU_TB = "fpu_TB.v"
+_DOUBLE_FPU_TB_TOP = "fpu_tb"
+
+
+def _run_double_fpu_tb(repo_root: Path) -> Result:
+    """Build and run the David Lundgren double-precision FPU testbench.
+
+    The TB (`fpu_TB.v`) prints "Error! out is incorrect" for any failing
+    case and ends with $finish. A clean run has zero error lines."""
+    sources = [repo_root / f for f in _DOUBLE_FPU_RTL] + [repo_root / _DOUBLE_FPU_TB]
+    try:
+        build = subprocess.run(
+            [
+                "verilator",
+                "--binary",
+                "--timing",
+                "--top-module",
+                _DOUBLE_FPU_TB_TOP,
+                "-Wno-fatal",
+                *[str(p) for p in sources],
+            ],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=_DOUBLE_FPU_BUILD_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        return f"build timed out after {e.timeout}s\n{e.stdout or ''}", 124
+    if build.returncode != 0:
+        return (
+            f"# build failed (rc={build.returncode})\n"
+            f"{build.stdout}\n--- stderr ---\n{build.stderr}",
+            build.returncode,
+        )
+    binary = repo_root / "obj_dir" / f"V{_DOUBLE_FPU_TB_TOP}"
+    try:
+        run = subprocess.run(
+            [str(binary)],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=_DOUBLE_FPU_RUN_TIMEOUT_S,
+        )
+    except subprocess.TimeoutExpired as e:
+        return f"sim timed out after {e.timeout}s\n{e.stdout or ''}", 124
+
+    stdout = run.stdout
+    if "Error! out is incorrect" in stdout:
+        return stdout, 1
+    if "Answer is correct" in stdout:
+        return stdout, 0
+    return stdout, 1
+
+
+class DoubleFPULoader(DesignLoader):
+    """Get the klyone/opencores-ip double-precision FPU (Verilog port of
+    David Lundgren's design). Single design, single variant."""
+
+    benchmark = "opencores"
+
+    def __init__(self, fpu_root: Path = DOUBLE_FPU):
+        self.fpu_root = fpu_root
+
+    def designs(self) -> DesignTree:
+        rtl_files = tuple(self.fpu_root / f for f in _DOUBLE_FPU_RTL)
+        if not all(p.exists() for p in rtl_files):
+            return {self.benchmark: {}}
+        design = DesignConfig(
+            benchmark=self.benchmark,
+            name="double_fpu",
+            variant="reference",
+            root=self.fpu_root,
+            rtl_dir=self.fpu_root,
+            rtl_files=rtl_files,
+            top_module=detect_top_module(rtl_files),
+            run_tb=_run_double_fpu_tb,
+        )
+        return {self.benchmark: {"double_fpu": {"reference": design}}}
+
+
 # class RTLOPTLoader(DesignLoader):
 #     """Get designs from the RTL-OPT benchmark."""
 #
@@ -276,6 +367,7 @@ class AllDesigns:
 
     LOADERS: tuple[type[DesignLoader], ...] = (
         AESLoader,
+        DoubleFPULoader,
         # RTLLMLoader, RTLOPTLoader, CorpusLoader -- commented out pending
         # a meaningful `root` value (see DesignConfig). Their loader
         # classes are still defined (but commented) above.

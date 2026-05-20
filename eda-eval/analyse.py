@@ -39,7 +39,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from extract_metrics import find_unique
+from extract_metrics import find_unique, parse_period_ps
 
 from common.config import ORFS_HOME, RUN_CONFIG_FILENAME, YOSYS_BIN
 
@@ -306,6 +306,7 @@ def write_logical_paths(
     top_module: str,
     hierarchy: dict[str, dict],
     pool_size: int,
+    clock_period_ns: float,
 ) -> int:
     groups: dict[tuple[str, str], dict] = {}
     for slack, sp, ep, cells in records:
@@ -329,6 +330,7 @@ def write_logical_paths(
     )
 
     with out_path.open("w") as fh:
+        fh.write(f"# target_period_ns\t{clock_period_ns:.4f}\n")
         fh.write(f"# pool_size\t{pool_size}\n")
         fh.write(f"# top_module\t{top_module}\n")
         fh.write(
@@ -619,6 +621,7 @@ def main(argv: list[str] | None = None) -> int:
         top_module,
         hierarchy,
         pool_size=len(records),
+        clock_period_ns=parse_period_ps(sdc) / 1000,
     )
 
     tiles = read_congestion_tsv(congest_raw_tsv)
