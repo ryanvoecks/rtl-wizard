@@ -27,6 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from common.config import RUN_CONFIG_FILENAME
+
 from .analyse import (
     EXTRACT_TCL,
     dump_hierarchy,
@@ -38,8 +40,6 @@ from .analyse import (
     write_logical_paths,
 )
 from .extract_metrics import find_unique, parse_period_ps
-
-from common.config import RUN_CONFIG_FILENAME
 
 
 def locate_post_synth(phase_dir: Path, design: str, platform: str) -> tuple[Path, Path]:

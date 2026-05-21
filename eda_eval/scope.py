@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from common.config import (
+    ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
     DesignConfig,
@@ -90,6 +91,7 @@ def run_one(
             cfg=cfg,
         ),
         output_dir=iter_output_dir(design, batch_dir, i),
+        flow_targets=ALL_FLOW_TARGETS,
     )
     rc = run_job(run)
     if rc != 0:
