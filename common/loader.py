@@ -303,7 +303,7 @@ _H264_RTL_DIR = Path("src")
 # plus the two single-port RAMs DF_top instantiates (a 35k-cell frame
 # buffer + a 3k-cell tag buffer). Those RAM files contain an `initial`
 # sim-only param-check that calls `$finish` which yosys 0.64 rejects --
-# the patches strip those two lines. nova_defines.v + timescale.v
+# the patch strips those two lines. nova_defines.v + timescale.v
 # precede the modules so their `\`include` directives resolve.
 _H264_DF_RTL = (
     "nova_defines.v",
@@ -314,10 +314,6 @@ _H264_DF_RTL = (
     "DF_reg_ctrl.v",
     "DF_pipeline.v",
     "DF_top.v",
-)
-_H264_PATCHES = (
-    "ram_async_1r_sync_1w_strip_finish.patch",
-    "ram_sync_1r_sync_1w_strip_finish.patch",
 )
 
 
@@ -335,8 +331,7 @@ def _run_h264_tb(repo_root: Path) -> Result:
     )
 
 
-for _patch in _H264_PATCHES:
-    _ensure_patched(H264_DECODER, PATCHES_DIR / "h264_decoder" / _patch)
+_ensure_patched(H264_DECODER, PATCHES_DIR / "h264_decoder.diff")
 
 df_top_reference = DesignConfig(
     benchmark="opencores",

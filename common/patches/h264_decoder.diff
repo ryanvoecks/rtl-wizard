@@ -1,0 +1,24 @@
+diff --git a/src/ram_async_1r_sync_1w.v b/src/ram_async_1r_sync_1w.v
+index 5952a868c..3a26f8e30 100644
+--- a/src/ram_async_1r_sync_1w.v
++++ b/src/ram_async_1r_sync_1w.v
+@@ -64,7 +64,6 @@ module ram_async_1r_sync_1w (clk, rst_n, cs_n, wr_n, rd_addr, wr_addr, data_in,
+      	if ( param_error_flag == 1) 
+      		begin
+       		$display("%m :\n  Simulation aborted due to invalid parameter value(s)");
+-      		$finish;
+     		end
+ 
+   	end // end data_width & data_depth check
+diff --git a/src/ram_sync_1r_sync_1w.v b/src/ram_sync_1r_sync_1w.v
+index 753b0b13b..8ca15368d 100644
+--- a/src/ram_sync_1r_sync_1w.v
++++ b/src/ram_sync_1r_sync_1w.v
+@@ -73,7 +73,6 @@ module ram_sync_1r_sync_1w (clk, rst_n, wr_n, rd_n, wr_addr, rd_addr, data_in, d
+      	if ( param_error_flag == 1) 
+      		begin
+       		$display("%m :\n  Simulation aborted  due to invalid parameter value(s)");
+-      		$finish;
+     		end
+ 
+   	end // end data_width & data_depth check
