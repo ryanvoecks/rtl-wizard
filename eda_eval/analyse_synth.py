@@ -27,7 +27,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from common.config import RUN_CONFIG_FILENAME
+from common.config import RunConfig
 
 from .analyse import (
     EXTRACT_TCL,
@@ -190,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
     missing = [p for p in rtl_files if not p.is_file()]
     if missing:
-        ap.error(f"missing RTL files referenced from {RUN_CONFIG_FILENAME}: {missing}")
+        ap.error(f"missing RTL files referenced from {RunConfig.FILENAME}: {missing}")
 
     try:
         analyse_synth(

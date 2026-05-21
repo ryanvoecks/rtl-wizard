@@ -7,6 +7,7 @@ import subprocess
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import ClassVar
 
 # Important directories
 HERE = Path(__file__).resolve().parent
@@ -107,44 +108,36 @@ class DesignConfig:
 class TargetConfig:
     """Parameters fully specifying a calibrated ORFS run."""
 
+    FILENAME: ClassVar[str] = "target_config.json"  # default dump basename
+
     design: DesignConfig  # design being driven through the flow
     period_ns: float  # clock period rendered into the SDC
     side_um: float  # square floorplan side -> DIE_AREA/CORE_AREA
     cfg: StudyConfig  # shared study-wide knobs
+
+    def dump(self, path: Path) -> None:
+        """Serialise to JSON."""
+        path.write_text(json.dumps(asdict(self), default=str, indent=2))
 
 
 @dataclass(frozen=True)
 class RunConfig:
     """Parameters that vary per phase invocation of the ORFS flow."""
 
+    FILENAME: ClassVar[str] = "run_config.json"  # default dump basename
+
     synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
     flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
 
+    def dump(self, path: Path) -> None:
+        """Serialise to JSON."""
+        path.write_text(json.dumps(asdict(self), default=str, indent=2))
+
 
 @dataclass(frozen=True)
 class RunJob:
-    """A pending run paired with an optional upstream error. When `error`
-    is None the run is executed; otherwise it's skipped and the message
-    propagates to the final summary."""
+    """A pending run paired with an optional upstream error."""
 
     run: RunConfig
     error: str | None = None
-
-
-RUN_CONFIG_FILENAME = "run_config.json"
-TARGET_CONFIG_FILENAME = "target_config.json"
-
-
-def dump_run_config(run: RunConfig, path: Path) -> None:
-    """Serialise a RunConfig (and its nested TargetConfig -> DesignConfig +
-    StudyConfig) to JSON. The artifact alone is enough to reproduce the run:
-    every knob and derived parameter is captured. Paths are serialised as
-    plain strings."""
-    path.write_text(json.dumps(asdict(run), default=str, indent=2))
-
-
-def dump_target_config(target: TargetConfig, path: Path) -> None:
-    """Serialise a TargetConfig (and its nested DesignConfig + StudyConfig)
-    to JSON. Paths are serialised as plain strings."""
-    path.write_text(json.dumps(asdict(target), default=str, indent=2))

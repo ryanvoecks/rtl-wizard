@@ -31,13 +31,11 @@ from common.config import (
     ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
-    RUN_CONFIG_FILENAME,
     DesignConfig,
     RunConfig,
     RunJob,
     StudyConfig,
     TargetConfig,
-    dump_run_config,
 )
 from common.designs import DesignTree, all_designs
 
@@ -145,7 +143,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
 def run_job(run: RunConfig) -> int:
     """Invoke the rendered per-design Makefile."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
-    dump_run_config(run, run.output_dir / RUN_CONFIG_FILENAME)
+    run.dump(run.output_dir / RunConfig.FILENAME)
     makefile = snapshot_inputs(run)
     log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
