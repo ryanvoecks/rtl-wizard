@@ -105,6 +105,7 @@ services:
       # sandboxes.
       DOCKER_BUILDKIT: "0"
       COMPOSE_DOCKER_CLI_BUILD: "0"
+      TZ: ${TZ:-UTC}
     volumes:
       - ..:/workspace:delegated
       - claude-code-bashhistory:/commandhistory
@@ -115,12 +116,11 @@ services:
       # tools like the Ruff extension fail with ENOENT until `uv sync` re-runs.
       - uv-data:/home/wizard/.local/share/uv
       # Track the host's wall-clock zone so `date`, file mtimes, and tool logs
-      # match what the user sees outside the container. Without this, the image
-      # falls back to UTC (the ARG TZ in Dockerfile is never wired up). Only
-      # /etc/localtime is mounted -- /etc/timezone is Linux-specific and absent
-      # on macOS hosts, where Docker Desktop would create a directory in its
-      # place and break things. glibc reads zone info from /etc/localtime alone.
-      - /etc/localtime:/etc/localtime:ro
+      # match what the user sees outside the container. We use the TZ env var
+      # instead of bind-mounting /etc/localtime because Docker Desktop on WSL2
+      # fails to resolve the symlink through its bind-mount translation layer.
+      # Set TZ to your IANA timezone (e.g. America/Chicago); it defaults to
+      # UTC if unset.  glibc honours TZ before /etc/localtime.
     networks:
       # policy-bus reaches policy-proxy only. The default bridge
       # provides general internet egress (further restricted by
