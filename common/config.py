@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import subprocess
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
@@ -73,13 +73,40 @@ class DesignConfig:
     rtl_dir: Path  # RTL source dir, relative to `root`
     rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
-    run_tb: Callable[[Path], Result]  # run the testbench in a given root
+    # shell command run from the design root; None = no TB available
+    run_tb_cmd: str | None = None
+    tb_pass_str: str | None = None  # substring in stdout that marks a passing run
+    tb_timeout_s: int = 600  # wall-clock cap on the full tb command
     clock_ports: tuple[str, ...] = ("clk",)  # top-level ports driven by the SDC clock
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:
         """Absolute on-disk path to each RTL source file."""
         return [self.root / self.rtl_dir / f for f in self.rtl_files]
+
+    def run_tb(self, root: Path | None = None) -> Result:
+        """Run `run_tb_cmd` under /bin/sh from `root` (defaulting to
+        `self.root`) and return (combined-output, rc). Pass (rc=0) iff
+        `tb_pass_str` appears in stdout. Designs with no shipped TB
+        (`run_tb_cmd is None`) report that and return rc=2."""
+        if self.run_tb_cmd is None or self.tb_pass_str is None:
+            return ("No usable shipped testbench for this design.", 2)
+        cwd = root if root is not None else self.root
+        try:
+            proc = subprocess.run(
+                self.run_tb_cmd,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                shell=True,
+                timeout=self.tb_timeout_s,
+            )
+        except subprocess.TimeoutExpired as e:
+            return f"tb timed out after {e.timeout}s\n{e.stdout or ''}", 124
+        out = (proc.stdout or "") + (proc.stderr or "")
+        if self.tb_pass_str in (proc.stdout or ""):
+            return out, 0
+        return out, proc.returncode or 1
 
 
 @dataclass(frozen=True)
@@ -120,14 +147,10 @@ def dump_run_config(run: RunConfig, path: Path) -> None:
     StudyConfig) to JSON. The artifact alone is enough to reproduce the run:
     every knob and derived parameter is captured. Paths are serialised as
     plain strings."""
-    payload = asdict(run)
-    payload["synth_target"]["design"].pop("run_tb", None)
-    path.write_text(json.dumps(payload, default=str, indent=2))
+    path.write_text(json.dumps(asdict(run), default=str, indent=2))
 
 
 def dump_target_config(target: TargetConfig, path: Path) -> None:
     """Serialise a TargetConfig (and its nested DesignConfig + StudyConfig)
     to JSON. Paths are serialised as plain strings."""
-    payload = asdict(target)
-    payload["design"].pop("run_tb", None)
-    path.write_text(json.dumps(payload, default=str, indent=2))
+    path.write_text(json.dumps(asdict(target), default=str, indent=2))
