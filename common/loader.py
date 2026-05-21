@@ -17,34 +17,10 @@ from common.config import (
     AES,
     DOUBLE_FPU,
     H264_DECODER,
-    PATCHES_DIR,
     REED_SOLOMON,
     DesignConfig,
     Result,
 )
-
-
-def _ensure_patched(repo_root: Path, patch_path: Path) -> None:
-    """Apply `patch_path` to `repo_root` with `patch -p1`. Idempotent: if
-    the patch reverses cleanly (already applied), do nothing."""
-    probe = subprocess.run(
-        ["patch", "-p1", "--dry-run", "-R", "-s", "-i", str(patch_path)],
-        cwd=repo_root,
-        capture_output=True,
-    )
-    if probe.returncode == 0:
-        return
-    res = subprocess.run(
-        ["patch", "-p1", "--no-backup-if-mismatch", "-i", str(patch_path)],
-        cwd=repo_root,
-        capture_output=True,
-        text=True,
-    )
-    if res.returncode != 0:
-        raise RuntimeError(
-            f"patch {patch_path.name} failed in {repo_root}:\n"
-            f"{res.stdout}\n{res.stderr}"
-        )
 
 
 # benchmark -> name -> variant -> DesignConfig.
@@ -301,10 +277,8 @@ reed_solomon_reference = DesignConfig(
 _H264_RTL_DIR = Path("src")
 # Transitive closure of DF_top: DF_pipeline + DF_reg_ctrl + DF_mem_ctrl,
 # plus the two single-port RAMs DF_top instantiates (a 35k-cell frame
-# buffer + a 3k-cell tag buffer). Those RAM files contain an `initial`
-# sim-only param-check that calls `$finish` which yosys 0.64 rejects --
-# the patch strips those two lines. nova_defines.v + timescale.v
-# precede the modules so their `\`include` directives resolve.
+# buffer + a 3k-cell tag buffer). nova_defines.v + timescale.v precede
+# the modules so their `\`include` directives resolve.
 _H264_DF_RTL = (
     "nova_defines.v",
     "timescale.v",
@@ -330,8 +304,6 @@ def _run_h264_tb(repo_root: Path) -> Result:
         2,
     )
 
-
-_ensure_patched(H264_DECODER, PATCHES_DIR / "h264_decoder.diff")
 
 df_top_reference = DesignConfig(
     benchmark="opencores",

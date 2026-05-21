@@ -8,6 +8,14 @@ ENV_FILE="$WORKSPACE/.env"
 echo "Initializing git submodules..." >&2
 git submodule update --init --recursive
 
+echo "Applying patches..." >&2
+for patch_file in "$WORKSPACE"/common/patches/*.diff; do
+    name=$(basename "$patch_file" .diff)
+    target="$WORKSPACE/external/$name"
+    patch -p1 -d "$target" --dry-run -R -s -i "$patch_file" >/dev/null 2>&1 \
+        || patch -p1 -d "$target" --no-backup-if-mismatch -i "$patch_file"
+done
+
 echo "Syncing uv environment..." >&2
 uv sync
 
