@@ -72,39 +72,32 @@ class DesignConfig:
     rtl_dir: Path  # RTL source dir, relative to `root`
     rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
-    # shell command run from the design root; None = no TB available
-    run_tb_cmd: str | None = None
-    tb_pass_str: str | None = None  # substring in stdout that marks a passing run
-    tb_timeout_s: int = 600  # wall-clock cap on the full tb command
-    clock_ports: tuple[str, ...] = ("clk",)  # top-level ports driven by the SDC clock
+    run_tb_cmd: str  # shell command run from the design root to exercise the TB
+    tb_pass_str: str  # substring in stdout that marks a passing run
+    tb_timeout_s: int = 60  # wall-clock cap on the full tb command
+    clock_port: str = "clk"  # top-level port driven by the SDC clock
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:
         """Absolute on-disk path to each RTL source file."""
         return [self.root / self.rtl_dir / f for f in self.rtl_files]
 
-    def run_tb(self, root: Path | None = None) -> Result:
-        """Run `run_tb_cmd` under /bin/sh from `root` (defaulting to
-        `self.root`) and return (combined-output, rc). Pass (rc=0) iff
-        `tb_pass_str` appears in stdout. Designs with no shipped TB
-        (`run_tb_cmd is None`) report that and return rc=2."""
-        if self.run_tb_cmd is None or self.tb_pass_str is None:
-            return ("No usable shipped testbench for this design.", 2)
-        cwd = root if root is not None else self.root
+    def run_tb(self) -> Result:
+        """Run design testbench."""
         try:
             proc = subprocess.run(
                 self.run_tb_cmd,
-                cwd=cwd,
+                cwd=self.root,
                 capture_output=True,
                 text=True,
                 shell=True,
                 timeout=self.tb_timeout_s,
             )
         except subprocess.TimeoutExpired as e:
-            return f"tb timed out after {e.timeout}s\n{e.stdout or ''}", 124
-        out = (proc.stdout or "") + (proc.stderr or "")
-        if self.tb_pass_str in (proc.stdout or ""):
-            return out, 0
+            return f"tb timed out after {e.timeout}s\n{e.stdout}", 124
+        out = proc.stdout + proc.stderr
+        if self.tb_pass_str in proc.stdout:
+            return out, proc.returncode
         return out, proc.returncode or 1
 
 

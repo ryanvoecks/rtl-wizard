@@ -6,6 +6,7 @@ the diff into a tempdir and runs the check -- so a saved diff can be replayed.
 """
 
 import asyncio
+import dataclasses
 import difflib
 import subprocess
 import tempfile
@@ -126,10 +127,10 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
 
 def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
     """Apply `diff` into a copy of `design.root` and run the upstream
-    testbench. Returns (stdout, rc). Never raises."""
+    testbench against that copy. Returns (stdout, rc). Never raises."""
     try:
         repo_copy = _create_copy(design, diff)
-        return design.run_tb(repo_copy)
+        return dataclasses.replace(design, root=repo_copy).run_tb()
     except RuntimeError as e:
         return str(e), 1
 
