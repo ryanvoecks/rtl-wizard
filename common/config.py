@@ -3,24 +3,24 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+import subprocess
 from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
+from typing import ClassVar
 
-# Config variables
+# Important directories
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
-AES = REPO_ROOT / "external" / "aes"
-DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
-REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
-ETH_10G_MAC = REPO_ROOT / "external" / "eth_10g_mac"
-H264_DECODER = REPO_ROOT / "external" / "h264_decoder"
-PATCHES_DIR = REPO_ROOT / "common" / "patches"
-CORPUS = REPO_ROOT / "corpus"
+EXTERNAL = REPO_ROOT / "external"
+
+# Submodules
+AES = EXTERNAL / "aes"
+DOUBLE_FPU = EXTERNAL / "double_fpu"
+REED_SOLOMON = EXTERNAL / "reed_solomon"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
@@ -75,60 +75,69 @@ class DesignConfig:
     rtl_dir: Path  # RTL source dir, relative to `root`
     rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
-    run_tb: Callable[[Path], Result]  # run the testbench in a given root
+    run_tb_cmd: str  # shell command run from the design root to exercise the TB
+    tb_pass_str: str  # substring in stdout that marks a passing run
+    tb_timeout_s: int = 60  # wall-clock cap on the full tb command
+    clock_port: str = "clk"  # top-level port driven by the SDC clock
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:
         """Absolute on-disk path to each RTL source file."""
         return [self.root / self.rtl_dir / f for f in self.rtl_files]
 
+    def run_tb(self) -> Result:
+        """Run design testbench."""
+        try:
+            proc = subprocess.run(
+                self.run_tb_cmd,
+                cwd=self.root,
+                capture_output=True,
+                text=True,
+                shell=True,
+                timeout=self.tb_timeout_s,
+            )
+        except subprocess.TimeoutExpired as e:
+            return f"tb timed out after {e.timeout}s\n{e.stdout}", 124
+        out = proc.stdout + proc.stderr
+        if self.tb_pass_str in proc.stdout:
+            return out, proc.returncode
+        return out, proc.returncode or 1
+
 
 @dataclass(frozen=True)
 class TargetConfig:
     """Parameters fully specifying a calibrated ORFS run."""
+
+    FILENAME: ClassVar[str] = "target_config.json"  # default dump basename
 
     design: DesignConfig  # design being driven through the flow
     period_ns: float  # clock period rendered into the SDC
     side_um: float  # square floorplan side -> DIE_AREA/CORE_AREA
     cfg: StudyConfig  # shared study-wide knobs
 
+    def dump(self, path: Path) -> None:
+        """Serialise to JSON."""
+        path.write_text(json.dumps(asdict(self), default=str, indent=2))
+
 
 @dataclass(frozen=True)
 class RunConfig:
     """Parameters that vary per phase invocation of the ORFS flow."""
 
+    FILENAME: ClassVar[str] = "run_config.json"  # default dump basename
+
     synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
     flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
 
+    def dump(self, path: Path) -> None:
+        """Serialise to JSON."""
+        path.write_text(json.dumps(asdict(self), default=str, indent=2))
+
 
 @dataclass(frozen=True)
 class RunJob:
-    """A pending run paired with an optional upstream error. When `error`
-    is None the run is executed; otherwise it's skipped and the message
-    propagates to the final summary."""
+    """A pending run paired with an optional upstream error."""
 
     run: RunConfig
     error: str | None = None
-
-
-RUN_CONFIG_FILENAME = "run_config.json"
-TARGET_CONFIG_FILENAME = "target_config.json"
-
-
-def dump_run_config(run: RunConfig, path: Path) -> None:
-    """Serialise a RunConfig (and its nested TargetConfig -> DesignConfig +
-    StudyConfig) to JSON. The artifact alone is enough to reproduce the run:
-    every knob and derived parameter is captured. Paths are serialised as
-    plain strings."""
-    payload = asdict(run)
-    payload["synth_target"]["design"].pop("run_tb", None)
-    path.write_text(json.dumps(payload, default=str, indent=2))
-
-
-def dump_target_config(target: TargetConfig, path: Path) -> None:
-    """Serialise a TargetConfig (and its nested DesignConfig + StudyConfig)
-    to JSON. Paths are serialised as plain strings."""
-    payload = asdict(target)
-    payload["design"].pop("run_tb", None)
-    path.write_text(json.dumps(payload, default=str, indent=2))

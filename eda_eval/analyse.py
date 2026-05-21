@@ -39,7 +39,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from common.config import ORFS_HOME, RUN_CONFIG_FILENAME, YOSYS_BIN
+from common.config import ORFS_HOME, YOSYS_BIN, RunConfig
 
 from .extract_metrics import find_unique, parse_period_ps
 
@@ -61,7 +61,7 @@ _CONGESTION_RPT_PRIORITY = (
 def load_run_config(phase_dir: Path) -> dict:
     """Read the `run_config.json` written by run.py at the top of the phase
     dir. Raises if absent."""
-    return json.loads((phase_dir / RUN_CONFIG_FILENAME).read_text())
+    return json.loads((phase_dir / RunConfig.FILENAME).read_text())
 
 
 def locate_post_route(
@@ -552,7 +552,7 @@ def main(argv: list[str] | None = None) -> int:
     rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
     missing = [p for p in rtl_files if not p.is_file()]
     if missing:
-        ap.error(f"missing RTL files referenced from {RUN_CONFIG_FILENAME}: {missing}")
+        ap.error(f"missing RTL files referenced from {RunConfig.FILENAME}: {missing}")
 
     odb, sdc, spef = locate_post_route(phase_dir, top_module, platform)
     libs = liberty_files(platform)

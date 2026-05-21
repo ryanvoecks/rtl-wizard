@@ -34,7 +34,7 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-from common.loader import all_designs
+from common.designs import all_designs
 
 from .extract_metrics import extract
 from .run import run_job

@@ -6,6 +6,7 @@ the diff into a tempdir and runs the check -- so a saved diff can be replayed.
 """
 
 import asyncio
+import dataclasses
 import difflib
 import subprocess
 import tempfile
@@ -24,12 +25,10 @@ from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
 from common.config import (
-    TARGET_CONFIG_FILENAME,
     YOSYS_BIN,
     DesignConfig,
     Result,
     TargetConfig,
-    dump_target_config,
 )
 
 # Config
@@ -126,10 +125,10 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
 
 def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
     """Apply `diff` into a copy of `design.root` and run the upstream
-    testbench. Returns (stdout, rc). Never raises."""
+    testbench against that copy. Returns (stdout, rc). Never raises."""
     try:
         repo_copy = _create_copy(design, diff)
-        return design.run_tb(repo_copy)
+        return dataclasses.replace(design, root=repo_copy).run_tb()
     except RuntimeError as e:
         return str(e), 1
 
@@ -149,7 +148,7 @@ def synthesis(output_dir: Path) -> Scorer:
         assert isinstance(synth_target, TargetConfig)
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
-        dump_target_config(synth_target, sample_dir / TARGET_CONFIG_FILENAME)
+        synth_target.dump(sample_dir / TargetConfig.FILENAME)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_synthesis, design, diff)
@@ -177,7 +176,7 @@ def testbench(output_dir: Path) -> Scorer:
         assert isinstance(synth_target, TargetConfig)
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
-        dump_target_config(synth_target, sample_dir / TARGET_CONFIG_FILENAME)
+        synth_target.dump(sample_dir / TargetConfig.FILENAME)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)
