@@ -8,16 +8,18 @@ from dataclasses import asdict, dataclass
 from functools import cached_property
 from pathlib import Path
 
-# Config variables
+# Important directories
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
-AES = REPO_ROOT / "external" / "aes"
-DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
-REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
-CORPUS = REPO_ROOT / "corpus"
+EXTERNAL = REPO_ROOT / "external"
+
+# Submodules
+AES = EXTERNAL / "aes"
+DOUBLE_FPU = EXTERNAL / "double_fpu"
+REED_SOLOMON = EXTERNAL / "reed_solomon"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
