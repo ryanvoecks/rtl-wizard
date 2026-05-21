@@ -120,12 +120,15 @@ def snapshot_inputs(run: RunConfig) -> Path:
 
     # Generate Makefile with design config
     die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
+    rtl_src = design.root / design.rtl_dir
+    include_dirs = " ".join(str(rtl_src / d) for d in design.include_dirs)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         MAKEFILE_TEMPLATE.read_text().format(
             top_module=design.top_module,
             design_dir=rtl_dst,
             verilog_files=" ".join(str(v) for v in verilog_dsts),
+            verilog_include_dirs=include_dirs,
             sdc_file=sdc_dst,
             work_home=run.output_dir,
             orfs_home=ORFS_HOME,

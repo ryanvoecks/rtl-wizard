@@ -9,3 +9,7 @@ nangate45 synthesis-only flow.
 | `aes` | secworks/aes | AES-128/256 block cipher | 21.2k | none |
 | `double_fpu` | klyone/opencores-ip | IEEE-754 double-precision FPU | 36.6k | none |
 | `reed_solomon` | klyone/opencores-ip | Reed-Solomon decoder + encoder | 40.3k | none |
+| `sha512` | secworks/sha512 | SHA-512 hash core + register interface | 24.1k | Inferred 8kb memory as flops |
+| `jpeg_encoder` | freecores/video_systems (Herveille) | JPEG baseline encoder: FDCT + quantizer + RLE | 40.2k | Patched testbench reference values |
+| `systolic_tpu` | abdelazeem201/Systolic-array-implementation-in-RTL-for-TPU | 8x8 INT8 output-stationary systolic GEMM | 44.7k | TB: stripped `data/`/`golden/` path prefixes, suppressed Verdi-only `$fsdbDump*`, added `TPU_ALL_PASSED` marker |
+| `noc_router` | agalimberti/NoCRouter | 5-port virtual-channel wormhole router | 27.8k | Bumped `VC_NUM` to 4 and `HEAD_PAYLOAD_SIZE` to 32 (default ~10k cells); added synth wrapper that flattens SV interfaces; TB skip of field-level scoreboard (Verilator-vs-VCS `union packed` divergence) + success-watchdog. Synth needs ~8 GB RAM via yosys-slang. |

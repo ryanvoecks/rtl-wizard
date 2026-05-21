@@ -14,3 +14,22 @@
 	branch = ecc_core_reed-solomon_codec_generator
 	shallow = true
 	ignore = all
+[submodule "external/sha512"]
+	path = external/sha512
+	url = git@github.com:secworks/sha512.git
+	ignore = all
+[submodule "external/jpeg_encoder"]
+	path = external/jpeg_encoder
+	url = https://github.com/freecores/video_systems.git
+	shallow = true
+	ignore = all
+[submodule "external/systolic_tpu"]
+	path = external/systolic_tpu
+	url = https://github.com/abdelazeem201/Systolic-array-implementation-in-RTL-for-TPU.git
+	shallow = true
+	ignore = all
+[submodule "external/noc_router"]
+	path = external/noc_router
+	url = https://github.com/agalimberti/NoCRouter.git
+	shallow = true
+	ignore = all

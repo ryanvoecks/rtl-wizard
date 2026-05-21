@@ -6,6 +6,7 @@ export PLATFORM      = {platform}
 export DESIGN_NAME   = {top_module}
 export DESIGN_DIR    = {design_dir}
 export VERILOG_FILES = {verilog_files}
+export VERILOG_INCLUDE_DIRS = {verilog_include_dirs}
 export SDC_FILE      = {sdc_file}
 export WORK_HOME     = {work_home}
 export DIE_AREA      = {die_area}
@@ -13,6 +14,9 @@ export CORE_AREA     = {core_area}
 export PLACE_DENSITY = {place_density}
 export OR_SEED       = {seed}
 export FLOW_TARGETS  = {flow_targets}
+
+# TODO: Replace the inferred flop-memories with openRAM/fakeRAM macros
+export SYNTH_MEMORY_MAX_BITS = 65536
 
 THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 
