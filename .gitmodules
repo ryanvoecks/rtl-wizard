@@ -14,12 +14,6 @@
 	branch = ecc_core_reed-solomon_codec_generator
 	shallow = true
 	ignore = all
-[submodule "external/eth_10g_mac"]
-	path = external/eth_10g_mac
-	url = git@github.com:klyone/opencores-ip.git
-	branch = communication_controller_10g_ethernet_mac
-	shallow = true
-	ignore = all
 [submodule "external/h264_decoder"]
 	path = external/h264_decoder
 	url = git@github.com:klyone/opencores-ip.git

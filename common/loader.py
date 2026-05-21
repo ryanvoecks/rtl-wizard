@@ -16,7 +16,6 @@ import pyslang
 from common.config import (
     AES,
     DOUBLE_FPU,
-    ETH_10G_MAC,
     H264_DECODER,
     PATCHES_DIR,
     REED_SOLOMON,
@@ -46,15 +45,6 @@ def _ensure_patched(repo_root: Path, patch_path: Path) -> None:
             f"patch {patch_path.name} failed in {repo_root}:\n"
             f"{res.stdout}\n{res.stderr}"
         )
-
-
-def _ensure_wrapper(rtl_dir: Path, wrapper_src: Path) -> None:
-    """Symlink `wrapper_src` into `rtl_dir` so the wrapper module is part
-    of the design's source set. Idempotent."""
-    link = rtl_dir / wrapper_src.name
-    if link.exists() or link.is_symlink():
-        return
-    link.symlink_to(wrapper_src.resolve())
 
 
 # benchmark -> name -> variant -> DesignConfig.
@@ -230,11 +220,9 @@ double_fpu_reference = DesignConfig(
 # ---------------------------------------------------------------------------
 
 _REED_SOLOMON_RTL_DIR = Path("example") / "rtl"
-_REED_SOLOMON_WRAPPER = "rs_decode_top_clk_wrapper.v"
-# Decoder + encoder modules shipped in example/rtl. The wrapper is staged
-# into the same dir at import time so it shows up as a normal rtl_files
-# entry. RsDecodeTop has its clock port spelled `CLK`; the wrapper renames
-# it to `clk` so the ORFS SDC template matches without per-design plumbing.
+# Decoder + encoder modules shipped in example/rtl. RsDecodeTop's clock
+# port is `CLK` (uppercase); we pass that through `clock_ports` rather
+# than wrapping the module to rename it.
 _REED_SOLOMON_DECODER_RTL = (
     "RsDecodeChien.v",
     "RsDecodeDegree.v",
@@ -292,96 +280,16 @@ def _run_reed_solomon_tb(repo_root: Path) -> Result:
     return run.stdout, run.returncode
 
 
-_ensure_wrapper(
-    REED_SOLOMON / _REED_SOLOMON_RTL_DIR,
-    PATCHES_DIR / "reed_solomon" / _REED_SOLOMON_WRAPPER,
-)
-
 reed_solomon_reference = DesignConfig(
     benchmark="opencores",
     name="reed_solomon",
     variant="reference",
     root=REED_SOLOMON,
     rtl_dir=_REED_SOLOMON_RTL_DIR,
-    rtl_files=tuple(
-        Path(f) for f in _REED_SOLOMON_DECODER_RTL + (_REED_SOLOMON_WRAPPER,)
-    ),
-    top_module="RsDecodeTop_clk_wrapper",
+    rtl_files=tuple(Path(f) for f in _REED_SOLOMON_DECODER_RTL),
+    top_module="RsDecodeTop",
     run_tb=_run_reed_solomon_tb,
-)
-
-
-# ---------------------------------------------------------------------------
-# klyone/opencores-ip 10/100/1000-mbps tri-mode 10G Ethernet MAC, RX side
-# (communication_controller_10g_ethernet_mac)
-# ---------------------------------------------------------------------------
-
-_ETH_10G_MAC_RTL_DIR = Path("rtl") / "verilog" / "rx_engine"
-_ETH_10G_MAC_WRAPPER = "rx_receive_engine_clk_wrapper.v"
-_ETH_10G_MAC_PATCH = "switch_async_fifo_port_widths.patch"
-# rxReceiveEngine has two clocks (xgmii_rxclk + rxclk_2x); the wrapper
-# ties them together and exposes one `clk` port for the SDC template. The
-# patch fixes a yosys-incompatible port-width redeclaration in
-# DualPortRAM_ASYN inside SwitchAsyncFIFO.v.
-_ETH_10G_MAC_BUILD_TIMEOUT_S = 180
-_ETH_10G_MAC_RUN_TIMEOUT_S = 180
-
-
-def _run_eth_10g_mac_tb(repo_root: Path) -> Result:
-    """Build and run `bench/Receive_tb.v` under iverilog. Exercises
-    rxReceiveEngine with stub stimulus and prints frame counters; passes
-    if the build completes and the binary runs to $finish without error."""
-    bench_dir = repo_root / "bench"
-    rtl_dir = repo_root / _ETH_10G_MAC_RTL_DIR
-    sources = [bench_dir / "Receive_tb.v"] + sorted(rtl_dir.glob("*.v"))
-    try:
-        build = subprocess.run(
-            ["iverilog", "-o", "Receive_tb.vvp", *[str(p) for p in sources]],
-            cwd=bench_dir,
-            capture_output=True,
-            text=True,
-            timeout=_ETH_10G_MAC_BUILD_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired as e:
-        return f"build timed out after {e.timeout}s\n{e.stdout or ''}", 124
-    if build.returncode != 0:
-        return (
-            f"# build failed (rc={build.returncode})\n"
-            f"{build.stdout}\n--- stderr ---\n{build.stderr}",
-            build.returncode,
-        )
-    try:
-        run = subprocess.run(
-            ["vvp", "Receive_tb.vvp"],
-            cwd=bench_dir,
-            capture_output=True,
-            text=True,
-            timeout=_ETH_10G_MAC_RUN_TIMEOUT_S,
-        )
-    except subprocess.TimeoutExpired as e:
-        return f"sim timed out after {e.timeout}s\n{e.stdout or ''}", 124
-    return run.stdout, run.returncode
-
-
-_ensure_patched(ETH_10G_MAC, PATCHES_DIR / "eth_10g_mac" / _ETH_10G_MAC_PATCH)
-_ensure_wrapper(
-    ETH_10G_MAC / _ETH_10G_MAC_RTL_DIR,
-    PATCHES_DIR / "eth_10g_mac" / _ETH_10G_MAC_WRAPPER,
-)
-
-_eth_10g_mac_abs_rtl_dir = ETH_10G_MAC / _ETH_10G_MAC_RTL_DIR
-_eth_10g_mac_abs_files = sorted(_eth_10g_mac_abs_rtl_dir.glob("*.v"))
-eth_10g_mac_reference = DesignConfig(
-    benchmark="opencores",
-    name="eth_10g_mac",
-    variant="reference",
-    root=ETH_10G_MAC,
-    rtl_dir=_ETH_10G_MAC_RTL_DIR,
-    rtl_files=tuple(
-        f.relative_to(_eth_10g_mac_abs_rtl_dir) for f in _eth_10g_mac_abs_files
-    ),
-    top_module="rxReceiveEngine_clk_wrapper",
-    run_tb=_run_eth_10g_mac_tb,
+    clock_ports=("CLK",),
 )
 
 
@@ -451,7 +359,6 @@ all_designs: DesignTree = {
     "opencores": {
         "double_fpu": {"reference": double_fpu_reference},
         "reed_solomon": {"reference": reed_solomon_reference},
-        "eth_10g_mac": {"reference": eth_10g_mac_reference},
         "h264_df_top": {"reference": df_top_reference},
     },
 }

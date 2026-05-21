@@ -17,7 +17,6 @@ LLM_RESULTS = REPO_ROOT / "llm_results"
 AES = REPO_ROOT / "external" / "aes"
 DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
 REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
-ETH_10G_MAC = REPO_ROOT / "external" / "eth_10g_mac"
 H264_DECODER = REPO_ROOT / "external" / "h264_decoder"
 PATCHES_DIR = REPO_ROOT / "common" / "patches"
 CORPUS = REPO_ROOT / "corpus"
@@ -76,6 +75,7 @@ class DesignConfig:
     rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
     run_tb: Callable[[Path], Result]  # run the testbench in a given root
+    clock_ports: tuple[str, ...] = ("clk",)  # top-level ports driven by the SDC clock
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:

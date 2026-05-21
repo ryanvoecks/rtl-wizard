@@ -116,6 +116,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
         SDC_TEMPLATE.read_text().format(
             period_ns=target.period_ns,
             io_delay_ns=cfg.io_delay_ns,
+            clock_ports=" ".join(design.clock_ports),
         )
     )
 
