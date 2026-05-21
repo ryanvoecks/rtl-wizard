@@ -1,6 +1,6 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Entry point is `llm-eval/run.py` -- it owns the per-run output dir and
+Entry point is `llm_eval/run.py` -- it owns the per-run output dir and
 forwards it into `optimize_timing(output_dir)`. Prerequisite:
 `claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
 """
@@ -40,24 +40,23 @@ def _build_sandbox_compose() -> ComposeConfig:
     return config
 
 
-def _sandbox_rtl_path(design, host_path: Path) -> str:
-    """Sandbox location for an RTL file: mirrors its path relative to
-    `design.rtl_dir`, anchored at `SANDBOX_RTL_ROOT`."""
-    return f"{SANDBOX_RTL_ROOT}/{host_path.relative_to(design.rtl_dir)}"
+def _sandbox_rtl_path(rel_file: Path) -> str:
+    """Sandbox location for an RTL file, anchored at `SANDBOX_RTL_ROOT`."""
+    return f"{SANDBOX_RTL_ROOT}/{rel_file}"
 
 
 def _build_sample(target: TargetConfig) -> Sample:
     design = target.design
-    rtl_files = list(design.rtl_files)
-    if not rtl_files:
+    rel_files = list(design.rtl_files)
+    if not rel_files:
         raise FileNotFoundError(
             f"design {design.benchmark}/{design.name}/{design.variant} has no "
             "RTL files -- run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
-    sandbox_paths = [_sandbox_rtl_path(design, p) for p in rtl_files]
-    top_file = next((p for p in rtl_files if p.stem == design.top_module), rtl_files[0])
-    top_sandbox = _sandbox_rtl_path(design, top_file)
+    sandbox_paths = [_sandbox_rtl_path(p) for p in rel_files]
+    top_file = next((p for p in rel_files if p.stem == design.top_module), rel_files[0])
+    top_sandbox = _sandbox_rtl_path(top_file)
     return Sample(
         id=f"{design.benchmark}/{design.name}/{design.variant}",
         input=(
@@ -74,14 +73,20 @@ def _build_sample(target: TargetConfig) -> Sample:
             "- The design must remain synthesisable by yosys (the scorer "
             f"runs yosys over `{SANDBOX_RTL_ROOT}/` after you finish).\n"
             f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
-            "rename them."
+            "rename them.\n\n"
+            "To measure your progress, call the `synth_timing_report` MCP "
+            "tool: it synthesises your current RTL through ORFS and returns "
+            "a post-synth logical-paths report -- the worst register-to-"
+            "register groups ranked by slack, with their containing modules "
+            "and LOC. Use it to find which paths to attack and to confirm "
+            "an edit actually shortened the longest combinational path."
         ),
         target="",
         files={
             sandbox_path: str(host_path.resolve())
-            for sandbox_path, host_path in zip(sandbox_paths, rtl_files)
+            for sandbox_path, host_path in zip(sandbox_paths, design.rtl_abs_paths)
         },
-        metadata={"design": design},
+        metadata={"synth_target": target},
     )
 
 

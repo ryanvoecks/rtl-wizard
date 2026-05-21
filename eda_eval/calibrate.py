@@ -25,17 +25,19 @@ import math
 import time
 from pathlib import Path
 
-from extract_metrics import extract
-from run import run_job
-
 from common.config import (
+    ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
     DesignConfig,
     RunConfig,
     StudyConfig,
+    TargetConfig,
 )
-from common.loader import AllDesigns
+from common.loader import all_designs
+
+from .extract_metrics import extract
+from .run import run_job
 
 ITER_CAL_DIR = "__iter_calibration__"
 
@@ -50,7 +52,7 @@ def iter_output_dir(design: DesignConfig, batch_dir: Path, i: int) -> Path:
 def resolve_design(benchmark: str, name: str, variant: str) -> DesignConfig:
     """Locate the single (benchmark, name, variant) design across all loaders."""
     try:
-        return AllDesigns.designs()[benchmark][name][variant]
+        return all_designs[benchmark][name][variant]
     except KeyError as exc:
         raise ValueError(
             f"no design found for benchmark={benchmark!r} name={name!r} "
@@ -69,11 +71,14 @@ def run_iteration(
     """Single ORFS pass at `period_ns`. Returns the run plus its
     post-route worst slack in ns."""
     run = RunConfig(
-        design=design,
+        synth_target=TargetConfig(
+            design=design,
+            period_ns=period_ns,
+            side_um=side_um,
+            cfg=cfg,
+        ),
         output_dir=iter_output_dir(design, batch_dir, i),
-        period_ns=period_ns,
-        side_um=side_um,
-        cfg=cfg,
+        flow_targets=ALL_FLOW_TARGETS,
     )
     rc = run_job(run)
     if rc != 0:

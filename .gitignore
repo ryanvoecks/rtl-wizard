@@ -1,7 +1,7 @@
 # Folders
 __pycache__/
 .vscode/
-*-results/
+*_results/
 logs/
 tmp/
 

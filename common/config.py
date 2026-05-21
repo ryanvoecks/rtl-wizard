@@ -5,18 +5,21 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
+from functools import cached_property
 from pathlib import Path
 
 # Config variables
 HERE = Path(__file__).resolve().parent
 REPO_ROOT = HERE.parent
-EDA_RUNS = REPO_ROOT / "eda-results"
-LLM_EVAL = REPO_ROOT / "llm-eval"
-LLM_RESULTS = REPO_ROOT / "llm-results"
-RTLLM = REPO_ROOT / "external" / "RTLLM"
-RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
+EDA_RUNS = REPO_ROOT / "eda_results"
+LLM_EVAL = REPO_ROOT / "llm_eval"
+LLM_RESULTS = REPO_ROOT / "llm_results"
 AES = REPO_ROOT / "external" / "aes"
 DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
+REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
+ETH_10G_MAC = REPO_ROOT / "external" / "eth_10g_mac"
+H264_DECODER = REPO_ROOT / "external" / "h264_decoder"
+PATCHES_DIR = REPO_ROOT / "common" / "patches"
 CORPUS = REPO_ROOT / "corpus"
 
 # EDA tools and PDK
@@ -30,6 +33,15 @@ YOSYS_BIN = (
     / "bin"
     / "yosys"
 )
+SYNTH_FLOW_TARGETS = ("synth", "synth-report")
+PNR_FLOW_TARGETS = (
+    "floorplan",
+    "place",
+    "cts",
+    "route",
+    "do-finish",
+)
+ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
 
 # Common types
 Result = tuple[str, int]  # Output message, return code tuple
@@ -49,6 +61,7 @@ class StudyConfig:
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
     io_delay_ns: float = 0.2  # fixed IO delay at each boundary
+    seed: int = 0  # seed passed to detailed routing
 
 
 @dataclass(frozen=True)
@@ -58,11 +71,16 @@ class DesignConfig:
     benchmark: str  # loader/benchmark that emitted this design
     name: str  # design's logical name
     variant: str  # parameterization tag within a name
-    root: Path  # design's top-level dir
-    rtl_dir: Path  # dir each rtl_files entry lives under
-    rtl_files: tuple[Path, ...]  # ordered RTL sources (absolute paths)
+    root: Path  # absolute path to design's top-level dir
+    rtl_dir: Path  # RTL source dir, relative to `root`
+    rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
     run_tb: Callable[[Path], Result]  # run the testbench in a given root
+
+    @cached_property
+    def rtl_abs_paths(self) -> list[Path]:
+        """Absolute on-disk path to each RTL source file."""
+        return [self.root / self.rtl_dir / f for f in self.rtl_files]
 
 
 @dataclass(frozen=True)
@@ -79,11 +97,9 @@ class TargetConfig:
 class RunConfig:
     """Parameters that vary per phase invocation of the ORFS flow."""
 
-    design: DesignConfig  # design being driven through the flow
+    synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
-    period_ns: float  # clock period rendered into the SDC
-    side_um: float  # square floorplan side -> DIE_AREA/CORE_AREA
-    cfg: StudyConfig  # shared study-wide knobs
+    flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
 
 
 @dataclass(frozen=True)
@@ -97,12 +113,22 @@ class RunJob:
 
 
 RUN_CONFIG_FILENAME = "run_config.json"
+TARGET_CONFIG_FILENAME = "target_config.json"
 
 
 def dump_run_config(run: RunConfig, path: Path) -> None:
-    """Serialise a RunConfig (and its nested DesignConfig + StudyConfig) to
-    JSON. The artifact alone is enough to reproduce the run: every knob and
-    derived parameter is captured. Paths are serialised as plain strings."""
+    """Serialise a RunConfig (and its nested TargetConfig -> DesignConfig +
+    StudyConfig) to JSON. The artifact alone is enough to reproduce the run:
+    every knob and derived parameter is captured. Paths are serialised as
+    plain strings."""
     payload = asdict(run)
+    payload["synth_target"]["design"].pop("run_tb", None)
+    path.write_text(json.dumps(payload, default=str, indent=2))
+
+
+def dump_target_config(target: TargetConfig, path: Path) -> None:
+    """Serialise a TargetConfig (and its nested DesignConfig + StudyConfig)
+    to JSON. Paths are serialised as plain strings."""
+    payload = asdict(target)
     payload["design"].pop("run_tb", None)
     path.write_text(json.dumps(payload, default=str, indent=2))

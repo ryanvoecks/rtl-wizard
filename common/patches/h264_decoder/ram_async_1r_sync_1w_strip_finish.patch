@@ -1,0 +1,11 @@
+--- a/src/ram_async_1r_sync_1w.v
++++ b/src/ram_async_1r_sync_1w.v
+@@ -64,7 +64,7 @@
+      	if ( param_error_flag == 1) 
+      		begin
+       		$display("%m :\n  Simulation aborted due to invalid parameter value(s)");
+-      		$finish;
++      		// $finish; // sim-only: stripped for ORFS synth
+     		end
+ 
+   	end // end data_width & data_depth check

@@ -1,0 +1,22 @@
+# Per-design ORFS driver rendered by test_flow_orfs/run.py
+
+# Config
+export FLOW_HOME     = {orfs_home}
+export PLATFORM      = {platform}
+export DESIGN_NAME   = {top_module}
+export DESIGN_DIR    = {design_dir}
+export VERILOG_FILES = {verilog_files}
+export SDC_FILE      = {sdc_file}
+export WORK_HOME     = {work_home}
+export DIE_AREA      = {die_area}
+export CORE_AREA     = {core_area}
+export PLACE_DENSITY = {place_density}
+export OR_SEED       = {seed}
+export FLOW_TARGETS  = {flow_targets}
+
+THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
+
+.DEFAULT_GOAL := flow
+.PHONY: flow
+flow:
+	$(MAKE) -C $(FLOW_HOME) DESIGN_CONFIG=$(THIS_MAKEFILE) $(FLOW_TARGETS)

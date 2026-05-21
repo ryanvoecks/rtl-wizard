@@ -8,7 +8,7 @@ worst setup slack and cell area derive the period and floorplan used for
 the routed run of every variant in the group.
 
 Per-batch artifacts land under
-`eda-results/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
+`eda_results/<timestamp>/<benchmark>/<name>/{__calibration__,<variant>}/`,
 plus a top-level `runs.csv` summarizing each run's error status.
 """
 
@@ -25,10 +25,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-from extract_metrics import extract
 from tqdm import tqdm
 
 from common.config import (
+    ALL_FLOW_TARGETS,
     EDA_RUNS,
     ORFS_HOME,
     RUN_CONFIG_FILENAME,
@@ -36,9 +36,12 @@ from common.config import (
     RunConfig,
     RunJob,
     StudyConfig,
+    TargetConfig,
     dump_run_config,
 )
-from common.loader import AllDesigns, DesignTree
+from common.loader import DesignTree, all_designs
+
+from .extract_metrics import extract
 
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
@@ -93,13 +96,16 @@ def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
 def snapshot_inputs(run: RunConfig) -> Path:
     """Copy RTL, generate Makefile, generate constraints. Returns the path to
     the rendered Makefile."""
+    target = run.synth_target
+    design = target.design
+    cfg = target.cfg
     inputs = run.output_dir / "inputs"
 
     # Copy RTL
     rtl_dst = inputs / "rtl"
     rtl_dst.mkdir(parents=True)
     verilog_dsts: list[Path] = []
-    for src in run.design.rtl_files:
+    for src in design.rtl_abs_paths:
         dst = rtl_dst / src.name
         shutil.copy2(src, dst)
         verilog_dsts.append(dst)
@@ -108,26 +114,28 @@ def snapshot_inputs(run: RunConfig) -> Path:
     sdc_dst = inputs / "constraint.sdc"
     sdc_dst.write_text(
         SDC_TEMPLATE.read_text().format(
-            period_ns=run.period_ns,
-            io_delay_ns=run.cfg.io_delay_ns,
+            period_ns=target.period_ns,
+            io_delay_ns=cfg.io_delay_ns,
         )
     )
 
     # Generate Makefile with design config
-    die_area, core_area = render_floorplan(run.side_um, run.cfg.core_margin_um)
+    die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
     makefile_dst = inputs / "Makefile"
     makefile_dst.write_text(
         MAKEFILE_TEMPLATE.read_text().format(
-            top_module=run.design.top_module,
+            top_module=design.top_module,
             design_dir=rtl_dst,
             verilog_files=" ".join(str(v) for v in verilog_dsts),
             sdc_file=sdc_dst,
             work_home=run.output_dir,
             orfs_home=ORFS_HOME,
-            platform=run.cfg.platform,
-            place_density=run.cfg.place_density,
+            platform=cfg.platform,
+            place_density=cfg.place_density,
             die_area=die_area,
             core_area=core_area,
+            seed=cfg.seed,
+            flow_targets=" ".join(run.flow_targets),
         )
     )
     return makefile_dst
@@ -231,7 +239,6 @@ def main():
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    all_designs = AllDesigns.designs()
     designs = filter_designs(
         all_designs,
         args.benchmark,
@@ -259,11 +266,14 @@ def main():
     # Phase 1: run every group's calibration (on the reference variant).
     cal_runs: dict[tuple[str, str], RunConfig] = {
         key: RunConfig(
-            design=references[key],
+            synth_target=TargetConfig(
+                design=references[key],
+                period_ns=cfg.calibration_period_ns,
+                side_um=cfg.calibration_side_um,
+                cfg=cfg,
+            ),
             output_dir=design_calibration_dir(references[key], batch_dir),
-            period_ns=cfg.calibration_period_ns,
-            side_um=cfg.calibration_side_um,
-            cfg=cfg,
+            flow_targets=ALL_FLOW_TARGETS,
         )
         for key in groups
     }
@@ -291,7 +301,9 @@ def main():
             error = f"calibration FAIL (rc={cal_rc})"
         else:
             try:
-                metrics = extract(cal_run.output_dir, cal_run.design.top_module)
+                metrics = extract(
+                    cal_run.output_dir, cal_run.synth_target.design.top_module
+                )
                 ws_ns = metrics["route_ws_ns"]
                 cell_area_um2 = metrics["synth_area_um2"]
                 period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
@@ -309,11 +321,14 @@ def main():
         for d in variants:
             final_runs[d] = RunJob(
                 run=RunConfig(
-                    design=d,
+                    synth_target=TargetConfig(
+                        design=d,
+                        period_ns=period_ns,
+                        side_um=side_um,
+                        cfg=cfg,
+                    ),
                     output_dir=design_variant_dir(d, batch_dir),
-                    period_ns=period_ns,
-                    side_um=side_um,
-                    cfg=cfg,
+                    flow_targets=ALL_FLOW_TARGETS,
                 ),
                 error=error,
             )
