@@ -39,7 +39,7 @@ from common.config import (
     TargetConfig,
     dump_run_config,
 )
-from common.loader import AllDesigns, DesignTree
+from common.loader import DesignTree, all_designs
 
 from .extract_metrics import extract
 
@@ -239,7 +239,6 @@ def main():
     if not (ORFS_HOME / "Makefile").is_file():
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
-    all_designs = AllDesigns.designs()
     designs = filter_designs(
         all_designs,
         args.benchmark,

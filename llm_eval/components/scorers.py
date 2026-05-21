@@ -23,7 +23,14 @@ from inspect_ai.scorer import (
 from inspect_ai.solver import TaskState
 from inspect_ai.util import sandbox
 
-from common.config import YOSYS_BIN, DesignConfig, Result, TargetConfig
+from common.config import (
+    TARGET_CONFIG_FILENAME,
+    YOSYS_BIN,
+    DesignConfig,
+    Result,
+    TargetConfig,
+    dump_target_config,
+)
 
 # Config
 YOSYS_TIMEOUT = 60  # Timeout for synthesisability check
@@ -142,6 +149,7 @@ def synthesis(output_dir: Path) -> Scorer:
         assert isinstance(synth_target, TargetConfig)
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
+        dump_target_config(synth_target, sample_dir / TARGET_CONFIG_FILENAME)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_synthesis, design, diff)
@@ -169,6 +177,7 @@ def testbench(output_dir: Path) -> Scorer:
         assert isinstance(synth_target, TargetConfig)
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
+        dump_target_config(synth_target, sample_dir / TARGET_CONFIG_FILENAME)
         diff = await build_diff_from_sandbox(design)
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)

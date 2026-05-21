@@ -14,10 +14,12 @@ REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
-RTLLM = REPO_ROOT / "external" / "RTLLM"
-RTL_OPT = REPO_ROOT / "external" / "RTL-OPT"
 AES = REPO_ROOT / "external" / "aes"
 DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
+REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
+ETH_10G_MAC = REPO_ROOT / "external" / "eth_10g_mac"
+H264_DECODER = REPO_ROOT / "external" / "h264_decoder"
+PATCHES_DIR = REPO_ROOT / "common" / "patches"
 CORPUS = REPO_ROOT / "corpus"
 
 # EDA tools and PDK
@@ -111,6 +113,7 @@ class RunJob:
 
 
 RUN_CONFIG_FILENAME = "run_config.json"
+TARGET_CONFIG_FILENAME = "target_config.json"
 
 
 def dump_run_config(run: RunConfig, path: Path) -> None:
@@ -120,4 +123,12 @@ def dump_run_config(run: RunConfig, path: Path) -> None:
     plain strings."""
     payload = asdict(run)
     payload["synth_target"]["design"].pop("run_tb", None)
+    path.write_text(json.dumps(payload, default=str, indent=2))
+
+
+def dump_target_config(target: TargetConfig, path: Path) -> None:
+    """Serialise a TargetConfig (and its nested DesignConfig + StudyConfig)
+    to JSON. Paths are serialised as plain strings."""
+    payload = asdict(target)
+    payload["design"].pop("run_tb", None)
     path.write_text(json.dumps(payload, default=str, indent=2))

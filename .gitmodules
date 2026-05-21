@@ -1,11 +1,3 @@
-[submodule "external/RTLLM"]
-	path = external/RTLLM
-	url = git@github.com:hkust-zhiyao/RTLLM.git
-	ignore = all
-[submodule "external/RTL-OPT"]
-	path = external/RTL-OPT
-	url = git@github.com:ryanvoecks/rtl-opt-mirror.git
-	ignore = all
 [submodule "external/aes"]
 	path = external/aes
 	url = git@github.com:secworks/aes.git
@@ -14,5 +6,23 @@
 	path = external/double_fpu
 	url = git@github.com:klyone/opencores-ip.git
 	branch = arithmetic_core_double_fpu_verilog
+	shallow = true
+	ignore = all
+[submodule "external/reed_solomon"]
+	path = external/reed_solomon
+	url = git@github.com:klyone/opencores-ip.git
+	branch = ecc_core_reed-solomon_codec_generator
+	shallow = true
+	ignore = all
+[submodule "external/eth_10g_mac"]
+	path = external/eth_10g_mac
+	url = git@github.com:klyone/opencores-ip.git
+	branch = communication_controller_10g_ethernet_mac
+	shallow = true
+	ignore = all
+[submodule "external/h264_decoder"]
+	path = external/h264_decoder
+	url = git@github.com:klyone/opencores-ip.git
+	branch = video_controller_h.264-avc_baseline_decoder
 	shallow = true
 	ignore = all

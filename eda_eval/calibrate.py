@@ -34,7 +34,7 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-from common.loader import AllDesigns
+from common.loader import all_designs
 
 from .extract_metrics import extract
 from .run import run_job
@@ -52,7 +52,7 @@ def iter_output_dir(design: DesignConfig, batch_dir: Path, i: int) -> Path:
 def resolve_design(benchmark: str, name: str, variant: str) -> DesignConfig:
     """Locate the single (benchmark, name, variant) design across all loaders."""
     try:
-        return AllDesigns.designs()[benchmark][name][variant]
+        return all_designs[benchmark][name][variant]
     except KeyError as exc:
         raise ValueError(
             f"no design found for benchmark={benchmark!r} name={name!r} "

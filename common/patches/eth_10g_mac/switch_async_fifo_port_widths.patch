@@ -1,0 +1,13 @@
+--- a/rtl/verilog/rx_engine/SwitchAsyncFIFO.v
++++ b/rtl/verilog/rx_engine/SwitchAsyncFIFO.v
+@@ -404,8 +404,8 @@
+ // Generic synchronous two-port RAM interface
+ input WriteClock ;
+ input MemWEn ;
+-input MemWAddr ;
+-input MemDataIn ;
++input [pDepthWidth-1:0] MemWAddr ;
++input [pWordWidth-1:0]  MemDataIn ;
+ input ReadClock ;
+ input  [pDepthWidth-1:0] MemRAddr ;
+ output  [pWordWidth-1:0] MemDataOut ;
