@@ -17,7 +17,6 @@ LLM_RESULTS = REPO_ROOT / "llm_results"
 AES = REPO_ROOT / "external" / "aes"
 DOUBLE_FPU = REPO_ROOT / "external" / "double_fpu"
 REED_SOLOMON = REPO_ROOT / "external" / "reed_solomon"
-H264_DECODER = REPO_ROOT / "external" / "h264_decoder"
 CORPUS = REPO_ROOT / "corpus"
 
 # EDA tools and PDK

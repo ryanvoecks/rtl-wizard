@@ -7,36 +7,17 @@ combined `all_designs` tree is what every downstream consumer reads.
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from pathlib import Path
-
-import pyslang
 
 from common.config import (
     AES,
     DOUBLE_FPU,
-    H264_DECODER,
     REED_SOLOMON,
     DesignConfig,
 )
 
 # benchmark -> name -> variant -> DesignConfig.
 DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
-
-
-def detect_top_module(rtl_files: Iterable[Path]) -> str:
-    """Top module name across one or more Verilog/SystemVerilog files."""
-    files = list(rtl_files)
-    comp = pyslang.Compilation()
-    for path in files:
-        comp.addSyntaxTree(pyslang.SyntaxTree.fromFile(str(path)))
-    tops = [t.name for t in comp.getRoot().topInstances]
-    if len(tops) != 1:
-        raise ValueError(
-            f"expected exactly one top module across "
-            f"{[str(p) for p in files]}, got {len(tops)}: {tops}"
-        )
-    return tops[0]
 
 
 # ---------------------------------------------------------------------------
@@ -58,7 +39,7 @@ aes_reference = DesignConfig(
     root=AES,
     rtl_dir=_AES_RTL_DIR,
     rtl_files=tuple(f.relative_to(_aes_abs_rtl_dir) for f in _aes_abs_files),
-    top_module=detect_top_module(_aes_abs_files),
+    top_module="aes",
     run_tb_cmd="cd toolruns && make top.sim && ./top.sim",
     tb_pass_str="test cases completed successfully",
     tb_timeout_s=420,
@@ -86,7 +67,6 @@ _DOUBLE_FPU_TB_TOP = "fpu_tb"
 # log to a file, then emit a FPU_ALL_PASSED sentinel only if no error
 # line appears anywhere, so the unified tb_pass_str check sees the
 # sentinel iff every case passed.
-_double_fpu_abs_files = tuple(DOUBLE_FPU / f for f in _DOUBLE_FPU_RTL)
 _double_fpu_sources = " ".join((*_DOUBLE_FPU_RTL, _DOUBLE_FPU_TB))
 double_fpu_reference = DesignConfig(
     benchmark="opencores",
@@ -95,7 +75,7 @@ double_fpu_reference = DesignConfig(
     root=DOUBLE_FPU,
     rtl_dir=Path("."),
     rtl_files=tuple(Path(f) for f in _DOUBLE_FPU_RTL),
-    top_module=detect_top_module(_double_fpu_abs_files),
+    top_module="fpu",
     run_tb_cmd=(
         f"verilator --binary --timing --top-module {_DOUBLE_FPU_TB_TOP} "
         f"-Wno-fatal {_double_fpu_sources} && "
@@ -160,43 +140,6 @@ reed_solomon_reference = DesignConfig(
 
 
 # ---------------------------------------------------------------------------
-# klyone/opencores-ip H.264-AVC baseline decoder, deblocking-filter sub-top
-# (video_controller_h.264-avc_baseline_decoder)
-# ---------------------------------------------------------------------------
-
-_H264_RTL_DIR = Path("src")
-# Transitive closure of DF_top: DF_pipeline + DF_reg_ctrl + DF_mem_ctrl,
-# plus the two single-port RAMs DF_top instantiates (a 35k-cell frame
-# buffer + a 3k-cell tag buffer). nova_defines.v + timescale.v precede
-# the modules so their `\`include` directives resolve.
-_H264_DF_RTL = (
-    "nova_defines.v",
-    "timescale.v",
-    "ram_async_1r_sync_1w.v",
-    "ram_sync_1r_sync_1w.v",
-    "DF_mem_ctrl.v",
-    "DF_reg_ctrl.v",
-    "DF_pipeline.v",
-    "DF_top.v",
-)
-
-
-# No usable shipped TB for the DF_top sub-scope: the upstream
-# src/nova_tb.v drives the full nova hierarchy and reads an absolute
-# Windows path from Beha_BitStream_ram.v. Leaving run_tb_cmd unset
-# routes through DesignConfig.run_tb's "no TB" branch.
-df_top_reference = DesignConfig(
-    benchmark="opencores",
-    name="h264_df_top",
-    variant="reference",
-    root=H264_DECODER,
-    rtl_dir=_H264_RTL_DIR,
-    rtl_files=tuple(Path(f) for f in _H264_DF_RTL),
-    top_module="DF_top",
-)
-
-
-# ---------------------------------------------------------------------------
 # Aggregate
 # ---------------------------------------------------------------------------
 
@@ -205,6 +148,5 @@ all_designs: DesignTree = {
     "opencores": {
         "double_fpu": {"reference": double_fpu_reference},
         "reed_solomon": {"reference": reed_solomon_reference},
-        "h264_df_top": {"reference": df_top_reference},
     },
 }
