@@ -1,5 +1,5 @@
 from common.config import StudyConfig, TargetConfig
-from common.loader import all_designs
+from common.designs import all_designs
 
 # Calibrated AES run, 7.5% fmax uplift target
 aes_target = TargetConfig(

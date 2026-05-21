@@ -1,7 +1,7 @@
 # Designs
 
 Reference designs we evaluate. Each lives under `external/<name>/` and is
-registered in `common/loader.py`. Cell counts below are from the
+registered in `common/designs.py`. Cell counts below are from the
 nangate45 synthesis-only flow.
 
 | Design | Source | Purpose | Cells | Modifications |

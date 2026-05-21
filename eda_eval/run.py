@@ -39,7 +39,7 @@ from common.config import (
     TargetConfig,
     dump_run_config,
 )
-from common.loader import DesignTree, all_designs
+from common.designs import DesignTree, all_designs
 
 from .extract_metrics import extract
 
