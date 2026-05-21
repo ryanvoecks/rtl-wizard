@@ -21,6 +21,10 @@ EXTERNAL = REPO_ROOT / "external"
 AES = EXTERNAL / "aes"
 DOUBLE_FPU = EXTERNAL / "double_fpu"
 REED_SOLOMON = EXTERNAL / "reed_solomon"
+SHA512 = EXTERNAL / "sha512"
+JPEG_ENCODER = EXTERNAL / "jpeg_encoder"
+SYSTOLIC_TPU = EXTERNAL / "systolic_tpu"
+NOC_ROUTER = EXTERNAL / "noc_router"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
@@ -79,6 +83,7 @@ class DesignConfig:
     tb_pass_str: str  # substring in stdout that marks a passing run
     tb_timeout_s: int = 60  # wall-clock cap on the full tb command
     clock_port: str = "clk"  # top-level port driven by the SDC clock
+    include_dirs: tuple[Path, ...] = ()  # source dirs added to yosys's `+incdir`
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:
