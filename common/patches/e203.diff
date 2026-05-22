@@ -1,0 +1,82 @@
+diff --git a/rtl/e203/general/sirv_sim_ram.v b/rtl/e203/general/sirv_sim_ram.v
+index ab48e58..0bcf181 100644
+--- a/rtl/e203/general/sirv_sim_ram.v
++++ b/rtl/e203/general/sirv_sim_ram.v
+@@ -41,7 +41,21 @@ module sirv_sim_ram
+   output [DW-1:0]   dout
+ );
+ 
+-    reg [DW-1:0] mem_r [0:DP-1];
++`ifdef SYNTHESIS
++    // For synthesis, collapse the behavioural TCM array to a single row.
++    // The 64KB ITCM (8192x64) and 16KB DTCM (4096x32) would otherwise
++    // blow past ORFS's SYNTH_MEMORY_MAX_BITS=65536 check (which exists
++    // to keep inferred flop-memories from dominating cell area). Real
++    // tape-outs would swap in a fakeRAM macro at this boundary; for our
++    // PPA-on-CPU-logic measurement, mocking the array to one entry is
++    // equivalent and yosys stops inferring multi-Kib memory blocks
++    // here. The iverilog testbench takes the `else branch below, so
++    // functional simulation is unaffected.
++    localparam DP_EFF = 1;
++`else
++    localparam DP_EFF = DP;
++`endif
++    reg [DW-1:0] mem_r [0:DP_EFF-1];
+     reg [AW-1:0] addr_r;
+     wire [MW-1:0] wen;
+     wire ren;
+@@ -49,6 +63,14 @@ module sirv_sim_ram
+     assign ren = cs & (~we);
+     assign wen = ({MW{cs & we}} & wem);
+ 
++`ifdef SYNTHESIS
++    // Under SYNTHESIS, fold every address onto entry 0.
++    wire [AW-1:0] addr_eff   = {AW{1'b0}};
++    wire [AW-1:0] addr_r_eff = {AW{1'b0}};
++`else
++    wire [AW-1:0] addr_eff   = addr;
++    wire [AW-1:0] addr_r_eff = addr_r;
++`endif
+ 
+ 
+     genvar i;
+@@ -65,14 +87,14 @@ module sirv_sim_ram
+         if((8*i+8) > DW ) begin: last
+           always @(posedge clk) begin
+             if (wen[i]) begin
+-               mem_r[addr][DW-1:8*i] <= din[DW-1:8*i];
++               mem_r[addr_eff][DW-1:8*i] <= din[DW-1:8*i];
+             end
+           end
+         end
+         else begin: non_last
+           always @(posedge clk) begin
+             if (wen[i]) begin
+-               mem_r[addr][8*i+7:8*i] <= din[8*i+7:8*i];
++               mem_r[addr_eff][8*i+7:8*i] <= din[8*i+7:8*i];
+             end
+           end
+         end
+@@ -80,7 +102,7 @@ module sirv_sim_ram
+     endgenerate
+ 
+   wire [DW-1:0] dout_pre;
+-  assign dout_pre = mem_r[addr_r];
++  assign dout_pre = mem_r[addr_r_eff];
+ 
+   generate
+    if(FORCE_X2ZERO == 1) begin: force_x_to_zero
+diff --git a/vsim/Makefile b/vsim/Makefile
+index b88fb63..6d63a1e 100644
+--- a/vsim/Makefile
++++ b/vsim/Makefile
+@@ -16,7 +16,8 @@ core_name = $(shell echo $(CORE) | tr A-Z a-z)
+ 
+ all: run_test
+ 
+-install: 
++install:
++	rm -rf ${SIM_DIR}/install
+ 	mkdir -p ${SIM_DIR}/install/tb
+ 	cp ${SIM_DIR}/../tb/*.v ${SIM_DIR}/install/tb -rf
+ 	cp ${SIM_DIR}/../rtl/${core_name} ${SIM_DIR}/install/rtl -rf

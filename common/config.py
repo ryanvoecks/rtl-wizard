@@ -24,7 +24,12 @@ REED_SOLOMON = EXTERNAL / "reed_solomon"
 SHA512 = EXTERNAL / "sha512"
 JPEG_ENCODER = EXTERNAL / "jpeg_encoder"
 SYSTOLIC_TPU = EXTERNAL / "systolic_tpu"
-NOC_ROUTER = EXTERNAL / "noc_router"
+VERILOG_AXI = EXTERNAL / "verilog_axi"
+R22SDF = EXTERNAL / "r22sdf"
+BITONIC_SORTER = EXTERNAL / "bitonic_sorter"
+VITERBI = EXTERNAL / "viterbi"
+MSHR_CACHE = EXTERNAL / "mshr_cache"
+E203 = EXTERNAL / "e203"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
@@ -84,6 +89,10 @@ class DesignConfig:
     tb_timeout_s: int = 60  # wall-clock cap on the full tb command
     clock_port: str = "clk"  # top-level port driven by the SDC clock
     include_dirs: tuple[Path, ...] = ()  # source dirs added to yosys's `+incdir`
+    pre_cts_tcl: str = ""  # if non-empty, written to inputs/pre_cts.tcl and
+    # exported as PRE_CTS_TCL so ORFS's `source_step_tcl PRE CTS` picks it up.
+    # Use for per-design CTS overrides (e.g. raising repair_timing's
+    # max_buffer_percent for storage-heavy designs).
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:

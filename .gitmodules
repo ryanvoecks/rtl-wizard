@@ -1,6 +1,7 @@
 [submodule "external/aes"]
 	path = external/aes
 	url = git@github.com:secworks/aes.git
+	shallow = true
 	ignore = all
 [submodule "external/double_fpu"]
 	path = external/double_fpu
@@ -17,6 +18,7 @@
 [submodule "external/sha512"]
 	path = external/sha512
 	url = git@github.com:secworks/sha512.git
+	shallow = true
 	ignore = all
 [submodule "external/jpeg_encoder"]
 	path = external/jpeg_encoder
@@ -28,8 +30,33 @@
 	url = https://github.com/abdelazeem201/Systolic-array-implementation-in-RTL-for-TPU.git
 	shallow = true
 	ignore = all
-[submodule "external/noc_router"]
-	path = external/noc_router
-	url = https://github.com/agalimberti/NoCRouter.git
+[submodule "external/verilog_axi"]
+	path = external/verilog_axi
+	url = https://github.com/alexforencich/verilog-axi.git
+	shallow = true
+	ignore = all
+[submodule "external/r22sdf"]
+	path = external/r22sdf
+	url = https://github.com/nanamake/r22sdf.git
+	shallow = true
+	ignore = all
+[submodule "external/bitonic_sorter"]
+	path = external/bitonic_sorter
+	url = https://github.com/mcjtag/bitonic_sorter.git
+	shallow = true
+	ignore = all
+[submodule "external/viterbi"]
+	path = external/viterbi
+	url = https://github.com/coole198669/viterbi_decoder.git
+	shallow = true
+	ignore = all
+[submodule "external/mshr_cache"]
+	path = external/mshr_cache
+	url = https://github.com/brownie-crumble/mshr-cache-verification.git
+	shallow = true
+	ignore = all
+[submodule "external/e203"]
+	path = external/e203
+	url = https://github.com/riscv-mcu/e203_hbirdv2.git
 	shallow = true
 	ignore = all

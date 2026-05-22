@@ -118,6 +118,14 @@ def snapshot_inputs(run: RunConfig) -> Path:
         )
     )
 
+    # Optional per-design PRE_CTS_TCL hook. Empty content leaves the export
+    # blank, which ORFS treats as "no hook".
+    pre_cts_tcl_path = ""
+    if design.pre_cts_tcl:
+        pre_cts_tcl_dst = inputs / "pre_cts.tcl"
+        pre_cts_tcl_dst.write_text(design.pre_cts_tcl)
+        pre_cts_tcl_path = str(pre_cts_tcl_dst)
+
     # Generate Makefile with design config
     die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
     rtl_src = design.root / design.rtl_dir
@@ -138,6 +146,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
             core_area=core_area,
             seed=cfg.seed,
             flow_targets=" ".join(run.flow_targets),
+            pre_cts_tcl_path=pre_cts_tcl_path,
         )
     )
     return makefile_dst

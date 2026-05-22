@@ -128,4 +128,26 @@ USER root
 RUN chmod +x /usr/local/bin/init-firewall.sh && \
   echo "${USERNAME} ALL=(root) NOPASSWD: /usr/local/bin/init-firewall.sh" > /etc/sudoers.d/${USERNAME}-firewall && \
   chmod 0440 /etc/sudoers.d/${USERNAME}-firewall
+
+# Late-stage installs: kept at the end of the file so changes here don't
+# bust the OpenROAD/Verilator build cache above.
+#  - libpython3.10: runtime .so.1.0 OpenROAD's embedded Python links
+#    against (apt's python3-{minimal,stdlib} subset doesn't ship it).
+#  - python3-dev: Python headers required to build cocotb's VPI shim.
+#  - cocotb stack: drives the forencich verilog_axi crossbar's TB.
+#    Installed system-wide so `cocotb-config` is on PATH and iverilog's
+#    VPI links to system python3.10. Pinned to cocotb<2.0 because 2.x
+#    breaks an X-coerce path in the bench's reset. jinja2 backs the
+#    bench's `axi_crossbar_wrap.py` wrapper generator.
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    libpython3.10 \
+    python3-dev \
+  && apt-get clean && rm -rf /var/lib/apt/lists/* && \
+  pip3 install --no-cache-dir \
+    'cocotb<2.0' \
+    cocotb-test \
+    cocotbext-axi \
+    jinja2
+
 USER ${USERNAME}

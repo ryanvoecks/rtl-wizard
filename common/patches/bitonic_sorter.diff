@@ -1,0 +1,194 @@
+diff --git a/hdl/basic/bitonic_sort.v b/hdl/basic/bitonic_sort.v
+index 81304ac..f58e803 100644
+--- a/hdl/basic/bitonic_sort.v
++++ b/hdl/basic/bitonic_sort.v
+@@ -37,11 +37,11 @@
+ //////////////////////////////////////////////////////////////////////////////////
+ 
+ module bitonic_sort #(
+-	parameter DATA_WIDTH = 16,	// 
+-	parameter CHAN_NUM = 8,		// 
++	parameter DATA_WIDTH = 16,	//
++	parameter CHAN_NUM = 32,	// bumped from upstream's 8 so the synth top sits in the 20-50k-cell window
+ 	parameter DIR = 0,			// 0 - ascending, 1 - descending
+ 	parameter SIGNED = 0,		// 0 - unsigned, 1 - signed
+-	parameter PIPE_REG = 1		// pipeline bypass, enable each N-th out reg 
++	parameter PIPE_REG = 1		// pipeline bypass, enable each N-th out reg
+ )
+ (
+ 	input wire clk,
+diff --git a/test/tb_bitonic_sort.v b/test/tb_bitonic_sort.v
+new file mode 100644
+index 0000000..4704070
+--- /dev/null
++++ b/test/tb_bitonic_sort.v
+@@ -0,0 +1,169 @@
++// Self-checking testbench for mcjtag/bitonic_sort.
++// Drives random + corner-case inputs, captures the DUT output every
++// cycle, and after the pipeline has drained compares against a software
++// reference sort. Prints "BITONIC_ALL_PASSED" on success.
++`timescale 1ns/1ps
++
++module testbench;
++    localparam DATA_WIDTH = 16;
++    localparam CHAN_NUM   = 32;
++    localparam DIR        = 0;   // ascending
++    localparam SGN        = 0;   // unsigned
++    localparam PIPE_REG   = 1;   // register every node stage
++
++    // STAGES = log2(N) phases, phase k has (k+1) node-stages; each node
++    // is registered when PIPE_REG=1. Total pipeline depth =
++    // 1+2+...+log2(N) = log2(N)*(log2(N)+1)/2.
++    localparam LOG2_N  = 5;                          // log2(32)
++    localparam LATENCY = LOG2_N * (LOG2_N + 1) / 2;  // = 15
++
++    localparam NUM_VECTORS  = 128;
++    localparam TOTAL_CYCLES = NUM_VECTORS + LATENCY + 8;
++
++    reg clk = 1'b0;
++    always #5 clk = ~clk;
++
++    reg  [DATA_WIDTH*CHAN_NUM-1:0] data_in;
++    wire [DATA_WIDTH*CHAN_NUM-1:0] data_out;
++
++    bitonic_sort #(
++        .DATA_WIDTH(DATA_WIDTH),
++        .CHAN_NUM(CHAN_NUM),
++        .DIR(DIR),
++        .SIGNED(SGN),
++        .PIPE_REG(PIPE_REG)
++    ) dut (
++        .clk(clk),
++        .data_in(data_in),
++        .data_out(data_out)
++    );
++
++    // Insertion sort on the packed bus, ascending.
++    function automatic [DATA_WIDTH*CHAN_NUM-1:0] sort_bus(
++        input [DATA_WIDTH*CHAN_NUM-1:0] bus
++    );
++        reg [DATA_WIDTH-1:0] arr [0:CHAN_NUM-1];
++        reg [DATA_WIDTH-1:0] tmp;
++        integer i, j;
++        reg [DATA_WIDTH*CHAN_NUM-1:0] out_bus;
++        begin
++            for (i = 0; i < CHAN_NUM; i = i + 1)
++                arr[i] = bus[DATA_WIDTH*i +: DATA_WIDTH];
++            for (i = 1; i < CHAN_NUM; i = i + 1) begin
++                tmp = arr[i];
++                j = i;
++                while (j > 0 && arr[j-1] > tmp) begin
++                    arr[j] = arr[j-1];
++                    j = j - 1;
++                end
++                arr[j] = tmp;
++            end
++            for (i = 0; i < CHAN_NUM; i = i + 1)
++                out_bus[DATA_WIDTH*i +: DATA_WIDTH] = arr[i];
++            sort_bus = out_bus;
++        end
++    endfunction
++
++    // Pre-compute all stimuli and expected outputs, then drive in lockstep.
++    reg [DATA_WIDTH*CHAN_NUM-1:0] stim_q [0:NUM_VECTORS-1];
++    reg [DATA_WIDTH*CHAN_NUM-1:0] exp_q  [0:NUM_VECTORS-1];
++    reg [DATA_WIDTH*CHAN_NUM-1:0] obs_q  [0:TOTAL_CYCLES-1];
++
++    integer i, v, errors;
++    integer cycle;
++    reg     started;
++    reg [DATA_WIDTH*CHAN_NUM-1:0] stim_tmp;
++
++    initial begin
++        errors  = 0;
++        cycle   = 0;
++        started = 1'b0;
++        data_in = {DATA_WIDTH*CHAN_NUM{1'b0}};
++
++        // Pre-compute stimuli and expected outputs.
++        for (v = 0; v < NUM_VECTORS; v = v + 1) begin
++            case (v)
++                0: stim_tmp = {DATA_WIDTH*CHAN_NUM{1'b0}};
++                1: stim_tmp = {DATA_WIDTH*CHAN_NUM{1'b1}};
++                2: begin
++                    stim_tmp = 0;
++                    for (i = 0; i < CHAN_NUM; i = i + 1)
++                        stim_tmp[DATA_WIDTH*i +: DATA_WIDTH] = i;
++                end
++                3: begin
++                    stim_tmp = 0;
++                    for (i = 0; i < CHAN_NUM; i = i + 1)
++                        stim_tmp[DATA_WIDTH*i +: DATA_WIDTH] = CHAN_NUM - 1 - i;
++                end
++                4: begin
++                    stim_tmp = 0;
++                    for (i = 0; i < CHAN_NUM; i = i + 1)
++                        stim_tmp[DATA_WIDTH*i +: DATA_WIDTH] = 16'h1234;
++                end
++                default: begin
++                    stim_tmp = 0;
++                    for (i = 0; i < CHAN_NUM; i = i + 1)
++                        stim_tmp[DATA_WIDTH*i +: DATA_WIDTH] = $random;
++                end
++            endcase
++            stim_q[v] = stim_tmp;
++            exp_q[v]  = sort_bus(stim_tmp);
++        end
++
++        // Wait a couple of edges, then arm the synchronous driver/sampler.
++        @(posedge clk);
++        @(posedge clk);
++        started = 1'b1;
++
++        // Hold until all cycles have been observed.
++        wait (cycle >= TOTAL_CYCLES);
++
++        // Compare each input vector to the observation at index
++        // v + LATENCY + 1. The extra +1 accounts for the TB's own
++        // non-blocking drive of data_in: stim_q[k] is applied AT edge k
++        // (via NBA) so the DUT first sees it at edge k+1, then it
++        // propagates through LATENCY stages, surfacing at edge
++        // k + LATENCY + 1.
++        for (v = 0; v < NUM_VECTORS; v = v + 1) begin
++            if (obs_q[v + LATENCY + 1] !== exp_q[v]) begin
++                errors = errors + 1;
++                if (errors <= 4) begin
++                    $display("FAIL vec=%0d (cycle=%0d)", v, v + LATENCY + 1);
++                    $display("  stim=%h", stim_q[v]);
++                    $display("  got =%h", obs_q[v + LATENCY + 1]);
++                    $display("  exp =%h", exp_q[v]);
++                end
++            end
++        end
++
++        if (errors == 0)
++            $display("BITONIC_ALL_PASSED (%0d vectors, N=%0d, W=%0d)",
++                     NUM_VECTORS, CHAN_NUM, DATA_WIDTH);
++        else
++            $display("BITONIC_FAIL: %0d/%0d vectors mismatched",
++                     errors, NUM_VECTORS);
++        $finish;
++    end
++
++    // Synchronous driver + sampler. data_in is updated on the same clock
++    // edge that records data_out, so cycle k contains the output produced
++    // by the input applied at cycle k-LATENCY (with index 0 == first
++    // valid cycle after `started` rises).
++    always @(posedge clk) begin
++        if (started && cycle < TOTAL_CYCLES) begin
++            obs_q[cycle] <= data_out;
++            if (cycle < NUM_VECTORS)
++                data_in  <= stim_q[cycle];
++            else
++                data_in  <= {DATA_WIDTH*CHAN_NUM{1'b0}};
++            cycle <= cycle + 1;
++        end
++    end
++
++    // Hard timeout.
++    initial begin
++        #200000;
++        $display("BITONIC_FAIL: timeout");
++        $finish;
++    end
++endmodule
