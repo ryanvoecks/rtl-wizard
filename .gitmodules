@@ -33,3 +33,8 @@
 	url = https://github.com/agalimberti/NoCRouter.git
 	shallow = true
 	ignore = all
+[submodule "external/verilog_axi"]
+	path = external/verilog_axi
+	url = https://github.com/alexforencich/verilog-axi.git
+	shallow = true
+	ignore = all

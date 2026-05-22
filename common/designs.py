@@ -16,6 +16,7 @@ from common.config import (
     REED_SOLOMON,
     SHA512,
     SYSTOLIC_TPU,
+    VERILOG_AXI,
     DesignConfig,
 )
 
@@ -207,6 +208,50 @@ systolic_tpu_reference = DesignConfig(
 )
 
 
+# alexforencich/verilog-axi
+#
+# 8x8 AXI4 crossbar, 32-bit data path. Synthesizes the
+# `axi_crossbar_wrap_8x8` wrapper rather than the parameterized
+# `axi_crossbar` directly: the wrapper hardcodes S_COUNT/M_COUNT into
+# the port list, which is what ORFS expects, and it names ports the
+# same way the cocotb bench does. The wrapper is the output of upstream's
+# `rtl/axi_crossbar_wrap.py -p 8 8`, dropped in via
+# `common/patches/verilog_axi.diff` so it doesn't need to be regenerated
+# at setup time. It lives under `tb/axi_crossbar/` rather than `rtl/`;
+# ORFS's snapshot copies it flat alongside the rest, so the basename
+# collision check is fine.
+#
+# Verification is the upstream cocotb regression (33 cases: writes,
+# reads, stress); see Makefile in `tb/axi_crossbar/`. The cocotb stack
+# is installed system-wide in the devcontainer image (see
+# `.devcontainer/Dockerfile`), pinned to <2.0 because 2.x breaks a
+# pre-reset X-coerce path the bench relies on.
+
+VERILOG_AXI_RTL = (
+    Path("rtl") / "arbiter.v",
+    Path("rtl") / "priority_encoder.v",
+    Path("rtl") / "axi_register_rd.v",
+    Path("rtl") / "axi_register_wr.v",
+    Path("rtl") / "axi_crossbar_addr.v",
+    Path("rtl") / "axi_crossbar_rd.v",
+    Path("rtl") / "axi_crossbar_wr.v",
+    Path("rtl") / "axi_crossbar.v",
+    Path("tb") / "axi_crossbar" / "axi_crossbar_wrap_8x8.v",
+)
+verilog_axi_reference = DesignConfig(
+    benchmark="forencich",
+    name="verilog_axi",
+    variant="reference",
+    root=VERILOG_AXI,
+    rtl_dir=Path("."),
+    rtl_files=VERILOG_AXI_RTL,
+    top_module="axi_crossbar_wrap_8x8",
+    run_tb_cmd=("PARAM_S_COUNT=8 PARAM_M_COUNT=8 make -C tb/axi_crossbar"),
+    tb_pass_str="FAIL=0 SKIP=0",
+    tb_timeout_s=300,
+)
+
+
 # # agalimberti/NoCRouter
 # #
 # # 5-port virtual-channel wormhole router, single `clk` domain. We bump the
@@ -319,6 +364,9 @@ all_designs: DesignTree = {
     },
     "abdelazeem201": {
         "systolic_tpu": {"reference": systolic_tpu_reference},
+    },
+    "forencich": {
+        "verilog_axi": {"reference": verilog_axi_reference},
     },
     # "agalimberti": {
     #     "noc_router": {"reference": noc_router_reference},

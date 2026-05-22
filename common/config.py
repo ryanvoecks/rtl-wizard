@@ -25,6 +25,7 @@ SHA512 = EXTERNAL / "sha512"
 JPEG_ENCODER = EXTERNAL / "jpeg_encoder"
 SYSTOLIC_TPU = EXTERNAL / "systolic_tpu"
 NOC_ROUTER = EXTERNAL / "noc_router"
+VERILOG_AXI = EXTERNAL / "verilog_axi"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
