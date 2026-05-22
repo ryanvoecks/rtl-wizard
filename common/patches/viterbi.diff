@@ -1,0 +1,15 @@
+diff --git a/tb_tcase1.v b/tb_tcase1.v
+index c0fb553..2814fec 100644
+--- a/tb_tcase1.v
++++ b/tb_tcase1.v
+@@ -82,8 +82,8 @@ always #10 clk_i=~clk_i;
+ assign src_addr_mux_s = inject_wr ? inject_wr_addr : src_addr_o;
+ 
+ initial begin
+-	$fsdbDumpfile("tb_tcase1.fsdb");
+-$fsdbDumpvars();
++	// $fsdbDumpfile("tb_tcase1.fsdb");
++	// $fsdbDumpvars();
+    clk_i=0;
+ 	rst_an_i=0;
+ 	rst_sync_i =0;   
