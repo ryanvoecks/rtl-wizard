@@ -7,4 +7,5 @@ tmp/
 
 # Files
 .env
+compose.override.yaml
 settings.local.json
