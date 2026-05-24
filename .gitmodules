@@ -35,11 +35,6 @@
 	url = https://github.com/alexforencich/verilog-axi.git
 	shallow = true
 	ignore = all
-[submodule "external/r22sdf"]
-	path = external/r22sdf
-	url = https://github.com/nanamake/r22sdf.git
-	shallow = true
-	ignore = all
 [submodule "external/bitonic_sorter"]
 	path = external/bitonic_sorter
 	url = https://github.com/mcjtag/bitonic_sorter.git
@@ -50,13 +45,18 @@
 	url = https://github.com/coole198669/viterbi_decoder.git
 	shallow = true
 	ignore = all
-[submodule "external/mshr_cache"]
-	path = external/mshr_cache
-	url = https://github.com/brownie-crumble/mshr-cache-verification.git
-	shallow = true
-	ignore = all
 [submodule "external/e203"]
 	path = external/e203
 	url = https://github.com/riscv-mcu/e203_hbirdv2.git
+	shallow = true
+	ignore = all
+[submodule "external/wb_dma"]
+	path = external/wb_dma
+	url = https://github.com/stffrdhrn/wb_dma.git
+	shallow = true
+	ignore = all
+[submodule "external/uberddr3"]
+	path = external/uberddr3
+	url = https://github.com/AngeloJacobo/UberDDR3.git
 	shallow = true
 	ignore = all

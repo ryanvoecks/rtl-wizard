@@ -1,19 +1,21 @@
 diff --git a/Pre-Synthesis_Simulation/test_tpu.v b/Pre-Synthesis_Simulation/test_tpu.v
-index 7e5fdc8..ea95a42 100644
+index 7e5fdc8..21b73d4 100644
 --- a/Pre-Synthesis_Simulation/test_tpu.v
 +++ b/Pre-Synthesis_Simulation/test_tpu.v
-@@ -198,8 +198,8 @@ sram_16x128b sram_16x128b_c2(
+@@ -196,12 +196,6 @@ sram_16x128b sram_16x128b_c2(
  
- //dump wave file
- initial begin
+ 
+ 
+-//dump wave file
+-initial begin
 -  $fsdbDumpfile("tpu.fsdb"); // "gray.fsdb" can be replaced into any name you want
 -  $fsdbDumpvars("+mda");              // but make sure in .fsdb format
-+ // &
-+ // &
- end
- 
+-end
+-
  //====== clock generation =====
-@@ -242,11 +242,11 @@ initial begin
+ initial begin
+     srstn = 1'b1;
+@@ -242,11 +236,11 @@ initial begin
  end
  */
  initial begin
@@ -30,12 +32,3 @@ index 7e5fdc8..ea95a42 100644
  
      #(`cycle_period);
      
-@@ -314,7 +314,7 @@ initial begin
- 
- 	end
-       
--    $display("Total cycle count C after three matrix evaluation = %d.", cycle_cnt);
-+    $display("TPU_ALL_PASSED"); $display("Total cycle count C after three matrix evaluation = %d.", cycle_cnt);
-     #5 $finish;
- end
- 

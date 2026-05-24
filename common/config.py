@@ -11,6 +11,7 @@ from typing import ClassVar
 
 # Important directories
 HERE = Path(__file__).resolve().parent
+SCRIPTS_DIR = HERE / "scripts"
 REPO_ROOT = HERE.parent
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
@@ -25,11 +26,11 @@ SHA512 = EXTERNAL / "sha512"
 JPEG_ENCODER = EXTERNAL / "jpeg_encoder"
 SYSTOLIC_TPU = EXTERNAL / "systolic_tpu"
 VERILOG_AXI = EXTERNAL / "verilog_axi"
-R22SDF = EXTERNAL / "r22sdf"
 BITONIC_SORTER = EXTERNAL / "bitonic_sorter"
 VITERBI = EXTERNAL / "viterbi"
-MSHR_CACHE = EXTERNAL / "mshr_cache"
 E203 = EXTERNAL / "e203"
+WB_DMA = EXTERNAL / "wb_dma"
+UBERDDR3 = EXTERNAL / "uberddr3"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
@@ -84,8 +85,7 @@ class DesignConfig:
     rtl_dir: Path  # RTL source dir, relative to `root`
     rtl_files: tuple[Path, ...]  # ordered RTL sources, each relative to `rtl_dir`
     top_module: str  # Verilog top module
-    run_tb_cmd: str  # shell command run from the design root to exercise the TB
-    tb_pass_str: str  # substring in stdout that marks a passing run
+    test_script: Path  # script run from the design root; rc 0 == pass
     tb_timeout_s: int = 60  # wall-clock cap on the full tb command
     clock_port: str = "clk"  # top-level port driven by the SDC clock
     include_dirs: tuple[Path, ...] = ()  # source dirs added to yosys's `+incdir`
@@ -103,19 +103,15 @@ class DesignConfig:
         """Run design testbench."""
         try:
             proc = subprocess.run(
-                self.run_tb_cmd,
+                [str(self.test_script)],
                 cwd=self.root,
                 capture_output=True,
                 text=True,
-                shell=True,
                 timeout=self.tb_timeout_s,
             )
         except subprocess.TimeoutExpired as e:
-            return f"tb timed out after {e.timeout}s\n{e.stdout}", 124
-        out = proc.stdout + proc.stderr
-        if self.tb_pass_str in proc.stdout:
-            return out, proc.returncode
-        return out, proc.returncode or 1
+            return f"tb timed out after {e.timeout}s\n{e.stdout or ''}", 124
+        return proc.stdout + proc.stderr, proc.returncode
 
 
 @dataclass(frozen=True)

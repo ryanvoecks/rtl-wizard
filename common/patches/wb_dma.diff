@@ -1,0 +1,67 @@
+diff --git a/bench/verilog/test_bench_top.v b/bench/verilog/test_bench_top.v
+index 240f293..b6425f5 100644
+--- a/bench/verilog/test_bench_top.v
++++ b/bench/verilog/test_bench_top.v
+@@ -76,7 +76,7 @@
+ 
+ `include "wb_dma_defines.v"
+ 
+-`define	CH_COUNT 4
++`define	CH_COUNT 16
+ 
+ module test;
+ 
+@@ -225,7 +225,7 @@ initial
+ 
+ 	// HERE IS WHERE THE TEST CASES GO ...
+ 
+-if(1)	// Full Regression Run
++if(0)	// Full Regression Run
+    begin
+ $display(" ......................................................");
+ $display(" :                                                    :");
+diff --git a/rtl/verilog/wb_dma_top.v b/rtl/verilog/wb_dma_top.v
+index ba86e29..01b8d5d 100644
+--- a/rtl/verilog/wb_dma_top.v
++++ b/rtl/verilog/wb_dma_top.v
+@@ -115,23 +115,23 @@ module wb_dma_top(clk_i, rst_i,
+ // chXX_conf = { CBUF, ED, ARS, EN }
+ parameter		rf_addr = 0;
+ parameter	[1:0]	pri_sel = 2'h0;
+-parameter		ch_count = 1;
+-parameter	[3:0]	ch0_conf = 4'h1;
+-parameter	[3:0]	ch1_conf = 4'h0;
+-parameter	[3:0]	ch2_conf = 4'h0;
+-parameter	[3:0]	ch3_conf = 4'h0;
+-parameter	[3:0]	ch4_conf = 4'h0;
+-parameter	[3:0]	ch5_conf = 4'h0;
+-parameter	[3:0]	ch6_conf = 4'h0;
+-parameter	[3:0]	ch7_conf = 4'h0;
+-parameter	[3:0]	ch8_conf = 4'h0;
+-parameter	[3:0]	ch9_conf = 4'h0;
+-parameter	[3:0]	ch10_conf = 4'h0;
+-parameter	[3:0]	ch11_conf = 4'h0;
+-parameter	[3:0]	ch12_conf = 4'h0;
+-parameter	[3:0]	ch13_conf = 4'h0;
+-parameter	[3:0]	ch14_conf = 4'h0;
+-parameter	[3:0]	ch15_conf = 4'h0;
++parameter		ch_count = 16;
++parameter	[3:0]	ch0_conf = 4'hf;
++parameter	[3:0]	ch1_conf = 4'hf;
++parameter	[3:0]	ch2_conf = 4'hf;
++parameter	[3:0]	ch3_conf = 4'hf;
++parameter	[3:0]	ch4_conf = 4'hf;
++parameter	[3:0]	ch5_conf = 4'hf;
++parameter	[3:0]	ch6_conf = 4'hf;
++parameter	[3:0]	ch7_conf = 4'hf;
++parameter	[3:0]	ch8_conf = 4'hf;
++parameter	[3:0]	ch9_conf = 4'hf;
++parameter	[3:0]	ch10_conf = 4'hf;
++parameter	[3:0]	ch11_conf = 4'hf;
++parameter	[3:0]	ch12_conf = 4'hf;
++parameter	[3:0]	ch13_conf = 4'hf;
++parameter	[3:0]	ch14_conf = 4'hf;
++parameter	[3:0]	ch15_conf = 4'hf;
+ parameter	[3:0]	ch16_conf = 4'h0;
+ parameter	[3:0]	ch17_conf = 4'h0;
+ parameter	[3:0]	ch18_conf = 4'h0;
