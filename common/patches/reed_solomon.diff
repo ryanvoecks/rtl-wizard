@@ -1,0 +1,11 @@
+diff --git a/example/sim/simReedSolomon.v b/example/sim/simReedSolomon.v
+index f2bc83890..52a6b704b 100644
+--- a/example/sim/simReedSolomon.v
++++ b/example/sim/simReedSolomon.v
+@@ -773,5 +773,6 @@ module simReedSolomon;
+       #(period*99999999);
+       #(period*99999999);
+       #(period*99999999);
++      $fatal(1, "RS testbench timed out without simOver");
+    end
+ endmodule

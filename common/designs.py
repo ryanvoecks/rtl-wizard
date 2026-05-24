@@ -3,6 +3,10 @@
 Each design is wired up inline: enough RTL discovery to find its sources,
 its testbench runner, and one `DesignConfig` literal per variant. The
 combined `all_designs` tree is what every downstream consumer reads.
+
+Per-design test invocation lives in `common/scripts/<name>.sh`. Each
+script is run from the design root by `DesignConfig.run_tb()` and must
+exit 0 on pass / non-zero on fail; stdout/stderr go back to the caller.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from common.config import (
     MSHR_CACHE,
     R22SDF,
     REED_SOLOMON,
+    SCRIPTS_DIR,
     SHA512,
     SYSTOLIC_TPU,
     VERILOG_AXI,
@@ -39,8 +44,7 @@ aes_reference = DesignConfig(
     rtl_dir=AES_RTL_DIR,
     rtl_files=tuple(f.relative_to(_aes_abs_rtl_dir) for f in _aes_abs_files),
     top_module="aes",
-    run_tb_cmd="cd toolruns && make top.sim && ./top.sim",
-    tb_pass_str="test cases completed successfully",
+    test_script=SCRIPTS_DIR / "aes.sh",
 )
 
 
@@ -55,10 +59,6 @@ DOUBLE_FPU_RTL = (
     "fpu_round.v",
     "fpu_exceptions.v",
 )
-DOUBLE_FPU_TB = "fpu_TB.v"
-DOUBLE_FPU_TB_TOP = "fpu_tb"
-
-_double_fpu_sources = " ".join((*DOUBLE_FPU_RTL, DOUBLE_FPU_TB))
 double_fpu_reference = DesignConfig(
     benchmark="opencores",
     name="double_fpu",
@@ -67,14 +67,7 @@ double_fpu_reference = DesignConfig(
     rtl_dir=Path("."),
     rtl_files=tuple(Path(f) for f in DOUBLE_FPU_RTL),
     top_module="fpu",
-    run_tb_cmd=(
-        f"verilator --binary --timing --top-module {DOUBLE_FPU_TB_TOP} "
-        f"-Wno-fatal {_double_fpu_sources} && "
-        f"obj_dir/V{DOUBLE_FPU_TB_TOP} | tee fpu_sim.log && "
-        f"! grep -q 'Error! out is incorrect' fpu_sim.log && "
-        f"echo FPU_ALL_PASSED"
-    ),
-    tb_pass_str="FPU_ALL_PASSED",
+    test_script=SCRIPTS_DIR / "double_fpu.sh",
 )
 
 
@@ -97,7 +90,6 @@ REED_SOLOMON_DECODER_RTL = (
     "RsEncodeTop.v",
 )
 
-_reed_solomon_sources = " ".join(f"../rtl/{f}" for f in REED_SOLOMON_DECODER_RTL)
 reed_solomon_reference = DesignConfig(
     benchmark="opencores",
     name="reed_solomon",
@@ -106,15 +98,7 @@ reed_solomon_reference = DesignConfig(
     rtl_dir=REED_SOLOMON_RTL_DIR,
     rtl_files=tuple(Path(f) for f in REED_SOLOMON_DECODER_RTL),
     top_module="RsDecodeTop",
-    run_tb_cmd=(
-        "cd example/sim && "
-        f"iverilog -o simReedSolomon.vvp simReedSolomon.v {_reed_solomon_sources} && "
-        "vvp simReedSolomon.vvp && "
-        "cat result.out && "
-        "! grep -q NG result.out && "
-        "echo RS_ALL_PASSED"
-    ),
-    tb_pass_str="RS_ALL_PASSED",
+    test_script=SCRIPTS_DIR / "reed_solomon.sh",
     clock_port="CLK",
 )
 
@@ -133,8 +117,7 @@ sha512_reference = DesignConfig(
     rtl_dir=SHA512_RTL_DIR,
     rtl_files=tuple(f.relative_to(_sha512_abs_rtl_dir) for f in _sha512_abs_files),
     top_module="sha512",
-    run_tb_cmd="cd toolruns && make top.sim && ./top.sim",
-    tb_pass_str="test cases completed successfully",
+    test_script=SCRIPTS_DIR / "sha512.sh",
     tb_timeout_s=180,
 )
 
@@ -157,9 +140,6 @@ JPEG_RTL = (
     Path("run_length_coding") / "rtl" / "verilog" / "jpeg_rzs.v",
     Path("run_length_coding") / "rtl" / "verilog" / "jpeg_rle1.v",
 )
-_jpeg_tb = "common/jpeg/bench/verilog/bench_top.v"
-_jpeg_rtl_sources = " ".join(str(JPEG_RTL_DIR / f) for f in JPEG_RTL)
-_jpeg_incdirs = "-I common/qnr/bench/verilog -I common/dct/rtl/verilog"
 jpeg_encoder_reference = DesignConfig(
     benchmark="opencores",
     name="jpeg_encoder",
@@ -169,13 +149,7 @@ jpeg_encoder_reference = DesignConfig(
     rtl_files=JPEG_RTL,
     top_module="jpeg_encoder",
     include_dirs=(Path("dct") / "rtl" / "verilog",),
-    run_tb_cmd=(
-        f"iverilog -o jpeg.sim {_jpeg_incdirs} {_jpeg_tb} {_jpeg_rtl_sources} && "
-        "vvp -n jpeg.sim | tee jpeg_sim.log && "
-        "grep -qE 'Total errors:[[:space:]]+0$' jpeg_sim.log && "
-        "echo JPEG_ALL_PASSED"
-    ),
-    tb_pass_str="JPEG_ALL_PASSED",
+    test_script=SCRIPTS_DIR / "jpeg_encoder.sh",
     tb_timeout_s=600,
 )
 
@@ -191,10 +165,6 @@ SYSTOLIC_TPU_RTL = (
     Path("addr_sel.v"),
     Path("write_out.v"),
 )
-SYSTOLIC_TPU_TB_SOURCES = (
-    "test_tpu.v tpu_top.v systolic.v systolic_controll.v "
-    "quantize.v addr_sel.v write_out.v sram_16x128b.v sram_256x32b.v"
-)
 systolic_tpu_reference = DesignConfig(
     benchmark="abdelazeem201",
     name="systolic_tpu",
@@ -203,12 +173,7 @@ systolic_tpu_reference = DesignConfig(
     rtl_dir=SYSTOLIC_TPU_RTL_DIR,
     rtl_files=SYSTOLIC_TPU_RTL,
     top_module="tpu_top",
-    run_tb_cmd=(
-        f"cd {SYSTOLIC_TPU_RTL_DIR} && "
-        f"iverilog -g2012 -o tpu.sim {SYSTOLIC_TPU_TB_SOURCES} && "
-        "vvp tpu.sim"
-    ),
-    tb_pass_str="TPU_ALL_PASSED",
+    test_script=SCRIPTS_DIR / "systolic_tpu.sh",
     tb_timeout_s=120,
 )
 
@@ -225,12 +190,6 @@ systolic_tpu_reference = DesignConfig(
 # at setup time. It lives under `tb/axi_crossbar/` rather than `rtl/`;
 # ORFS's snapshot copies it flat alongside the rest, so the basename
 # collision check is fine.
-#
-# Verification is the upstream cocotb regression (33 cases: writes,
-# reads, stress); see Makefile in `tb/axi_crossbar/`. The cocotb stack
-# is installed system-wide in the devcontainer image (see
-# `.devcontainer/Dockerfile`), pinned to <2.0 because 2.x breaks a
-# pre-reset X-coerce path the bench relies on.
 
 VERILOG_AXI_RTL = (
     Path("rtl") / "arbiter.v",
@@ -251,8 +210,7 @@ verilog_axi_reference = DesignConfig(
     rtl_dir=Path("."),
     rtl_files=VERILOG_AXI_RTL,
     top_module="axi_crossbar_wrap_8x8",
-    run_tb_cmd=("PARAM_S_COUNT=8 PARAM_M_COUNT=8 make -C tb/axi_crossbar"),
-    tb_pass_str="FAIL=0 SKIP=0",
+    test_script=SCRIPTS_DIR / "verilog_axi.sh",
     tb_timeout_s=300,
 )
 
@@ -270,13 +228,10 @@ verilog_axi_reference = DesignConfig(
 # output5.txt. The committed copies of those files are the golden
 # reference; `common/patches/r22sdf.diff` snapshots them as
 # output4_golden.txt / output5_golden.txt before the TB runs and
-# overwrites them. Pass/fail is a diff against the snapshot. The
-# committed reference files have CRLF line endings (Windows-authored
-# repo), so the patch normalizes the goldens to LF -- and we strip \r
-# from the TB's freshly-written output before diffing. The conversion
-# is done with `sed` writing to a sibling file rather than bash process
-# substitution, since `DesignConfig.run_tb()` runs the command under
-# /bin/sh.
+# overwrites them. The patch also adds two structural impulse tests so
+# the TB self-checks for the analytic DFT result (constant across all
+# bins) -- catching twiddle-ROM corruption, butterfly Re/Im swap, sign
+# flips, or per-stage errors the snapshot diff might silently tolerate.
 #
 # The sim directory is named `fft_128_tc` (twiddle-compressed) but
 # TB128.v depends only on FFT's external interface, so swapping in
@@ -294,7 +249,6 @@ R22SDF_RTL = (
     Path("Multiply.v"),
     Path("Twiddle128.v"),
 )
-_r22sdf_rtl_sources = " ".join(f"../../verilog/{f.name}" for f in R22SDF_RTL)
 r22sdf_reference = DesignConfig(
     benchmark="nanamake",
     name="r22sdf",
@@ -304,16 +258,7 @@ r22sdf_reference = DesignConfig(
     rtl_files=R22SDF_RTL,
     top_module="FFT",
     clock_port="clock",
-    run_tb_cmd=(
-        "cd sim/fft_128_tc && "
-        f"iverilog -o tb128.vvp {_r22sdf_rtl_sources} TB128.v && "
-        "vvp tb128.vvp && "
-        "sed -i 's/\\r$//' output4.txt output5.txt && "
-        "diff output4.txt output4_golden.txt && "
-        "diff output5.txt output5_golden.txt && "
-        "echo R22SDF_ALL_PASSED"
-    ),
-    tb_pass_str="R22SDF_ALL_PASSED",
+    test_script=SCRIPTS_DIR / "r22sdf.sh",
     tb_timeout_s=120,
 )
 
@@ -333,7 +278,7 @@ r22sdf_reference = DesignConfig(
 # drives 128 stimuli (zeros, all-ones, sorted, reverse-sorted,
 # duplicates, then random), captures `data_out` every cycle, and
 # compares against a software insertion sort at the right pipeline
-# offset. Pass string: `BITONIC_ALL_PASSED`.
+# offset.
 
 BITONIC_SORTER_RTL_DIR = Path("hdl") / "basic"
 BITONIC_SORTER_RTL = (
@@ -341,9 +286,6 @@ BITONIC_SORTER_RTL = (
     Path("bitonic_node.v"),
     Path("bitonic_block.v"),
     Path("bitonic_sort.v"),
-)
-_bitonic_sorter_rtl_sources = " ".join(
-    str(BITONIC_SORTER_RTL_DIR / f) for f in BITONIC_SORTER_RTL
 )
 bitonic_sorter_reference = DesignConfig(
     benchmark="mcjtag",
@@ -353,13 +295,7 @@ bitonic_sorter_reference = DesignConfig(
     rtl_dir=BITONIC_SORTER_RTL_DIR,
     rtl_files=BITONIC_SORTER_RTL,
     top_module="bitonic_sort",
-    run_tb_cmd=(
-        f"iverilog -g2012 -o test/tb.vvp test/tb_bitonic_sort.v "
-        f"{_bitonic_sorter_rtl_sources} && "
-        "vvp test/tb.vvp"
-    ),
-    tb_pass_str="BITONIC_ALL_PASSED",
-    tb_timeout_s=60,
+    test_script=SCRIPTS_DIR / "bitonic_sorter.sh",
 )
 
 
@@ -373,15 +309,10 @@ bitonic_sorter_reference = DesignConfig(
 #
 # `common/patches/viterbi.diff` comments out two Synopsys-only calls
 # (`$fsdbDumpfile` / `$fsdbDumpvars`) in tb_tcase1.v so the TB builds under
-# iverilog. We deliberately exclude the upstream `sram_24x2048.v` from the
-# compile list -- it redeclares the same `sram_24x4096` module that
-# `sram_24x4096.v` already provides, so including both is a duplicate-module
-# error.
-#
-# tb_tcase1 runs the K=7 rate-1/2 case (polynomials 0o117/0o155, 192-bit
-# frame x100) and dumps the decoded bitstream to case1_tv_data_out.txt; we
-# diff that against the shipped golden `testvectors/case1_tv/output.txt`
-# (19,200 lines, exact match) to gate pass/fail.
+# iverilog. The other tcase files don't reference fsdb so they build clean.
+# We deliberately exclude the upstream `sram_24x2048.v` from the compile
+# list -- it redeclares the same `sram_24x4096` module that `sram_24x4096.v`
+# already provides, so including both is a duplicate-module error.
 
 VITERBI_RTL = (
     Path("viterbi_core.v"),
@@ -390,8 +321,6 @@ VITERBI_RTL = (
     Path("pm_normalize.v"),
     Path("traceback.v"),
 )
-_viterbi_rtl_sources = " ".join(str(f) for f in VITERBI_RTL)
-_viterbi_tb_extra_sources = "sram_64x64.v sram_24x4096.v tb_tcase1.v"
 viterbi_reference = DesignConfig(
     benchmark="coole198669",
     name="viterbi",
@@ -401,16 +330,8 @@ viterbi_reference = DesignConfig(
     rtl_files=VITERBI_RTL,
     top_module="viterbi_core",
     clock_port="clk_i",
-    run_tb_cmd=(
-        f"iverilog -g2005 -o sim.vvp {_viterbi_rtl_sources} "
-        f"{_viterbi_tb_extra_sources} && "
-        "vvp -n sim.vvp > sim.log && "
-        # golden output has a trailing space on every line; -w ignores it.
-        "diff -wq case1_tv_data_out.txt testvectors/case1_tv/output.txt && "
-        "echo VITERBI_ALL_PASSED"
-    ),
-    tb_pass_str="VITERBI_ALL_PASSED",
-    tb_timeout_s=120,
+    test_script=SCRIPTS_DIR / "viterbi.sh",
+    tb_timeout_s=300,
 )
 
 
@@ -425,13 +346,6 @@ viterbi_reference = DesignConfig(
 # and backing-mem `mem_model` all parameterize off the same `define`), which
 # scales the storage-dominated cell count to ~28k while leaving the cache
 # geometry (4 sets x 2 ways x 4 MSHRs) and every testbench address untouched.
-#
-# The testbench drives six self-checking scenarios (write-then-read, cold
-# miss/fill/hit, MSHR-full on a 5th outstanding miss, miss coalescing on a
-# repeated address, and LRU eviction) and prints `ALL TESTS PASSED` iff its
-# internal `fail_count` stays at 0. iverilog 2012 builds and runs the whole
-# `defines.v + cache.v + mem_model.v + testbench.v` set in one shot -- no
-# memh files, no scripts, no toolchain.
 #
 # CTS quirk: the cache's wide-register arrays (cache_data + MSHR write/coal
 # buffers, each NUM_SETS*NUM_WAYS*BLOCK_SIZE bits) push the hold-buffer count
@@ -465,12 +379,7 @@ mshr_cache_reference = DesignConfig(
     rtl_dir=Path("."),
     rtl_files=MSHR_CACHE_RTL,
     top_module="cache",
-    run_tb_cmd=(
-        "iverilog -g2012 -o sim.vvp defines.v cache.v mem_model.v testbench.v && "
-        "vvp -n sim.vvp"
-    ),
-    tb_pass_str="ALL TESTS PASSED",
-    tb_timeout_s=60,
+    test_script=SCRIPTS_DIR / "mshr_cache.sh",
     pre_cts_tcl=_MSHR_CACHE_PRE_CTS_TCL,
 )
 
@@ -547,17 +456,8 @@ e203_reference = DesignConfig(
     # `include "config.v"` and `include "e203_defines.v"` resolve to core/.
     include_dirs=(Path(E203_CORE),),
     top_module="e203_cpu_top",
-    # The upstream vsim Makefile drives: copy RTL+TB into install/ ->
-    # iverilog compile (with a `define iverilog injected into install/tb/
-    # tb_top.v by run.makefile's sed) -> vvp on the pre-built test hex.
-    # rv32ui-p-add is the cheapest representative; the iverilog compile
-    # dominates wall time (~30s), the actual run is a few seconds.
-    run_tb_cmd=(
-        "cd vsim && make install >/dev/null && make compile >/dev/null && "
-        "make run_test TESTNAME=rv32ui-p-add DUMPWAVE=0"
-    ),
-    tb_pass_str="TEST_PASS",
-    tb_timeout_s=180,
+    test_script=SCRIPTS_DIR / "e203.sh",
+    tb_timeout_s=300,
 )
 
 
