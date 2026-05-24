@@ -31,6 +31,8 @@ BITONIC_SORTER = EXTERNAL / "bitonic_sorter"
 VITERBI = EXTERNAL / "viterbi"
 MSHR_CACHE = EXTERNAL / "mshr_cache"
 E203 = EXTERNAL / "e203"
+WB_DMA = EXTERNAL / "wb_dma"
+UBERDDR3 = EXTERNAL / "uberddr3"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
