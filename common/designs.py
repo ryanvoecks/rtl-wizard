@@ -19,8 +19,6 @@ from common.config import (
     DOUBLE_FPU,
     E203,
     JPEG_ENCODER,
-    MSHR_CACHE,
-    R22SDF,
     REED_SOLOMON,
     SCRIPTS_DIR,
     SHA512,
@@ -217,54 +215,6 @@ verilog_axi_reference = DesignConfig(
 )
 
 
-# nanamake/r22sdf
-#
-# Radix-2^2 single-path delay feedback pipelined FFT. We synthesize the
-# 128-point / 16-bit basic configuration (no twiddle compression). At
-# nangate45 this lands ~26.4k cells -- comfortably in the 20-50k window.
-# Single `clock` domain (async-reset only), pure Verilog, no memory
-# macros (the SDF delay buffers synthesize as shift registers).
-#
-# The repo's testbench (sim/fft_128_tc/TB128.v) drives two stimulus
-# vectors and `$fdisplay`s the bit-reversed outputs to output4.txt and
-# output5.txt. The committed copies of those files are the golden
-# reference; `common/patches/r22sdf.diff` snapshots them as
-# output4_golden.txt / output5_golden.txt before the TB runs and
-# overwrites them. The patch also adds two structural impulse tests so
-# the TB self-checks for the analytic DFT result (constant across all
-# bins) -- catching twiddle-ROM corruption, butterfly Re/Im swap, sign
-# flips, or per-stage errors the snapshot diff might silently tolerate.
-#
-# The sim directory is named `fft_128_tc` (twiddle-compressed) but
-# TB128.v depends only on FFT's external interface, so swapping in
-# `SdfUnit.v` + the full `Twiddle128.v` table in place of `SdfUnit_TC.v`
-# + `TwiddleConvert8.v` produces matching outputs while keeping the
-# basic, more easily-readable RTL as the synth target.
-
-R22SDF_RTL_DIR = Path("verilog")
-R22SDF_RTL = (
-    Path("FFT128.v"),
-    Path("SdfUnit.v"),
-    Path("SdfUnit2.v"),
-    Path("Butterfly.v"),
-    Path("DelayBuffer.v"),
-    Path("Multiply.v"),
-    Path("Twiddle128.v"),
-)
-r22sdf_reference = DesignConfig(
-    benchmark="nanamake",
-    name="r22sdf",
-    variant="reference",
-    root=R22SDF,
-    rtl_dir=R22SDF_RTL_DIR,
-    rtl_files=R22SDF_RTL,
-    top_module="FFT",
-    clock_port="clock",
-    test_script=SCRIPTS_DIR / "r22sdf.sh",
-    tb_timeout_s=120,
-)
-
-
 # mcjtag/bitonic_sorter
 #
 # Fully-pipelined Batcher bitonic sorting network. We synthesize the
@@ -334,55 +284,6 @@ viterbi_reference = DesignConfig(
     clock_port="clk_i",
     test_script=SCRIPTS_DIR / "viterbi.sh",
     tb_timeout_s=300,
-)
-
-
-# brownie-crumble/mshr-cache-verification
-#
-# Non-blocking L1 cache with 2-way set-associative LRU, 4-entry coalescing
-# MSHRs, and a latency-modelled backing memory. Pure Verilog, single `clk`
-# domain (the `rst` input is async-reset only, not a second clock). Upstream
-# ships defaults of NUM_SETS=4, NUM_WAYS=2, BLOCK_SIZE=8 -- the resulting
-# datapath is ~1k cells, well below our 20-50k-cell window. The patch widens
-# `BLOCK_SIZE` to 384 bits (the cache, MSHR data buffers, coalescing buffers
-# and backing-mem `mem_model` all parameterize off the same `define`), which
-# scales the storage-dominated cell count to ~28k while leaving the cache
-# geometry (4 sets x 2 ways x 4 MSHRs) and every testbench address untouched.
-#
-# CTS quirk: the cache's wide-register arrays (cache_data + MSHR write/coal
-# buffers, each NUM_SETS*NUM_WAYS*BLOCK_SIZE bits) push the hold-buffer count
-# past OpenROAD's default `max_buffer_percent` of 20 during repair_timing in
-# the calibration's sparse 1000-um die. The `pre_cts_tcl` hook redefines
-# `repair_timing_helper` to call `repair_timing -max_buffer_percent 80` so
-# all hold violations can be repaired; with that, calibration closes with
-# WNS/TNS/hold_violation_count all 0.
-
-_MSHR_CACHE_PRE_CTS_TCL = """\
-# Storage-heavy designs (wide-register arrays) exceed repair_timing's default
-# 20% hold-buffer cap when the calibration die is sparse. Raise it to 80%.
-rename repair_timing_helper repair_timing_helper_orig
-proc repair_timing_helper {} {
-  log_cmd repair_timing -max_buffer_percent 80 -verbose
-}
-"""
-
-MSHR_CACHE_RTL = (
-    # defines.v is `define-only and is `included by cache.v; yosys parses it
-    # cleanly (it contributes no modules) and we copy it into inputs/rtl/
-    # alongside cache.v so the include resolves without a separate +incdir.
-    Path("defines.v"),
-    Path("cache.v"),
-)
-mshr_cache_reference = DesignConfig(
-    benchmark="brownie-crumble",
-    name="mshr_cache",
-    variant="reference",
-    root=MSHR_CACHE,
-    rtl_dir=Path("."),
-    rtl_files=MSHR_CACHE_RTL,
-    top_module="cache",
-    test_script=SCRIPTS_DIR / "mshr_cache.sh",
-    pre_cts_tcl=_MSHR_CACHE_PRE_CTS_TCL,
 )
 
 
@@ -578,17 +479,11 @@ all_designs: DesignTree = {
     "forencich": {
         "verilog_axi": {"reference": verilog_axi_reference},
     },
-    "nanamake": {
-        "r22sdf": {"reference": r22sdf_reference},
-    },
     "mcjtag": {
         "bitonic_sorter": {"reference": bitonic_sorter_reference},
     },
     "coole198669": {
         "viterbi": {"reference": viterbi_reference},
-    },
-    "brownie-crumble": {
-        "mshr_cache": {"reference": mshr_cache_reference},
     },
     "riscv-mcu": {
         "e203": {"reference": e203_reference},
