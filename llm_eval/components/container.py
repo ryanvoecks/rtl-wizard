@@ -1,22 +1,19 @@
 """Single Docker container for the Claude Code agent - one devcontainer for the
 whole eval. Context manager: `__enter__` creates+starts the container, `__exit__`
 removes it. `execute` shells into it via `docker compose exec` and is intended
-to be called inside the `with` block. The runtime-only `shared` network is
-injected via a generated override file."""
+to be called inside the `with` block."""
 
 from __future__ import annotations
 
 import subprocess
 from dataclasses import dataclass
 
-import yaml
-from components.mcp_connect import discover_shared_network
-
 from common.config import LLM_EVAL
+
+from .mcp_connect import discover_host_ip
 
 SANDBOX_DIR = LLM_EVAL / "sandbox"
 COMPOSE_FILE = SANDBOX_DIR / "compose.yaml"
-COMPOSE_OVERRIDE = SANDBOX_DIR / "compose.override.yaml"  # gitignored
 PROJECT = "rtl-wizard"
 SERVICE = "solver"
 OAUTH_HOME = "/opt/claude-oauth"
@@ -31,19 +28,11 @@ class ExecResult:
     stderr: str
 
 
-def _write_override() -> None:
-    """Write the runtime-only patches to `compose.override.yaml`. Idempotent."""
-    network, _ = discover_shared_network()
-    override = {"networks": {"shared": {"name": network}}}
-    COMPOSE_OVERRIDE.write_text(yaml.safe_dump(override))
-
-
 class Container:
     """Context manager wrapper around `docker compose` for the sandbox service."""
 
     def __enter__(self) -> Container:
         """Build (if needed), create, and start the container."""
-        _write_override()
         self._compose("create")
         self._compose("start")
 
@@ -53,7 +42,7 @@ class Container:
         # Use tinyproxy filter to block everything except anthropic and the MCP server.
         # ClaudeEnv sets HTTPS_PROXY/HTTP_PROXY to http://127.0.0.1:8888 so all of
         # claude's outbound traffic gets filtered here
-        _, host_ip = discover_shared_network()
+        host_ip = discover_host_ip()
         self.execute(
             ["tee", "/etc/tinyproxy/filter"],
             input=f"^.*\\.anthropic\\.com$\n^{host_ip}$\n",
@@ -137,6 +126,4 @@ class Container:
             PROJECT,
             "-f",
             str(COMPOSE_FILE),
-            "-f",
-            str(COMPOSE_OVERRIDE),
         ]

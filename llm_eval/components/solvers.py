@@ -11,8 +11,6 @@ aren't shared across containers (TOS: one login per "device").
 import asyncio
 import json
 
-from claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
-from container import Container
 from inspect_ai.agent import AgentState, agent
 from inspect_ai.model import (
     ChatCompletionChoice,
@@ -29,6 +27,8 @@ from inspect_ai.util import store
 
 from common.config import TargetConfig
 
+from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
+from .container import Container
 from .mcp_connect import MCPService
 from .mcp_servers import make_server
 

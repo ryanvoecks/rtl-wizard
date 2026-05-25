@@ -10,8 +10,8 @@ container (which keeps one OAUTH Claude Code session across samples).
 
 from datetime import datetime
 
+from components.container import Container
 from components.tasks import optimize_timing
-from container import Container
 from inspect_ai import eval as inspect_eval
 
 from common.config import LLM_RESULTS

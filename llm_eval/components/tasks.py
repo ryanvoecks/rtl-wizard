@@ -8,14 +8,14 @@ stages RTL into it, so samples are fully independent.
 
 from pathlib import Path
 
-from claude_env import SANDBOX_RTL_ROOT
-from container import Container
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 
 from common.config import TargetConfig
 from common.targets import all_targets
 
+from .claude_env import SANDBOX_RTL_ROOT
+from .container import Container
 from .scorers import synthesis, testbench
 from .solvers import claude_code_solver
 

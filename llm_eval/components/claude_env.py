@@ -13,9 +13,9 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-from container import OAUTH_HOME, Container, ExecResult
-
 from common.config import DesignConfig
+
+from .container import OAUTH_HOME, Container, ExecResult
 
 # RTL is staged under this prefix inside each env's workdir
 SANDBOX_RTL_ROOT = "rtl"
