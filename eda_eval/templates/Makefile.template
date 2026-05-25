@@ -18,10 +18,6 @@ export FLOW_TARGETS  = {flow_targets}
 # TODO: Replace the inferred flop-memories with openRAM/fakeRAM macros
 export SYNTH_MEMORY_MAX_BITS = 65536
 
-# Optional per-design pre-CTS TCL hook (empty when DesignConfig.pre_cts_tcl is "").
-# ORFS's `source_step_tcl PRE CTS` only sources it when this var is non-empty.
-export PRE_CTS_TCL = {pre_cts_tcl_path}
-
 THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 
 .DEFAULT_GOAL := flow

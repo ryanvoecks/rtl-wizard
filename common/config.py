@@ -64,13 +64,11 @@ class StudyConfig:
     platform: str = "nangate45"  # ORFS PDK
     calibration_period_ns: float = 0.5  # over-constrained period for calibration
     calibration_side_um: float = 1000.0  # under-constrained area for calibration
-    target_multiplier: float = 1.1  # safety factor on calibration-derived period
     target_utilization: float = 0.6  # core utilization target for the final phase
-    area_multiplier: float = 1.1  # safety factor on calibration cell area
     minimum_side_um: float = 50.0  # floor on final floorplan side
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
-    io_delay_ns: float = 0.2  # fixed IO delay at each boundary
+    io_delay_fraction: float = 0.4  # IO delay as a fraction of clock period
     seed: int = 0  # seed passed to detailed routing
 
 
@@ -89,10 +87,6 @@ class DesignConfig:
     tb_timeout_s: int = 60  # wall-clock cap on the full tb command
     clock_port: str = "clk"  # top-level port driven by the SDC clock
     include_dirs: tuple[Path, ...] = ()  # source dirs added to yosys's `+incdir`
-    pre_cts_tcl: str = ""  # if non-empty, written to inputs/pre_cts.tcl and
-    # exported as PRE_CTS_TCL so ORFS's `source_step_tcl PRE CTS` picks it up.
-    # Use for per-design CTS overrides (e.g. raising repair_timing's
-    # max_buffer_percent for storage-heavy designs).
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:

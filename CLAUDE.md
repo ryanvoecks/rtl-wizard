@@ -60,7 +60,6 @@ Every design is a `DesignConfig` (frozen dataclass) emitted inline in `designs.p
 - `test_script` (`common/scripts/<name>.sh`): runs from `design.root`, returns 0 on pass. The script is the *only* contract for testbench pass/fail -- `DesignConfig.run_tb()` shells out to it and treats stdout/stderr as opaque diagnostics.
 - `tb_timeout_s` per design -- defaults to 60s, raised for slow benches (jpeg_encoder at 600, wb_dma at 600).
 - `include_dirs` for designs with `\`include` directives (e203 needs `core/`, jpeg_encoder needs `dct/rtl/verilog/`).
-- Optional `pre_cts_tcl`: written to `inputs/pre_cts.tcl` and exported as `PRE_CTS_TCL` so ORFS's `source_step_tcl PRE CTS` hook picks it up. Use for storage-heavy designs that need repair_timing's `max_buffer_percent` raised.
 
 Each design has comments above its block documenting *why* the file list and patch are what they are -- read those before editing, they record load-bearing decisions (e.g. uberddr3 only synthesizes the controller, not the PHY; verilog_axi uses the 8x8 wrapper not the parameterized crossbar; e203 deliberately removes ITCM/DTCM RAMs).
 
@@ -79,7 +78,7 @@ Calibration failures are tracked per group: the variants in a failed group still
 There are three calibration entry points; pick the right one:
 
 - `eda_eval/run.py` -- single-shot calibration (10ns + 1000um) per group, then full P&R at the derived period for every variant. The default end-to-end flow.
-- `eda_eval/calibrate.py` -- two-phase fmax convergence for a single design. (1) Loose-period synth-only run on the large calibration die; the post-synth cell area feeds `derive_final_side_um` to lock in the target floorplan. (2) Iterate synth-only with `t_next = t - synth_wns_ns` until consecutive runs differ on fmax by less than `--tolerance` (default 2.5%). (3) Switch to full synth + P&R starting from the synth-converged period and iterate `t_next = t - route_ws_ns` to the same tolerance. Writes `calibration.json` plus per-iteration phase dirs under `eda_results/<batch>/__iter_calibration__/<benchmark>/<name>/{iter_synth_<i>,iter_pnr_<j>}/` -- the directory naming is what `llm_eval/generate.py` and `_synth_and_report` look for (they expect `iter_pnr_0` for the first routed output).
+- `eda_eval/calibrate.py` -- three-step deterministic calibration for a single design (no iteration loops): (1) synth-only at an over-constrained clock (default 0.5 ns) on a 1mm x 1mm die; record `synth_ws_ns` and `synth_area_um2`. (2) first full P&R at `T2 = T1 - synth_ws_1` (synth's projected period) and `side2 = derive_final_side_um(synth_area_1, cfg)`. (3) second full P&R at `T3 = T2 - route_ws_2` (predicts `route_ws -> 0`) and `side3 = derive_final_side_um(route_area_2, cfg)` -- re-deriving the die from post-route stdcell area corrects the utilisation for CTS + repair_timing buffers that synth didn't see. Step 3's `(period, side)` are the calibrated outputs. Writes `calibration.json` plus three phase dirs `iter_synth_0/`, `iter_pnr_0/`, `iter_pnr_1/` under `eda_results/<batch>/__iter_calibration__/<benchmark>/<name>/`.
 - `eda_eval/scope.py` -- three-phase scoping: (A) fixed-point to `T_baseline` with `k=0`, (B) shrink period until fix scope (modules / start stems / LOC touched by negative-slack paths) exceeds budget, (C) bisect to refine `T_sweet`. Used to decide whether a design is interesting to optimise at all.
 
 ### Logical-path analysis (`eda_eval/analyse.py`)
@@ -119,17 +118,13 @@ Both the `synthesis` and `testbench` scorers, plus both MCP tools (`run_testbenc
 
 This keeps the agent's working tree separable from the host's git checkout, lets the scorers replay a saved `diff.patch` after the run, and means an in-flight MCP tool call doesn't race the scorer (each gets its own tempdir copy).
 
-### `llm_eval/generate.py` -- one-shot seeded Claude CLI
-
-Older / simpler path: `generate.py` stages a fresh copy of `external/aes/` into `llm_results/<ts>/secworks/aes/` and invokes `claude -p --dangerously-skip-permissions <prompt>` once, inlining the most recent `iter_calibration` run's `logical_paths.rpt`. This bypasses Inspect entirely and has no scorer -- artifacts are just the edited copy. Useful for quick prompt iteration; the canonical entry point is `llm_eval/run.py`.
-
 ## Conventions specific to this repo
 
 - **Import paths assume the repo root is on sys.path.** Top-level packages are `common`, `eda_eval`, `llm_eval`; `pyproject.toml` declares `packages = ["common", "eda_eval"]` for the wheel build, but in dev you're relying on `uv run` setting the cwd correctly. If you add a script, run it via `uv run <path>` from the repo root, never `cd <subdir> && uv run script.py`.
 - **ASCII-only.** Pre-commit's pygrep `[^\x00-\x7F]` blocks non-ASCII characters in tracked files. If you copy text from an external doc, scrub smart quotes / em-dashes before committing.
 - **No emojis anywhere** (in code, in commits, in tool outputs). The ASCII check enforces this mechanically.
 - **`tmp/` is scratch and gitignored.** Use it for one-off experiments; don't commit anything from it.
-- **Timestamp format `%Y-%m-%d_%H-%M-%S`** is used everywhere (`eda_results/`, `llm_results/`, generate.py, etc.) -- it sorts lexicographically, so "latest run" is `sorted(...)[-1]`. Don't switch formats.
+- **Timestamp format `%Y-%m-%d_%H-%M-%S`** is used everywhere (`eda_results/`, `llm_results/`, etc.) -- it sorts lexicographically, so "latest run" is `sorted(...)[-1]`. Don't switch formats.
 - **Per-key NaN, not zero, signals "scoring skipped/failed".** Inspect's per-key score aggregation filters NaN out of means automatically; zeros would be averaged in.
 - **`StudyConfig`, `DesignConfig`, `TargetConfig`, `RunConfig` are all frozen dataclasses.** Mutate via `dataclasses.replace(...)`, not field assignment. The scorers / MCP tools rely on this (they `replace(design, root=<copy>)` to redirect at the patched tempdir without touching the canonical registry entry).
 - **The devcontainer caps KLayout's build parallelism via a sed-patch on `ORFS/etc/DependencyInstaller.sh`** (changing `numThreads=$(nproc)` to `numThreads=2`). KLayout templates can use 4+ GB per cc1plus and OOM hosts under 16 GB. The sandbox Dockerfile doesn't build EDA tools at all so doesn't need this.
