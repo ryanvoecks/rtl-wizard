@@ -1,6 +1,8 @@
-"""Single long-lived Docker container for the Claude Code agent - one devcontainer for
-the whole eval. Stateless wrapper around `docker compose` on the fixed PROJECT/SERVICE;
-the runtime-only `shared` network is injected via a generated override file."""
+"""Single Docker container for the Claude Code agent - one devcontainer for the
+whole eval. Context manager: `__enter__` creates+starts the container, `__exit__`
+removes it. `execute` shells into it via `docker compose exec` and is intended
+to be called inside the `with` block. The runtime-only `shared` network is
+injected via a generated override file."""
 
 from __future__ import annotations
 
@@ -36,30 +38,41 @@ def _write_override() -> None:
 
 
 class Container:
-    """Lifecycle wrapper around `docker compose` for the sandbox service."""
+    """Context manager wrapper around `docker compose` for the sandbox service."""
 
-    def create(self) -> None:
-        """`docker compose create` (builds the image if missing)."""
+    def __enter__(self) -> Container:
+        """Build (if needed), create, and start the container."""
         _write_override()
         self._compose("create")
-
-    def start(self) -> None:
-        """`docker compose start` the created container."""
-        _write_override()
         self._compose("start")
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        """`docker compose down` -- stops and removes the container."""
+        self._compose("down")
 
     def execute(
         self,
         cmd: list[str],
         *,
         input: str | None = None,
+        env: dict[str, str] | None = None,
+        user: str | None = None,
+        workdir: str | None = None,
         timeout: float | None = None,
     ) -> ExecResult:
         """`docker compose exec` a command in the running container."""
-        _write_override()
         # -T disables TTY allocation so this works from non-interactive callers.
+        args: list[str] = [*self._compose_prefix(), "exec", "-T"]
+        if user is not None:
+            args += ["--user", user]
+        if workdir is not None:
+            args += ["--workdir", workdir]
+        for k, v in (env or {}).items():
+            args += ["--env", f"{k}={v}"]
+        args += [SERVICE, *cmd]
         proc = subprocess.run(
-            [*self._compose_prefix(), "exec", "-T", SERVICE, *cmd],
+            args,
             input=input,
             capture_output=True,
             text=True,
@@ -71,11 +84,6 @@ class Container:
             stdout=proc.stdout,
             stderr=proc.stderr,
         )
-
-    def stop(self) -> None:
-        """`docker compose stop` (stops container)."""
-        _write_override()
-        self._compose("stop")
 
     def _compose(self, *args: str) -> None:
         result = subprocess.run(

@@ -1,14 +1,20 @@
 """Custom Claude Code agent driven by an OAUTH token, not an API key.
 
-Shells out to `claude -p --output-format stream-json` in the sandbox and
-translates each event into Inspect chat-message form so the .eval log is
-viewable in `inspect view`. `CLAUDE_CODE_OAUTH_TOKEN` is injected per
-`sb.exec(env=...)`; ANTHROPIC_API_KEY is *not* forwarded (CLI prefers it).
+Spins up a per-sample `ClaudeEnv` (fresh unix user + workdir) inside the
+long-lived sandbox container, stages the design's RTL into it, runs
+`claude -p` as that user, and captures the resulting RTL diff into
+`store()` for the scorers to consume. `CLAUDE_CODE_OAUTH_TOKEN` is passed
+via `docker exec --env` (not the command line); `ANTHROPIC_API_KEY` is
+deliberately not forwarded because the Claude CLI prefers it over the
+OAUTH token. Container lifecycle is owned by `llm_eval/run.py`.
 """
 
+import asyncio
 import json
 import os
 
+from claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
+from container import Container
 from inspect_ai.agent import AgentState, agent
 from inspect_ai.model import (
     ChatCompletionChoice,
@@ -21,7 +27,7 @@ from inspect_ai.model import (
 from inspect_ai.model._model import active_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
-from inspect_ai.util import sandbox, store
+from inspect_ai.util import store
 
 from common.config import TargetConfig
 
@@ -193,62 +199,50 @@ def _build_usage(final: dict) -> ModelUsage:
 @agent
 def claude_code_oauth(
     synth_target: TargetConfig,
+    container: Container,
     timeout: int = 1800,
     max_turns: int = 8,
 ):
     token = _require_token()
 
     async def execute(state: AgentState) -> AgentState:
-        # Fetch model name and sandbox
         model = _resolve_model()
-        sb = sandbox()
-
-        # MCP server and tools config
-        host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target)
+        design = synth_target.design
         mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{tool}" for tool in MCP_TOOLS]
-        allowed_tools = ",".join(DEFAULT_TOOLS + mcp_tool_names)
+        allowed_tools = tuple(DEFAULT_TOOLS + mcp_tool_names)
 
-        # Start MCP server and run Claude Code CLI
-        async with MCPService(host_mcp) as host_service:
-            mcp_config = {
-                "mcpServers": {
-                    HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
-                }
-            }
-            await sb.write_file("/tmp/mcp.json", json.dumps(mcp_config))
+        # Per-sample environment in a shared container
+        with ClaudeEnv(container) as env:
+            # Stage RTL. Each sample gets a clean copy
+            for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
+                env.write_file(
+                    f"{SANDBOX_RTL_ROOT}/{rel_file}",
+                    abs_file.read_text(),
+                )
 
-            prompt = state.messages[-1].text
-            sid = store().get("cc_session_id")
+            # MCP server is per-env
+            host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, env)
 
-            cmd = [
-                "claude",
-                "-p",
-                "--output-format",
-                "stream-json",
-                "--verbose",
-                "--model",
-                model,
-                "--mcp-config",
-                "/tmp/mcp.json",
-                "--strict-mcp-config",
-                "--allowedTools",
-                allowed_tools,
-                "--max-turns",
-                str(max_turns),
-                "--dangerously-skip-permissions",
-            ]
-            if sid:
-                cmd += ["--resume", sid]
+            async with MCPService(host_mcp) as host_service:
+                prompt = state.messages[-1].text
+                sid = store().get("cc_session_id")
+                result = await asyncio.to_thread(
+                    env.run_claude,
+                    prompt,
+                    model=model,
+                    oauth_token=token,
+                    mcp_servers={
+                        HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
+                    },
+                    allowed_tools=allowed_tools,
+                    max_turns=max_turns,
+                    resume_session=sid,
+                    timeout=timeout,
+                )
 
-            result = await sb.exec(
-                cmd,
-                input=prompt,
-                env={
-                    TOKEN_ENV_VAR: token,
-                    "IS_SANDBOX": "1",
-                },
-                timeout=timeout,
-            )
+            # Capture the final RTL state for scorers before env tear-down
+            diff = await asyncio.to_thread(build_diff_from_env, env, design)
+            store().set("rtl_diff", diff)
 
         # Claude CLI logs MCP connection failures to stderr
         store().set("cc_stderr_tail", result.stderr[-4000:])
@@ -303,14 +297,14 @@ def claude_code_oauth(
 
 
 @solver
-def claude_code_solver() -> Solver:
+def claude_code_solver(container: Container) -> Solver:
     """Per-sample Solver wrapper around `claude_code_oauth`."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
         synth_target = state.metadata["synth_target"]
         assert isinstance(synth_target, TargetConfig)
         agent_state = AgentState(messages=state.messages)
-        agent_fn = claude_code_oauth(synth_target=synth_target)
+        agent_fn = claude_code_oauth(synth_target=synth_target, container=container)
         result = await agent_fn(agent_state)
         state.messages = result.messages
         state.output = result.output

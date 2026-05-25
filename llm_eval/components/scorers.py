@@ -1,13 +1,13 @@
 """Diff-based scorers for llm_eval tasks.
 
-Each scorer diffs the agent's sandbox RTL against on-disk originals, saves
-`diff.patch`, and hands `(design, diff)` to a pure evaluator that reapplies
-the diff into a tempdir and runs the check -- so a saved diff can be replayed.
+The solver captures the agent's final RTL state into a unified diff in the
+sample's `store()` (`rtl_diff`); these scorers re-apply that diff against a
+fresh copy of `design.root` and run the check. Lets a saved diff be
+replayed without any sandbox/container state.
 """
 
 import asyncio
 import dataclasses
-import difflib
 import subprocess
 import tempfile
 from pathlib import Path
@@ -22,7 +22,7 @@ from inspect_ai.scorer import (
     scorer,
 )
 from inspect_ai.solver import TaskState
-from inspect_ai.util import sandbox
+from inspect_ai.util import store
 
 from common.config import (
     YOSYS_BIN,
@@ -33,40 +33,6 @@ from common.config import (
 
 # Config
 YOSYS_TIMEOUT = 60  # Timeout for synthesisability check
-SANDBOX_RTL_ROOT = "rtl"  # Root inside sandbox where agent edits design
-
-
-def _sandbox_path(rel_file: Path) -> str:
-    return f"{SANDBOX_RTL_ROOT}/{rel_file}"
-
-
-async def _read_sandbox_file(path: str) -> str:
-    """Return the file's contents from the sandbox, or '' if it's gone."""
-    try:
-        return await sandbox().read_file(path)
-    except Exception:
-        return ""
-
-
-async def build_diff_from_sandbox(design: DesignConfig) -> str:
-    """Unified diff of the agent's edits against `design`'s on-disk originals.
-    Output paths are relative to `design.rtl_dir`, so diff applies cleanly."""
-
-    parts: list[str] = []
-    for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
-        original = abs_file.read_text()
-        final = await _read_sandbox_file(_sandbox_path(rel_file))
-        parts.append(
-            "".join(
-                difflib.unified_diff(
-                    original.splitlines(keepends=True),
-                    final.splitlines(keepends=True),
-                    fromfile=f"a/{rel_file}",
-                    tofile=f"b/{rel_file}",
-                )
-            )
-        )
-    return "".join(parts)
 
 
 def _apply_diff(diff: str, dest_dir: Path) -> None:
@@ -139,6 +105,11 @@ def _sample_dir(output_dir: Path, state: TaskState) -> Path:
     return p
 
 
+def _stored_diff() -> str:
+    """Diff captured by the solver before its ClaudeEnv was torn down."""
+    return store().get("rtl_diff") or ""
+
+
 @scorer(metrics=[accuracy()])
 def synthesis(output_dir: Path) -> Scorer:
     """Cheap synthesisability check for an arbitrary RTL design."""
@@ -149,7 +120,7 @@ def synthesis(output_dir: Path) -> Scorer:
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
         synth_target.dump(sample_dir / TargetConfig.FILENAME)
-        diff = await build_diff_from_sandbox(design)
+        diff = _stored_diff()
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_synthesis, design, diff)
         (sample_dir / "synthesis.log").write_text(log)
@@ -177,7 +148,7 @@ def testbench(output_dir: Path) -> Scorer:
         design = synth_target.design
         sample_dir = _sample_dir(output_dir, state)
         synth_target.dump(sample_dir / TargetConfig.FILENAME)
-        diff = await build_diff_from_sandbox(design)
+        diff = _stored_diff()
         (sample_dir / "diff.patch").write_text(diff)
         log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)
         (sample_dir / "testbench.log").write_text(log)
