@@ -15,8 +15,8 @@ export PLACE_DENSITY = {place_density}
 export OR_SEED       = {seed}
 export FLOW_TARGETS  = {flow_targets}
 
-# TODO: Replace the inferred flop-memories with openRAM/fakeRAM macros
-export SYNTH_MEMORY_MAX_BITS = 65536
+# Allow inferring small-medium memories as combinational+flops
+export SYNTH_MEMORY_MAX_BITS = 8192
 
 THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 
