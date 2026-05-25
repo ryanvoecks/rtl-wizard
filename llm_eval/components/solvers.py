@@ -1,17 +1,15 @@
-"""Custom Claude Code agent driven by an OAUTH token, not an API key.
+"""Custom Claude Code agent driven by an interactive OAUTH login.
 
 Spins up a per-sample `ClaudeEnv` (fresh unix user + workdir) inside the
 long-lived sandbox container, stages the design's RTL into it, runs
 `claude -p` as that user, and captures the resulting RTL diff into
-`store()` for the scorers to consume. `CLAUDE_CODE_OAUTH_TOKEN` is passed
-via `docker exec --env` (not the command line); `ANTHROPIC_API_KEY` is
-deliberately not forwarded because the Claude CLI prefers it over the
-OAUTH token. Container lifecycle is owned by `llm_eval/run.py`.
+`store()` for the scorers to consume. Each container does its own
+`claude auth login` once (in `Container.__enter__`) so OAUTH credentials
+aren't shared across containers (TOS: one login per "device").
 """
 
 import asyncio
 import json
-import os
 
 from claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from container import Container
@@ -35,7 +33,6 @@ from .mcp_connect import MCPService
 from .mcp_servers import make_server
 
 # Claude config
-TOKEN_ENV_VAR = "CLAUDE_CODE_OAUTH_TOKEN"
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 
 # MCP config
@@ -50,16 +47,6 @@ def _resolve_model() -> str:
     if m is None or m.name in ("none", ""):
         raise ValueError("model name is not set")
     return m.name
-
-
-def _require_token() -> str:
-    tok = os.environ.get(TOKEN_ENV_VAR)
-    if not tok:
-        raise RuntimeError(
-            f"{TOKEN_ENV_VAR} is not set. Run `claude setup-token` on the host, "
-            f"then `export {TOKEN_ENV_VAR}=<token>` before `inspect eval`."
-        )
-    return tok
 
 
 def _parse_stream_json(stdout: str) -> list[dict]:
@@ -203,8 +190,6 @@ def claude_code_oauth(
     timeout: int = 1800,
     max_turns: int = 8,
 ):
-    token = _require_token()
-
     async def execute(state: AgentState) -> AgentState:
         model = _resolve_model()
         design = synth_target.design
@@ -230,7 +215,6 @@ def claude_code_oauth(
                     env.run_claude,
                     prompt,
                     model=model,
-                    oauth_token=token,
                     mcp_servers={
                         HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
                     },

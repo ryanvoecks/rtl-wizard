@@ -19,6 +19,7 @@ COMPOSE_FILE = SANDBOX_DIR / "compose.yaml"
 COMPOSE_OVERRIDE = SANDBOX_DIR / "compose.override.yaml"  # gitignored
 PROJECT = "rtl-wizard"
 SERVICE = "solver"
+OAUTH_HOME = "/opt/claude-oauth"
 
 
 @dataclass
@@ -45,6 +46,36 @@ class Container:
         _write_override()
         self._compose("create")
         self._compose("start")
+
+        # /dev/shm is a tmpfs remounted fresh on every container start
+        self.execute(["chmod", "700", "/dev/shm"], user="root")
+
+        # Use tinyproxy filter to block everything except anthropic and the MCP server.
+        # ClaudeEnv sets HTTPS_PROXY/HTTP_PROXY to http://127.0.0.1:8888 so all of
+        # claude's outbound traffic gets filtered here
+        _, host_ip = discover_shared_network()
+        self.execute(
+            ["tee", "/etc/tinyproxy/filter"],
+            input=f"^.*\\.anthropic\\.com$\n^{host_ip}$\n",
+            user="root",
+        )
+        self.execute(["tinyproxy"], user="root")
+
+        # Run interactive Claude OAUTH login once per container
+        self.execute(["mkdir", "-p", OAUTH_HOME], user="root")
+        subprocess.run(
+            [
+                *self._compose_prefix(), "exec",
+                "--user", "root",
+                "--env", f"HOME={OAUTH_HOME}",
+                SERVICE,
+                "claude", "auth", "login",
+            ],
+            check=True,
+        )
+
+        # Make the oauth dir traversable+readable by env users
+        self.execute(["chmod", "-R", "a+rX", OAUTH_HOME], user="root")
         return self
 
     def __exit__(self, *_exc: object) -> None:

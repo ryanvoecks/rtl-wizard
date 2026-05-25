@@ -13,7 +13,7 @@ import secrets
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
 
-from container import Container, ExecResult
+from container import OAUTH_HOME, Container, ExecResult
 
 from common.config import DesignConfig
 
@@ -32,6 +32,11 @@ class ClaudeEnv:
     def workdir(self) -> str:
         return f"/home/{self.user}"
 
+    @property
+    def tmpdir(self) -> str:
+        """Per-env $TMPDIR to avoid sibling communication."""
+        return f"{self.workdir}/tmp"
+
     def __enter__(self) -> ClaudeEnv:
         # HOME_MODE=0700 prevents sibling envs seeing each others contents
         self._check(
@@ -49,7 +54,25 @@ class ClaudeEnv:
                 ],
                 user="root",
             ),
-            "useradd",
+        )
+        self._check(
+            self.container.execute(
+                ["mkdir", "-p", self.tmpdir],
+                user=self.user,
+            ),
+        )
+        # Mirror the container's shared claude oauth credentials
+        self._check(
+            self.container.execute(
+                ["cp", "-r", f"{OAUTH_HOME}/.claude", f"{self.workdir}/.claude"],
+                user="root",
+            ),
+        )
+        self._check(
+            self.container.execute(
+                ["chown", "-R", f"{self.user}:{self.user}", f"{self.workdir}/.claude"],
+                user="root",
+            ),
         )
         return self
 
@@ -68,7 +91,6 @@ class ClaudeEnv:
                 ["mkdir", "-p", str(path.parent)],
                 user=self.user,
             ),
-            f"mkdir for {rel_path}",
         )
         self._check(
             self.container.execute(
@@ -76,7 +98,6 @@ class ClaudeEnv:
                 input=content,
                 user=self.user,
             ),
-            f"write_file({rel_path})",
         )
 
     def read_file(self, rel_path: str) -> str:
@@ -92,7 +113,6 @@ class ClaudeEnv:
         prompt: str,
         *,
         model: str,
-        oauth_token: str,
         mcp_servers: dict | None = None,
         allowed_tools: tuple[str, ...] = (),
         max_turns: int = 8,
@@ -126,9 +146,12 @@ class ClaudeEnv:
         return self.container.execute(
             cmd,
             input=prompt,
+            # Isolated sandbox environment
             env={
-                "CLAUDE_CODE_OAUTH_TOKEN": oauth_token,
                 "IS_SANDBOX": "1",
+                "TMPDIR": self.tmpdir,
+                "HTTPS_PROXY": "http://127.0.0.1:8888",
+                "HTTP_PROXY": "http://127.0.0.1:8888",
             },
             user=self.user,
             workdir=self.workdir,
@@ -136,9 +159,9 @@ class ClaudeEnv:
         )
 
     @staticmethod
-    def _check(result: ExecResult, what: str) -> None:
+    def _check(result: ExecResult) -> None:
         if result.returncode != 0:
-            raise RuntimeError(f"{what} failed: {result.stderr.strip()}")
+            raise RuntimeError(result.stderr.strip())
 
 
 def build_diff_from_env(env: ClaudeEnv, design: DesignConfig) -> str:

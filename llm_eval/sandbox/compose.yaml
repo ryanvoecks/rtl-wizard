@@ -10,7 +10,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # `shared.name` is rewritten by tasks.py to a shared host network.
     networks:
       - default
       - shared
