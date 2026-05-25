@@ -38,8 +38,7 @@ from common.config import (
     TargetConfig,
 )
 from common.designs import DesignTree, all_designs
-
-from .extract_metrics import extract
+from eda_eval.extract_metrics import extract
 
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"

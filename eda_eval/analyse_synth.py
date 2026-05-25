@@ -28,8 +28,7 @@ import sys
 from pathlib import Path
 
 from common.config import RunConfig
-
-from .analyse import (
+from eda_eval.analyse import (
     EXTRACT_TCL,
     dump_hierarchy,
     liberty_files,
@@ -39,7 +38,7 @@ from .analyse import (
     write_critical_paths,
     write_logical_paths,
 )
-from .extract_metrics import find_unique, parse_period_ps
+from eda_eval.extract_metrics import find_unique, parse_period_ps
 
 
 def locate_post_synth(phase_dir: Path, design: str, platform: str) -> tuple[Path, Path]:

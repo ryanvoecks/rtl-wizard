@@ -62,8 +62,8 @@ class StudyConfig:
     """Knobs for the ORFS flow."""
 
     platform: str = "nangate45"  # ORFS PDK
-    calibration_period_ns: float = 10.0  # loose period for the calibration phase
-    calibration_side_um: float = 1000.0  # large square die for the calibration phase
+    calibration_period_ns: float = 0.5  # over-constrained period for calibration
+    calibration_side_um: float = 1000.0  # under-constrained area for calibration
     target_multiplier: float = 1.1  # safety factor on calibration-derived period
     target_utilization: float = 0.6  # core utilization target for the final phase
     area_multiplier: float = 1.1  # safety factor on calibration cell area

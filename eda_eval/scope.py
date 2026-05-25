@@ -48,11 +48,10 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-
-from . import analyse
-from .calibrate import resolve_design
-from .extract_metrics import extract
-from .run import run_job
+from common.designs import all_designs
+from eda_eval import analyse
+from eda_eval.extract_metrics import extract
+from eda_eval.run import run_job
 
 ITER_SCOPE_DIR = "__iter_scope__"
 
@@ -523,7 +522,7 @@ def main() -> None:
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
     cfg = StudyConfig()
-    design = resolve_design(args.benchmark, args.name, args.variant)
+    design = all_designs[args.benchmark][args.name][args.variant]
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts

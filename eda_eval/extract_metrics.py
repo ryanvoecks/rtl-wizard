@@ -49,6 +49,7 @@ COLUMNS = [
     "synth_area_um2",
     "synth_cell_count",
     "synth_ff_count",
+    "synth_ws_ns",
     "synth_wns_ns",
     "synth_tns_ns",
     "route_area_um2",
@@ -122,16 +123,19 @@ def parse_synth_stat(path: Path) -> tuple[float, int, int]:
     return total_area, total_cells, ff_count
 
 
-def parse_post_synth_timing(rpt_path: Path) -> tuple[float, float]:
-    """Pull WNS and TNS (both in ns) out of a `report_metrics` rpt file.
-    OpenSTA prints `tns max <X>` and `wns max <X>` lines; when timing is
-    met both are 0.00."""
+def parse_post_synth_timing(rpt_path: Path) -> tuple[float, float, float]:
+    """Pull worst slack, WNS, and TNS (all in ns) out of a `report_metrics`
+    rpt file. OpenSTA emits both `worst slack max <X>` (signed; positive
+    when met) and `wns max <X>` / `tns max <X>` (clamped to 0 when met).
+    Calibration's fixed-point recurrence needs the signed value so it can
+    tighten when timing is already met."""
     text = rpt_path.read_text()
+    ws_m = re.search(r"^\s*worst slack max\s+(-?[\d.]+)", text, re.MULTILINE)
     wns_m = re.search(r"^\s*wns max\s+(-?[\d.]+)", text, re.MULTILINE)
     tns_m = re.search(r"^\s*tns max\s+(-?[\d.]+)", text, re.MULTILINE)
-    if not wns_m or not tns_m:
-        raise ValueError(f"could not find wns/tns lines in {rpt_path}")
-    return float(wns_m.group(1)), float(tns_m.group(1))
+    if not ws_m or not wns_m or not tns_m:
+        raise ValueError(f"could not find worst slack / wns / tns lines in {rpt_path}")
+    return float(ws_m.group(1)), float(wns_m.group(1)), float(tns_m.group(1))
 
 
 def find_unique(phase_dir: Path, glob_pat: str, label: str) -> Path:
@@ -164,7 +168,9 @@ def resolve_design_name(phase_dir: Path) -> str:
     return m.group(1)
 
 
-def extract(phase_dir: Path, design: str) -> dict:
+def extract_synth(phase_dir: Path, design: str) -> dict:
+    """Post-synth metrics only. Safe to call against a phase dir whose flow
+    targets were `SYNTH_FLOW_TARGETS` (no P&R artifacts yet)."""
     synth_stat = find_unique(
         phase_dir,
         f"reports/*/{design}/*/synth_stat.txt",
@@ -175,6 +181,19 @@ def extract(phase_dir: Path, design: str) -> dict:
         f"reports/*/{design}/*/1_Post_synthesis.rpt",
         "1_Post_synthesis.rpt",
     )
+    synth_area, synth_cells, synth_ff = parse_synth_stat(synth_stat)
+    synth_ws, synth_wns, synth_tns = parse_post_synth_timing(post_synth)
+    return {
+        "synth_area_um2": synth_area,
+        "synth_cell_count": synth_cells,
+        "synth_ff_count": synth_ff,
+        "synth_ws_ns": synth_ws,
+        "synth_wns_ns": synth_wns,
+        "synth_tns_ns": synth_tns,
+    }
+
+
+def extract(phase_dir: Path, design: str) -> dict:
     finish_log = find_unique(
         phase_dir,
         f"logs/*/{design}/*/6_report.json",
@@ -186,8 +205,7 @@ def extract(phase_dir: Path, design: str) -> dict:
         "5_2_route.json",
     )
 
-    synth_area, synth_cells, synth_ff = parse_synth_stat(synth_stat)
-    synth_wns, synth_tns = parse_post_synth_timing(post_synth)
+    synth_metrics = extract_synth(phase_dir, design)
     finish = json.loads(finish_log.read_text())
     route = json.loads(route_log.read_text())
 
@@ -197,12 +215,7 @@ def extract(phase_dir: Path, design: str) -> dict:
     route_wns = min(0.0, route_ws)
 
     return {
-        # Post-synth: yosys cell stats + OpenSTA-on-linked-netlist timing.
-        "synth_area_um2": synth_area,
-        "synth_cell_count": synth_cells,
-        "synth_ff_count": synth_ff,
-        "synth_wns_ns": synth_wns,
-        "synth_tns_ns": synth_tns,
+        **synth_metrics,
         # Post-route: `stdcell` keys exclude fill+tap so the comparison with
         # synth_cell_count is apples-to-apples (CTS buffers + repair cells
         # are included; physical-only fill is not).
