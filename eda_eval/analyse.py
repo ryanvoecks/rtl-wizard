@@ -154,23 +154,34 @@ def locate_congestion_rpt(reports_dir: Path) -> Path | None:
 # Hierarchy via yosys ----------------------------------------------------------
 
 _INDEX_RE = re.compile(r"\[\d+\]")
+# OpenSTA's `full_name` emits hierarchical cell paths joined by `.` when the
+# upstream synth flattened with preserved names (the ORFS default) and by
+# `/` when synth was hierarchical and ODB carries true scopes. Either is
+# treated as a separator by the walk.
+_HIER_SEP_RE = re.compile(r"[/.]")
 
 
 def dump_hierarchy(
     rtl_files: list[Path],
     top_module: str,
     json_out: Path,
+    include_dirs: list[Path] | None = None,
 ) -> None:
     """Have yosys read the RTL, elaborate the hierarchy, and dump it as JSON.
 
     `proc` is the minimum yosys needs before `write_json` accepts the design
     (it lowers always-blocks to structured logic). We deliberately do NOT
     run `flatten` or `synth` -- we want the original module structure with
-    one cells entry per submodule instantiation.
+    one cells entry per submodule instantiation. `include_dirs` is passed
+    through as `-I <dir>` flags so include directives resolve against the
+    same paths ORFS sees via VERILOG_INCLUDE_DIRS; omitting them lets
+    yosys silently stub the missing modules as blackboxes, which then
+    truncates the hierarchy walk at every blackbox boundary.
     """
+    inc_args = "".join(f" -I {d}" for d in (include_dirs or []))
     rtl_args = " ".join(str(f) for f in rtl_files)
     script = (
-        f"read_verilog -sv {rtl_args}\n"
+        f"read_verilog -sv{inc_args} {rtl_args}\n"
         f"hierarchy -top {top_module}\n"
         "proc\n"
         f"write_json {json_out}\n"
@@ -203,14 +214,28 @@ def _module_loc(src_attr: str | None) -> int:
         return 0
 
 
+def _clean_instance(name: str) -> str:
+    """Normalize one path component to its user-visible Verilog instance
+    name. Strips yosys's escape-id syntax (leading `\\`, trailing
+    whitespace), `[N]` array indices, and the trailing `$_CELLTYPE_` tag
+    yosys appends to mapped leaf cells. Applied to both hierarchy keys at
+    load time and path tokens at lookup time so the two compare cleanly."""
+    name = name.lstrip("\\").rstrip()
+    name = name.split("$", 1)[0]
+    return _INDEX_RE.sub("", name)
+
+
 def load_hierarchy(json_path: Path) -> dict[str, dict]:
     """Reshape yosys's write_json output into:
         module_name -> {line_count: int,
-                        instances: {inst_name: child_module_name}}
+                        instances: {clean_inst_name: child_module_name}}
 
     Only cells whose `type` is itself a module get recorded as instances --
     leaf primitives (`$_DFFE_`, gate cells, etc.) are skipped because the
     walk in `cell_modules` only cares about module-to-module hops.
+    Instance keys are normalized via `_clean_instance` so the post-`[N]`
+    -strip lookup from a path token matches generate-for instances (which
+    yosys writes as `name[0]`, `name[1]`, ...).
     """
     raw = json.loads(json_path.read_text())
     modules_raw = raw.get("modules", {})
@@ -221,7 +246,10 @@ def load_hierarchy(json_path: Path) -> dict[str, dict]:
         for inst, cell in info.get("cells", {}).items():
             t = cell.get("type")
             if t in valid:
-                instances[inst] = t
+                # Generate-for elaborates to N keys (`name[0]`, ...) all of
+                # the same module type; collapsing to a single clean key is
+                # what the walk expects.
+                instances[_clean_instance(inst)] = t
         src = info.get("attributes", {}).get("src")
         hierarchy[name] = {
             "line_count": _module_loc(src),
@@ -230,38 +258,40 @@ def load_hierarchy(json_path: Path) -> dict[str, dict]:
     return hierarchy
 
 
-def _clean_instance(name: str) -> str:
-    """Strip `[N]` indices and trailing yosys `$_CELLTYPE_` tag from a path
-    component, leaving the user-visible Verilog instance name."""
-    name = name.split("$", 1)[0]
-    return _INDEX_RE.sub("", name)
-
-
 def cell_modules(
     inst_path: str,
     top_module: str,
     hierarchy: dict[str, dict],
-) -> set[str]:
-    """Walk a hierarchical instance path and return every module type the
-    cell touches along the way -- top + each submodule type traversed +
-    the leaf-containing module."""
+) -> tuple[set[str], bool]:
+    """Walk a hierarchical instance path and return (modules touched, walk
+    truncated). Modules include top + each submodule type traversed + the
+    leaf-containing module. `truncated` is True if an intermediate path
+    token didn't resolve to a known submodule -- a signal that the yosys
+    hierarchy is incomplete (typical causes: missing include paths,
+    blackbox stubs, or names with chars `_clean_instance` doesn't cover).
+    """
     mods = {top_module}
-    parts = inst_path.split(".")
+    parts = _HIER_SEP_RE.split(inst_path)
     current = top_module
+    truncated = False
     for inst in parts[:-1]:
         clean = _clean_instance(inst)
         instances = hierarchy.get(current, {}).get("instances", {})
         if clean not in instances:
+            truncated = True
             break
         current = instances[clean]
         mods.add(current)
-    return mods
+    return mods, truncated
 
 
 def logical_stem(full_name: str) -> str:
-    """Drop /<pin>, drop yosys $_CELLTYPE_, strip [N] -- mirrors the Tcl
-    cell-name handling so start/end stems compare cleanly."""
-    inst = full_name.split("/", 1)[0]
+    """Drop the trailing /<pin>, the yosys $_CELLTYPE_ tag, and any `[N]`
+    indices to leave a register-array-shaped stem. Mirrors the Tcl
+    cell-name handling in extract_critical_paths.tcl so start/end stems
+    compare cleanly. Splits at the *last* `/` because hierarchical synth
+    keeps `/`-joined cell paths and only the final `/` separates the pin."""
+    inst = full_name.rsplit("/", 1)[0]
     inst = inst.split("$", 1)[0]
     return _INDEX_RE.sub("", inst)
 
@@ -308,11 +338,17 @@ def write_logical_paths(
     clock_period_ns: float,
 ) -> int:
     groups: dict[tuple[str, str], dict] = {}
+    walks_total = 0
+    walks_truncated = 0
     for slack, sp, ep, cells in records:
         ss, es = logical_stem(sp), logical_stem(ep)
         mods: set[str] = set()
         for cell in cells:
-            mods |= cell_modules(cell, top_module, hierarchy)
+            cell_mods, truncated = cell_modules(cell, top_module, hierarchy)
+            mods |= cell_mods
+            walks_total += 1
+            if truncated:
+                walks_truncated += 1
         key = (ss, es)
         g = groups.get(key)
         if g is None:
@@ -332,6 +368,7 @@ def write_logical_paths(
         fh.write(f"# target_period_ns\t{clock_period_ns:.4f}\n")
         fh.write(f"# pool_size\t{pool_size}\n")
         fh.write(f"# top_module\t{top_module}\n")
+        fh.write(f"# truncated_walks\t{walks_truncated}/{walks_total}\n")
         fh.write(
             "# rank\tworst_slack_ns\tbest_slack_ns\tcount"
             "\ttotal_loc\tstart_stem\tend_stem\tmodules\n"
@@ -436,10 +473,16 @@ def write_logical_congestion(
     are recorded separately as an `io_driven` flag so primary-port-fed
     congestion is visible without diluting the module-set key."""
     groups: dict[frozenset[str], dict] = {}
+    walks_total = 0
+    walks_truncated = 0
     for t in tiles:
         mods: set[str] = set()
         for inst in t.insts:
-            mods |= cell_modules(inst, top_module, hierarchy)
+            cell_mods, truncated = cell_modules(inst, top_module, hierarchy)
+            mods |= cell_mods
+            walks_total += 1
+            if truncated:
+                walks_truncated += 1
         key = frozenset(mods)
         g = groups.get(key)
         if g is None:
@@ -466,6 +509,7 @@ def write_logical_congestion(
     with out_path.open("w") as fh:
         fh.write(f"# overflow_tiles\t{len(tiles)}\n")
         fh.write(f"# top_module\t{top_module}\n")
+        fh.write(f"# truncated_walks\t{walks_truncated}/{walks_total}\n")
         fh.write(
             "# rank\tsum_overflow\tmax_overflow\ttile_count\tunique_insts"
             "\tio_driven\ttotal_loc\tmodules\n"
@@ -549,6 +593,7 @@ def main(argv: list[str] | None = None) -> int:
     platform = target["cfg"]["platform"]
     abs_rtl_dir = Path(design["root"]) / design["rtl_dir"]
     rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
+    include_dirs = [abs_rtl_dir / d for d in design.get("include_dirs", [])]
     missing = [p for p in rtl_files if not p.is_file()]
     if missing:
         ap.error(f"missing RTL files referenced from {RunConfig.FILENAME}: {missing}")
@@ -604,7 +649,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     hier_json = reports_dir / "hierarchy.json"
-    dump_hierarchy(rtl_files, top_module, hier_json)
+    dump_hierarchy(rtl_files, top_module, hier_json, include_dirs)
     hierarchy = load_hierarchy(hier_json)
     if top_module not in hierarchy:
         ap.error(

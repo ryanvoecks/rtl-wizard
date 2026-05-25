@@ -52,6 +52,7 @@ COLUMNS = [
     "synth_ws_ns",
     "synth_wns_ns",
     "synth_tns_ns",
+    "io_pin_count",
     "route_area_um2",
     "route_cell_count",
     "route_ws_ns",
@@ -64,12 +65,21 @@ COLUMNS = [
 
 
 def parse_period_ps(sdc_path: Path) -> int:
-    """Read `create_clock -period <ns>` out of an SDC. Multi-clock designs
-    take the first occurrence -- same convention as ORFS's
-    ABC_CLOCK_PERIOD_IN_PS extraction."""
-    m = re.search(r"-period\s+([\d.]+)", sdc_path.read_text())
+    """Read `create_clock -period <ns>` out of an SDC. The flow is
+    single-clock by construction (`constraint.sdc.template` renders
+    exactly one `create_clock`); raises if the SDC contains zero or
+    more than one create_clock statement."""
+    text = sdc_path.read_text()
+    clocks = re.findall(r"^\s*create_clock\b[^\n]*", text, re.MULTILINE)
+    if not clocks:
+        raise ValueError(f"no `create_clock` found in {sdc_path}")
+    if len(clocks) > 1:
+        raise ValueError(
+            f"single-clock flow but {len(clocks)} create_clock entries in {sdc_path}"
+        )
+    m = re.search(r"-period\s+([\d.]+)", clocks[0])
     if not m:
-        raise ValueError(f"no `-period` clause found in {sdc_path}")
+        raise ValueError(f"no `-period` clause in {clocks[0]!r}")
     return int(round(float(m.group(1)) * 1000))
 
 
@@ -168,6 +178,42 @@ def resolve_design_name(phase_dir: Path) -> str:
     return m.group(1)
 
 
+def count_io_pins(phase_dir: Path, top_module: str) -> int:
+    """Sum of individual port bits on the post-synth top module.
+
+    Reads the netlist yosys emits at `results/*/<top>/*/1_2_yosys.v`,
+    locates the `module <top_module>(...) ... endmodule` block, and adds
+    up `input` / `output` / `inout` declarations: scalars count as 1,
+    vectors as their declared width."""
+    netlist = find_unique(
+        phase_dir,
+        f"results/*/{top_module}/*/1_2_yosys.v",
+        "1_2_yosys.v",
+    )
+    text = netlist.read_text()
+    body_m = re.search(
+        rf"module\s+{re.escape(top_module)}\b.*?endmodule",
+        text,
+        re.DOTALL,
+    )
+    if not body_m:
+        raise ValueError(f"top module {top_module} not found in {netlist}")
+    port_re = re.compile(
+        r"^\s*(?:input|output|inout)\s+"
+        r"(?:wire\s+|reg\s+)?"
+        r"(?:\[(\d+)\s*:\s*(\d+)\])?"
+        r"\s*\w+\s*;",
+        re.MULTILINE,
+    )
+    total = 0
+    for m in port_re.finditer(body_m.group(0)):
+        if m.group(1) is not None and m.group(2) is not None:
+            total += abs(int(m.group(1)) - int(m.group(2))) + 1
+        else:
+            total += 1
+    return total
+
+
 def extract_synth(phase_dir: Path, design: str) -> dict:
     """Post-synth metrics only. Safe to call against a phase dir whose flow
     targets were `SYNTH_FLOW_TARGETS` (no P&R artifacts yet)."""
@@ -183,6 +229,7 @@ def extract_synth(phase_dir: Path, design: str) -> dict:
     )
     synth_area, synth_cells, synth_ff = parse_synth_stat(synth_stat)
     synth_ws, synth_wns, synth_tns = parse_post_synth_timing(post_synth)
+    io_pin_count = count_io_pins(phase_dir, design)
     return {
         "synth_area_um2": synth_area,
         "synth_cell_count": synth_cells,
@@ -190,6 +237,7 @@ def extract_synth(phase_dir: Path, design: str) -> dict:
         "synth_ws_ns": synth_ws,
         "synth_wns_ns": synth_wns,
         "synth_tns_ns": synth_tns,
+        "io_pin_count": io_pin_count,
     }
 
 

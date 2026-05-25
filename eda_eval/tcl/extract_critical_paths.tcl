@@ -18,13 +18,14 @@ if {[info exists env(ANALYSE_POOL)]} {
     set pool $env(ANALYSE_POOL)
 }
 
-# -endpoint_path_count 1 + -unique_paths_to_endpoint caps the pool at one
-# path per unique endpoint so a wide fanout doesn't drown out the rest of
-# the design.
+# -endpoint_path_count is set equal to the pool size so multiple paths to
+# the same endpoint are retained: the per-group `count` in the Python-side
+# logical-paths rollup then reflects true path multiplicity through each
+# (start_stem, end_stem) pair, not just the number of unique endpoint
+# flops. -group_path_count still caps the total at $pool per clock-group.
 set paths [find_timing_paths -path_delay max \
                              -group_path_count $pool \
-                             -endpoint_path_count 1 \
-                             -unique_paths_to_endpoint]
+                             -endpoint_path_count $pool]
 
 set fh [open $out_path w]
 puts $fh "# slack_ns\tstartpoint\tendpoint\tcells"

@@ -49,12 +49,7 @@ def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
         log = log_path.read_text() if log_path.is_file() else ""
         raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
 
-    return analyse_synth(
-        output_dir,
-        patched_design.top_module,
-        patched_target.cfg.platform,
-        patched_design.rtl_abs_paths,
-    )
+    return analyse_synth(run)
 
 
 class Tools:
@@ -83,7 +78,9 @@ class Tools:
         timing report. Optimistic vs. post-route, but useful for ranking edits."""
         try:
             diff = await asyncio.to_thread(
-                build_diff_from_env, self.env, self.synth_target.design,
+                build_diff_from_env,
+                self.env,
+                self.synth_target.design,
             )
             report = await asyncio.to_thread(_synth_and_report, self.synth_target, diff)
         except Exception as e:

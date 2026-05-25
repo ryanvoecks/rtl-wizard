@@ -137,16 +137,21 @@ def main() -> None:
     )
     synth_ws_1 = _require_finite(m1, "synth_ws_ns")
     synth_area_1 = _require_finite(m1, "synth_area_um2")
-    print(f"  synth_ws={synth_ws_1:+.4f} ns, synth_area={synth_area_1:.1f} um^2")
+    io_pin_count = int(_require_finite(m1, "io_pin_count"))
+    print(
+        f"  synth_ws={synth_ws_1:+.4f} ns, "
+        f"synth_area={synth_area_1:.1f} um^2, "
+        f"io_pins={io_pin_count}"
+    )
 
-    # Multiple P&R passes driving ws -> 0 and re-sizing from the last cell area.
+    # Multiple P&R passes driving ws -> 0 and re-sizing from the last cell area
     t = cfg.calibration_period_ns
     ws = synth_ws_1
     area = synth_area_1
     pnr_steps: list[dict] = []
     for j in range(PNR_PASSES):
         t = t - ws
-        side = derive_final_side_um(area, cfg)
+        side = derive_final_side_um(area, io_pin_count, cfg)
         print(
             f"\nStep {j + 2}: P&R at T={t:.4f} ns ({fmax_mhz(t):.2f} MHz), "
             f"side={side:.2f} um"
