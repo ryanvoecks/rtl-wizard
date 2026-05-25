@@ -54,11 +54,16 @@ class Container:
         self.execute(["mkdir", "-p", OAUTH_HOME], user="root")
         subprocess.run(
             [
-                *self._compose_prefix(), "exec",
-                "--user", "root",
-                "--env", f"HOME={OAUTH_HOME}",
+                *self._compose_prefix(),
+                "exec",
+                "--user",
+                "root",
+                "--env",
+                f"HOME={OAUTH_HOME}",
                 SERVICE,
-                "claude", "auth", "login",
+                "claude",
+                "auth",
+                "login",
             ],
             check=True,
         )
