@@ -25,21 +25,20 @@ import argparse
 import os
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from common.config import RunConfig
-
-from .analyse import (
+from eda_eval.analyse import (
     EXTRACT_TCL,
     dump_hierarchy,
     liberty_files,
     load_hierarchy,
-    load_run_config,
     read_pool_tsv,
     write_critical_paths,
     write_logical_paths,
 )
-from .extract_metrics import find_unique, parse_period_ps
+from eda_eval.extract_metrics import find_unique, parse_period_ps
 
 
 def locate_post_synth(phase_dir: Path, design: str, platform: str) -> tuple[Path, Path]:
@@ -89,20 +88,25 @@ def run_openroad_extract(
 
 
 def analyse_synth(
-    phase_dir: Path,
-    top_module: str,
-    platform: str,
-    rtl_files: list[Path],
+    run: RunConfig,
     *,
     top_paths: int = 50,
     top_logical: int = 50,
     pool: int = 1000,
 ) -> str:
-    """Run post-synth STA on the netlist staged under `phase_dir`, write the
-    critical-paths and logical-paths reports next to ORFS's own outputs, and
-    return the logical-paths report's contents. `rtl_files` are the absolute
-    on-disk RTL paths used to dump the module hierarchy. Raises `RuntimeError`
-    when STA returns no paths or yosys can't see the top module."""
+    """Run post-synth STA on the netlist staged under `run.output_dir`,
+    write the critical-paths and logical-paths reports next to ORFS's
+    own outputs, and return the logical-paths report's contents. Every
+    path/module/include input is pulled off `run.synth_target`. Raises
+    `RuntimeError` when STA returns no paths or yosys can't see the
+    top module."""
+    design = run.synth_target.design
+    top_module = design.top_module
+    platform = run.synth_target.cfg.platform
+    phase_dir = run.output_dir
+    rtl_dir = design.root / design.rtl_dir
+    include_dirs = [rtl_dir / d for d in design.include_dirs]
+
     odb, sdc = locate_post_synth(phase_dir, top_module, platform)
     libs = liberty_files(platform)
 
@@ -122,7 +126,7 @@ def analyse_synth(
         )
 
     hier_json = reports_dir / "hierarchy.json"
-    dump_hierarchy(rtl_files, top_module, hier_json)
+    dump_hierarchy(design.rtl_abs_paths, top_module, hier_json, include_dirs)
     hierarchy = load_hierarchy(hier_json)
     if top_module not in hierarchy:
         raise RuntimeError(
@@ -181,23 +185,17 @@ def main(argv: list[str] | None = None) -> int:
     if not phase_dir.is_dir():
         ap.error(f"not a directory: {phase_dir}")
 
-    run_cfg = load_run_config(phase_dir)
-    target = run_cfg["synth_target"]
-    design = target["design"]
-    top_module = design["top_module"]
-    platform = target["cfg"]["platform"]
-    abs_rtl_dir = Path(design["root"]) / design["rtl_dir"]
-    rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
-    missing = [p for p in rtl_files if not p.is_file()]
+    # `output_dir` in the on-disk JSON was the phase dir at write-time;
+    # re-anchor to whatever the user just pointed us at in case the tree
+    # got moved.
+    run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
+    missing = [p for p in run.synth_target.design.rtl_abs_paths if not p.is_file()]
     if missing:
         ap.error(f"missing RTL files referenced from {RunConfig.FILENAME}: {missing}")
 
     try:
         analyse_synth(
-            phase_dir,
-            top_module,
-            platform,
-            rtl_files,
+            run,
             top_paths=args.top_paths,
             top_logical=args.top_logical,
             pool=args.pool,

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import json
 import subprocess
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar, get_args, get_origin, get_type_hints
 
 # Important directories
 HERE = Path(__file__).resolve().parent
@@ -57,21 +57,33 @@ ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
 Result = tuple[str, int]  # Output message, return code tuple
 
 
+def _from_json(cls: Any, val: Any) -> Any:
+    """Inverse of `asdict(...) + default=str`: rebuild nested dataclasses,
+    rehydrate `tuple[T, ...]` from JSON lists, and reconstruct `Path`s."""
+    if isinstance(cls, type) and is_dataclass(cls):
+        h = get_type_hints(cls)
+        return cls(**{f.name: _from_json(h[f.name], val[f.name]) for f in fields(cls)})
+    if get_origin(cls) is tuple:
+        return tuple(_from_json(get_args(cls)[0], v) for v in val)
+    return cls(val) if cls is Path else val
+
+
 @dataclass(frozen=True)
 class StudyConfig:
     """Knobs for the ORFS flow."""
 
     platform: str = "nangate45"  # ORFS PDK
-    calibration_period_ns: float = 10.0  # loose period for the calibration phase
-    calibration_side_um: float = 1000.0  # large square die for the calibration phase
-    target_multiplier: float = 1.1  # safety factor on calibration-derived period
+    calibration_period_ns: float = 0.5  # over-constrained period for calibration
+    calibration_side_um: float = 1000.0  # under-constrained area for calibration
     target_utilization: float = 0.6  # core utilization target for the final phase
-    area_multiplier: float = 1.1  # safety factor on calibration cell area
     minimum_side_um: float = 50.0  # floor on final floorplan side
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
-    io_delay_ns: float = 0.2  # fixed IO delay at each boundary
+    io_delay_fraction: float = 0.4  # IO delay as a fraction of clock period
     seed: int = 0  # seed passed to detailed routing
+    effective_pin_width: float = 2.667  # um of perimeter per IO pin (sets min die size)
+    synth_memory_max_bits: int = 8192  # maximum memory-inferred-as-logic size
+    place_pins_args: str = "-hor_layers metal3 -ver_layers metal4"  # pin settings
 
 
 @dataclass(frozen=True)
@@ -89,10 +101,6 @@ class DesignConfig:
     tb_timeout_s: int = 60  # wall-clock cap on the full tb command
     clock_port: str = "clk"  # top-level port driven by the SDC clock
     include_dirs: tuple[Path, ...] = ()  # source dirs added to yosys's `+incdir`
-    pre_cts_tcl: str = ""  # if non-empty, written to inputs/pre_cts.tcl and
-    # exported as PRE_CTS_TCL so ORFS's `source_step_tcl PRE CTS` picks it up.
-    # Use for per-design CTS overrides (e.g. raising repair_timing's
-    # max_buffer_percent for storage-heavy designs).
 
     @cached_property
     def rtl_abs_paths(self) -> list[Path]:
@@ -143,6 +151,11 @@ class RunConfig:
     def dump(self, path: Path) -> None:
         """Serialise to JSON."""
         path.write_text(json.dumps(asdict(self), default=str, indent=2))
+
+    @classmethod
+    def load(cls, path: Path) -> "RunConfig":
+        """Inverse of `dump`."""
+        return _from_json(cls, json.loads(path.read_text()))
 
 
 @dataclass(frozen=True)

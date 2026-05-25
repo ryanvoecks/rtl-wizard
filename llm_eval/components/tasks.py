@@ -1,48 +1,23 @@
 """Drive the OAUTH-token Claude Code agent against RTL optimisation tasks.
 
-Entry point is `llm_eval/run.py` -- it owns the per-run output dir and
-forwards it into `optimize_timing(output_dir)`. Prerequisite:
-`claude setup-token` once, then export CLAUDE_CODE_OAUTH_TOKEN.
+Entry point is `llm_eval/run.py` -- it owns the per-run output dir AND
+the shared container lifecycle. Each sample's solver creates its own
+ClaudeEnv (fresh unix user + workdir inside the shared container) and
+stages RTL into it, so samples are fully independent.
 """
 
 from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
-from inspect_ai.util import SandboxEnvironmentSpec
-from inspect_ai.util._sandbox.compose import ComposeConfig, parse_compose_yaml
 
-from common.config import LLM_EVAL, TargetConfig
+from common.config import TargetConfig
 from common.targets import all_targets
 
-from .mcp_connect import discover_shared_network
-from .scorers import (
-    SANDBOX_RTL_ROOT,
-    synthesis,
-    testbench,
-)
+from .claude_env import SANDBOX_RTL_ROOT
+from .container import Container
+from .scorers import synthesis, testbench
 from .solvers import claude_code_solver
-
-SANDBOX_COMPOSE = LLM_EVAL / "sandbox" / "compose.yaml"
-
-
-def _build_sandbox_compose() -> ComposeConfig:
-    """Load the compose template and inject the discovered shared-network
-    name directly into the config."""
-    config = parse_compose_yaml(str(SANDBOX_COMPOSE))
-    network, _ = discover_shared_network()
-    if config.networks and "shared" in config.networks:
-        config.networks["shared"]["name"] = network
-    sandbox_dir = SANDBOX_COMPOSE.parent.resolve()
-    for svc in config.services.values():
-        if svc.build and not isinstance(svc.build, str) and svc.build.context:
-            svc.build.context = str(sandbox_dir / svc.build.context)
-    return config
-
-
-def _sandbox_rtl_path(rel_file: Path) -> str:
-    """Sandbox location for an RTL file, anchored at `SANDBOX_RTL_ROOT`."""
-    return f"{SANDBOX_RTL_ROOT}/{rel_file}"
 
 
 def _build_sample(target: TargetConfig) -> Sample:
@@ -54,9 +29,8 @@ def _build_sample(target: TargetConfig) -> Sample:
             "RTL files -- run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
-    sandbox_paths = [_sandbox_rtl_path(p) for p in rel_files]
     top_file = next((p for p in rel_files if p.stem == design.top_module), rel_files[0])
-    top_sandbox = _sandbox_rtl_path(top_file)
+    top_sandbox = f"{SANDBOX_RTL_ROOT}/{top_file}"
     return Sample(
         id=f"{design.benchmark}/{design.name}/{design.variant}",
         input=(
@@ -82,29 +56,22 @@ def _build_sample(target: TargetConfig) -> Sample:
             "an edit actually shortened the longest combinational path."
         ),
         target="",
-        files={
-            sandbox_path: str(host_path.resolve())
-            for sandbox_path, host_path in zip(sandbox_paths, design.rtl_abs_paths)
-        },
         metadata={"synth_target": target},
     )
 
 
 @task
-def optimize_timing(output_dir: Path) -> Task:
+def optimize_timing(output_dir: Path, container: Container) -> Task:
     # Dataset is all valid synthesis targets
     dataset = [_build_sample(t) for t in all_targets]
 
     # 2 requirements for progress: synthesisable and functionally correct
     scorers = [synthesis(output_dir), testbench(output_dir)]
 
-    # Sandbox needs network config to access MCP servers
-    sandbox = SandboxEnvironmentSpec("docker", config=_build_sandbox_compose())
-
+    # Each solver runs in an isolated ClaudeEnv within a shared container
     return Task(
         dataset=dataset,
-        solver=claude_code_solver(),
+        solver=claude_code_solver(container),
         scorer=scorers,
-        sandbox=sandbox,
         tags=["claude-code"],
     )

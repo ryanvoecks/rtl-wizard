@@ -38,8 +38,7 @@ from common.config import (
     TargetConfig,
 )
 from common.designs import DesignTree, all_designs
-
-from .extract_metrics import extract
+from eda_eval.extract_metrics import extract
 
 HERE = Path(__file__).resolve().parent
 SDC_TEMPLATE = HERE / "templates" / "constraint.sdc.template"
@@ -113,18 +112,10 @@ def snapshot_inputs(run: RunConfig) -> Path:
     sdc_dst.write_text(
         SDC_TEMPLATE.read_text().format(
             period_ns=target.period_ns,
-            io_delay_ns=cfg.io_delay_ns,
+            io_delay_ns=cfg.io_delay_fraction * target.period_ns,
             clock_port=design.clock_port,
         )
     )
-
-    # Optional per-design PRE_CTS_TCL hook. Empty content leaves the export
-    # blank, which ORFS treats as "no hook".
-    pre_cts_tcl_path = ""
-    if design.pre_cts_tcl:
-        pre_cts_tcl_dst = inputs / "pre_cts.tcl"
-        pre_cts_tcl_dst.write_text(design.pre_cts_tcl)
-        pre_cts_tcl_path = str(pre_cts_tcl_dst)
 
     # Generate Makefile with design config
     die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
@@ -146,7 +137,8 @@ def snapshot_inputs(run: RunConfig) -> Path:
             core_area=core_area,
             seed=cfg.seed,
             flow_targets=" ".join(run.flow_targets),
-            pre_cts_tcl_path=pre_cts_tcl_path,
+            place_pins_args=cfg.place_pins_args,
+            synth_memory_max_bits=cfg.synth_memory_max_bits,
         )
     )
     return makefile_dst
@@ -166,12 +158,16 @@ def run_job(run: RunConfig) -> int:
         ).returncode
 
 
-def derive_final_side_um(cell_area_um2: float, cfg: StudyConfig) -> float:
-    """Take a multiple of the cell area, or the minimum area if too small."""
-    effective_cell_area = cell_area_um2 * cfg.area_multiplier
-    core_side = math.sqrt(effective_cell_area / cfg.target_utilization)
-    natural_side = core_side + 2 * cfg.core_margin_um
-    return max(natural_side, cfg.minimum_side_um)
+def derive_final_side_um(
+    cell_area_um2: float, io_pin_count: int, cfg: StudyConfig
+) -> float:
+    """Square-die side that satisfies all three lower bounds: cell-area
+    at `target_utilization`, IO perimeter at `effective_pin_width` per
+    pin, and the absolute `minimum_side_um`."""
+    area_side = math.sqrt(cell_area_um2 / cfg.target_utilization)
+    area_side += 2 * cfg.core_margin_um
+    pin_side = io_pin_count * cfg.effective_pin_width / 4
+    return max(area_side, pin_side, cfg.minimum_side_um)
 
 
 def run_jobs(
@@ -317,8 +313,9 @@ def main():
                 )
                 ws_ns = metrics["route_ws_ns"]
                 cell_area_um2 = metrics["synth_area_um2"]
-                period_ns = (cfg.calibration_period_ns - ws_ns) * cfg.target_multiplier
-                side_um = derive_final_side_um(cell_area_um2, cfg)
+                io_pin_count = metrics["io_pin_count"]
+                period_ns = cfg.calibration_period_ns - ws_ns
+                side_um = derive_final_side_um(cell_area_um2, io_pin_count, cfg)
             except Exception as exc:
                 error = f"calibration parse FAIL: {exc}"
         runs_report.append(

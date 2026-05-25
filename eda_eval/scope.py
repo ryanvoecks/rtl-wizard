@@ -48,11 +48,10 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-
-from . import analyse
-from .calibrate import resolve_design
-from .extract_metrics import extract
-from .run import run_job
+from common.designs import all_designs
+from eda_eval import analyse
+from eda_eval.extract_metrics import extract
+from eda_eval.run import run_job
 
 ITER_SCOPE_DIR = "__iter_scope__"
 
@@ -157,7 +156,8 @@ def measure_fix_scope(
     mods: set[str] = set()
     for _, _, _, cells in failing:
         for cell in cells:
-            mods |= analyse.cell_modules(cell, top_module, hier)
+            cell_mods, _ = analyse.cell_modules(cell, top_module, hier)
+            mods |= cell_mods
     total_loc = sum(hier.get(m, {}).get("line_count", 0) for m in mods)
     return {
         "n_failing": len(failing),
@@ -523,7 +523,7 @@ def main() -> None:
         raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
     cfg = StudyConfig()
-    design = resolve_design(args.benchmark, args.name, args.variant)
+    design = all_designs[args.benchmark][args.name][args.variant]
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
@@ -539,7 +539,13 @@ def main() -> None:
     # original RTL sources from disk (not the snapshotted copies under
     # each iter's inputs/), so this is design-invariant across all iters.
     hier_json = scope_root / "hierarchy.json"
-    analyse.dump_hierarchy(design.rtl_abs_paths, design.top_module, hier_json)
+    include_dirs = [design.root / design.rtl_dir / d for d in design.include_dirs]
+    analyse.dump_hierarchy(
+        design.rtl_abs_paths,
+        design.top_module,
+        hier_json,
+        include_dirs,
+    )
     hier = analyse.load_hierarchy(hier_json)
     if design.top_module not in hier:
         raise RuntimeError(

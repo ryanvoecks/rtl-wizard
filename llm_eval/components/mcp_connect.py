@@ -17,12 +17,10 @@ STARTUP_TIMEOUT = 5.0
 
 
 @functools.cache
-def discover_shared_network() -> tuple[str, str]:
-    """Return `(network_name, host_ip)` for a Docker network we share with
-    sibling containers. Falls back to `bridge` / `host.docker.internal` when
-    we can't introspect our own container (e.g. running outside Docker)."""
-    fallback = ("bridge", "host.docker.internal")
-
+def discover_host_ip() -> str:
+    """Return our IP on a Docker network shared with sibling containers.
+    Falls back to `host.docker.internal` when we can't introspect our own
+    container (e.g. running outside Docker)."""
     hostname = socket.gethostname()
     try:
         out = subprocess.check_output(
@@ -31,8 +29,8 @@ def discover_shared_network() -> tuple[str, str]:
                 "inspect",
                 hostname,
                 "--format",
-                "{{range $k, $v := .NetworkSettings.Networks}}"
-                "{{if $v.IPAddress}}{{$k}}\t{{$v.IPAddress}}\n{{end}}"
+                "{{range $v := .NetworkSettings.Networks}}"
+                "{{if $v.IPAddress}}{{$v.IPAddress}}\n{{end}}"
                 "{{end}}",
             ],
             text=True,
@@ -47,10 +45,9 @@ def discover_shared_network() -> tuple[str, str]:
         out = ""
 
     for line in out.splitlines():
-        net, sep, ip = line.partition("\t")
-        if sep:
-            return net, ip
-    return fallback
+        if line.strip():
+            return line.strip()
+    return "host.docker.internal"
 
 
 class MCPService:
@@ -64,7 +61,7 @@ class MCPService:
         self.url: str = ""
 
     async def __aenter__(self) -> "MCPService":
-        _, host_ip = discover_shared_network()
+        host_ip = discover_host_ip()
         config = uvicorn.Config(
             self._mcp.sse_app(),
             host="0.0.0.0",

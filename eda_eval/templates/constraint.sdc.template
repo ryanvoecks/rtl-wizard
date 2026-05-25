@@ -1,6 +1,6 @@
-# Timing constraints rendered per-run by test_flow_orfs/run.py
+# Timing constraints rendered per-run
 create_clock -name clk -period {period_ns} {clock_port}
 
-# Fixed IO delay at each boundary. Scaling with clock breaks calibration
+# IO delay at each boundary
 set_input_delay  -clock clk {io_delay_ns} [all_inputs -no_clocks]
 set_output_delay -clock clk {io_delay_ns} [all_outputs]

@@ -10,7 +10,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # `shared.name` is rewritten by tasks.py to a shared host network.
     networks:
       - default
       - shared
@@ -19,4 +18,4 @@ networks:
   default:
   shared:
     external: true
-    name: bridge
+    name: rtl-wizard_devcontainer_default
