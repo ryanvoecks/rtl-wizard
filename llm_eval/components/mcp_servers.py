@@ -17,7 +17,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
-from eda_eval.analyse_synth import analyse_synth
+from eda_eval.analyse import analyse
 from eda_eval.run import run_job
 
 from .claude_env import ClaudeEnv, build_diff_from_env
@@ -28,8 +28,8 @@ OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
 
 def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
     """Apply `diff` to a copy of the design root, drive the ORFS synth flow
-    into a fresh tempdir, then run analyse_synth and return its logical-
-    paths report."""
+    into a fresh tempdir, then run analyse and return its logical-paths
+    report."""
 
     # Create a modified target for the agent's RTL
     patched_root = _create_copy(synth_target.design, diff)
@@ -49,7 +49,7 @@ def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
         log = log_path.read_text() if log_path.is_file() else ""
         raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
 
-    return analyse_synth(run)
+    return analyse(run)
 
 
 class Tools:
