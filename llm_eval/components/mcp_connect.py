@@ -20,6 +20,38 @@ from starlette.routing import Mount
 STARTUP_TIMEOUT = 5.0
 
 
+class SuppressAbortResponse:
+    """ASGI middleware that suppresses the spurious traceback uvicorn logs
+    when an SSE response is aborted mid-stream by a client disconnect."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        started = False
+        broken = False
+
+        async def wrapped_send(message):
+            nonlocal started, broken
+            if broken:
+                return
+            if message["type"] == "http.response.start":
+                if started:
+                    broken = True
+                    return
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, wrapped_send)
+        except Exception:
+            if not started:
+                raise
+
+
 @functools.cache
 def discover_host_ip() -> str:
     """Return our IP on a Docker network shared with sibling containers.
@@ -109,7 +141,7 @@ class MCPService:
         if not self._base_url:
             raise RuntimeError("MCPService is not started")
         mount_path = f"/{env_id}"
-        sub_app = mcp.sse_app()
+        sub_app = SuppressAbortResponse(mcp.sse_app())
         with self._lock:
             self._app.routes[:] = [
                 r
