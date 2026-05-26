@@ -9,10 +9,16 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 from common.config import EDA_EVAL, ORFS_HOME, YOSYS_BIN, RunConfig
 from eda_eval.extract_metrics import find_unique, parse_period_ps
+
+# Default config
+TOP_PATHS = 50
+TOP_LOGICAL = 50
+POOL_SIZE = 1000
 
 # tcl path
 EXTRACT_TCL = EDA_EVAL / "tcl" / "extract_critical_paths.tcl"
@@ -23,11 +29,6 @@ HIER_SEP_RE = re.compile(r"[/.]")
 
 
 # Helpers
-
-
-def load_run_config(phase_dir: Path) -> dict:
-    """Read run_config.json from phase_dir."""
-    return json.loads((phase_dir / RunConfig.FILENAME).read_text())
 
 
 def locate_post_route(
@@ -222,40 +223,21 @@ def write_logical_paths(
 # Entry point
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("phase_dir", type=Path)
-    ap.add_argument(
-        "--top-paths",
-        type=int,
-        default=50,
-        metavar="M",
-        help="worst-slack individual paths to report",
-    )
-    ap.add_argument(
-        "--top-logical",
-        type=int,
-        default=50,
-        metavar="N",
-        help="logical register-to-register groups to report",
-    )
-    ap.add_argument(
-        "--pool",
-        type=int,
-        default=1000,
-        metavar="P",
-        help="find_timing_paths pool size",
-    )
-    args = ap.parse_args(argv)
-
-    phase_dir = args.phase_dir.resolve()
-    run_cfg = load_run_config(phase_dir)
-    design = run_cfg["synth_target"]["design"]
-    top_module = design["top_module"]
-    platform = run_cfg["synth_target"]["cfg"]["platform"]
-    abs_rtl_dir = Path(design["root"]) / design["rtl_dir"]
-    rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
-    include_dirs = [abs_rtl_dir / d for d in design.get("include_dirs", [])]
+def analyse(
+    run: RunConfig,
+    *,
+    top_paths: int = TOP_PATHS,
+    top_logical: int = TOP_LOGICAL,
+    pool: int = POOL_SIZE,
+) -> str:
+    """Run post-route STA on the phase dir at `run.output_dir`, write the
+    critical/logical-paths reports, and return the logical-paths report."""
+    design = run.synth_target.design
+    top_module = design.top_module
+    platform = run.synth_target.cfg.platform
+    phase_dir = run.output_dir
+    rtl_dir = design.root / design.rtl_dir
+    include_dirs = [rtl_dir / d for d in design.include_dirs]
 
     odb, sdc, spef = locate_post_route(phase_dir, top_module, platform)
     libs = liberty_files(platform)
@@ -265,35 +247,48 @@ def main(argv: list[str] | None = None) -> int:
     # Stage the tsv next to the final report so the rename is same-filesystem.
     raw_tsv = reports_dir / "critical_paths_raw.tsv"
     staging = raw_tsv.with_suffix(".tsv.partial")
-    run_openroad_extract(odb, sdc, spef, libs, args.pool, staging)
+    run_openroad_extract(odb, sdc, spef, libs, pool, staging)
     staging.replace(raw_tsv)
 
     records = read_pool_tsv(raw_tsv)
     if not records:
-        sys.stderr.write("OpenSTA returned zero paths\n")
-        return 1
+        raise RuntimeError("OpenSTA returned zero paths")
 
     hier_json = reports_dir / "hierarchy.json"
-    dump_hierarchy(rtl_files, top_module, hier_json, include_dirs)
+    dump_hierarchy(design.rtl_abs_paths, top_module, hier_json, include_dirs)
     hierarchy = load_hierarchy(hier_json)
 
     crit_path = reports_dir / "critical_paths.rpt"
     logical_path = reports_dir / "logical_paths.rpt"
-    n_crit = write_critical_paths(records, crit_path, args.top_paths)
-    n_log = write_logical_paths(
+    write_critical_paths(records, crit_path, top_paths)
+    write_logical_paths(
         records,
         logical_path,
-        args.top_logical,
+        top_logical,
         top_module,
         hierarchy,
         clock_period_ns=parse_period_ps(sdc) / 1000,
     )
+    return logical_path.read_text()
 
-    print(f"{n_crit} paths   -> {crit_path}")
-    print(f"{n_log} groups   -> {logical_path}")
-    print(f"{len(records)} raw -> {raw_tsv}")
-    return 0
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("phase_dir", type=Path)
+    parser.add_argument("--top-paths", type=int, default=TOP_PATHS, metavar="M")
+    parser.add_argument("--top-logical", type=int, default=TOP_LOGICAL, metavar="N")
+    parser.add_argument("--pool", type=int, default=POOL_SIZE, metavar="P")
+    args = parser.parse_args()
+
+    phase_dir = args.phase_dir.resolve()
+    run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
+    analyse(
+        run,
+        top_paths=args.top_paths,
+        top_logical=args.top_logical,
+        pool=args.pool,
+    )
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
