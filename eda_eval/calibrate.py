@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import time
 from pathlib import Path
 from typing import Literal
@@ -29,7 +30,6 @@ from typing import Literal
 from common.config import (
     ALL_FLOW_TARGETS,
     EDA_RUNS,
-    ORFS_HOME,
     SYNTH_FLOW_TARGETS,
     DesignConfig,
     RunConfig,
@@ -38,7 +38,7 @@ from common.config import (
 )
 from common.designs import all_designs
 from eda_eval.extract_metrics import extract, extract_synth
-from eda_eval.run import derive_final_side_um, run_job
+from eda_eval.run import run_job
 
 Phase = Literal["synth", "pnr"]
 
@@ -53,6 +53,18 @@ def iter_output_dir(
     return batch_dir / design.benchmark / design.name / f"iter_{phase}_{i}"
 
 
+def derive_final_side_um(
+    cell_area_um2: float, io_pin_count: int, cfg: StudyConfig
+) -> float:
+    """Square-die side that satisfies all three lower bounds: cell-area
+    at `target_utilization`, IO perimeter at `effective_pin_width` per
+    pin, and the absolute `minimum_side_um`."""
+    area_side = math.sqrt(cell_area_um2 / cfg.target_utilization)
+    area_side += 2 * cfg.core_margin_um
+    pin_side = io_pin_count * cfg.effective_pin_width / 4
+    return max(area_side, pin_side, cfg.minimum_side_um)
+
+
 def run_iteration(
     design: DesignConfig,
     batch_dir: Path,
@@ -62,6 +74,7 @@ def run_iteration(
     side_um: float,
     cfg: StudyConfig,
     flow_targets: tuple[str, ...],
+    num_threads: int,
 ) -> tuple[RunConfig, dict]:
     """One ORFS pass at the given period and die size. Returns the run
     config plus parsed metrics."""
@@ -74,6 +87,7 @@ def run_iteration(
         ),
         output_dir=iter_output_dir(design, batch_dir, phase, i),
         flow_targets=flow_targets,
+        num_threads=num_threads,
     )
     rc = run_job(run)
     if rc != 0:
@@ -103,10 +117,13 @@ def main() -> None:
     parser.add_argument("--benchmark", default="corpus")
     parser.add_argument("--name", default="counter_array")
     parser.add_argument("--variant", default="claude")
+    parser.add_argument(
+        "--num-threads",
+        type=int,
+        default=os.cpu_count() or 1,
+        help="ORFS threads. Default: nproc. Lower for multi-job parallelism.",
+    )
     args = parser.parse_args()
-
-    if not (ORFS_HOME / "Makefile").is_file():
-        raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
     cfg = StudyConfig()
     design = all_designs[args.benchmark][args.name][args.variant]
@@ -134,6 +151,7 @@ def main() -> None:
         cfg.calibration_side_um,
         cfg,
         SYNTH_FLOW_TARGETS,
+        args.num_threads,
     )
     synth_ws_1 = _require_finite(m1, "synth_ws_ns")
     synth_area_1 = _require_finite(m1, "synth_area_um2")
@@ -157,7 +175,15 @@ def main() -> None:
             f"side={side:.2f} um"
         )
         run, m = run_iteration(
-            design, batch_dir, "pnr", j, t, side, cfg, ALL_FLOW_TARGETS
+            design,
+            batch_dir,
+            "pnr",
+            j,
+            t,
+            side,
+            cfg,
+            ALL_FLOW_TARGETS,
+            args.num_threads,
         )
         ws = _require_finite(m, "route_ws_ns")
         area = _require_finite(m, "route_area_um2")

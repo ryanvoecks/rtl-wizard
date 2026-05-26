@@ -24,7 +24,6 @@ COLS = [
     "worst_slack_ns",
     "best_slack_ns",
     "count",
-    "total_loc",
     "start_stem",
     "end_stem",
     "modules",

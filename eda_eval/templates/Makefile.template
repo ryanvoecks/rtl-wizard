@@ -14,9 +14,12 @@ export CORE_AREA     = {core_area}
 export PLACE_DENSITY = {place_density}
 export OR_SEED       = {seed}
 export FLOW_TARGETS  = {flow_targets}
-
+export NUM_CORES     = {num_threads}
 export PLACE_PINS_ARGS = {place_pins_args}
 export SYNTH_MEMORY_MAX_BITS = {synth_memory_max_bits}
+
+# Disable GUI
+export QT_QPA_PLATFORM = offscreen
 
 THIS_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 

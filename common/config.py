@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-from dataclasses import asdict, dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, get_args, get_origin, get_type_hints
@@ -13,6 +14,7 @@ from typing import Any, ClassVar, get_args, get_origin, get_type_hints
 HERE = Path(__file__).resolve().parent
 SCRIPTS_DIR = HERE / "scripts"
 REPO_ROOT = HERE.parent
+EDA_EVAL = REPO_ROOT / "eda_eval"
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
@@ -52,6 +54,12 @@ PNR_FLOW_TARGETS = (
     "do-finish",
 )
 ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
+
+
+# Raise if ORFS isn't installed at `ORFS_HOME`
+if not (ORFS_HOME / "Makefile").is_file():
+    raise FileNotFoundError(f"ORFS flow not found at {ORFS_HOME}")
+
 
 # Common types
 Result = tuple[str, int]  # Output message, return code tuple
@@ -147,6 +155,7 @@ class RunConfig:
     synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
     flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
+    num_threads: int = field(default_factory=lambda: os.cpu_count() or 1)  # ORFS cores
 
     def dump(self, path: Path) -> None:
         """Serialise to JSON."""
