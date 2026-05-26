@@ -14,10 +14,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Setup
 
 ```bash
-./setup.sh                                 # submodules + patches + uv sync + claude OAUTH token -> .env
+./setup.sh                                 # submodules + patches + uv sync
 ```
 
-Requires `uv`, `docker`, and (for `llm_eval`) `claude setup-token` having been run. Python pinned to 3.12. The devcontainer (`.devcontainer/Dockerfile`) builds OpenROAD-flow-scripts + Verilator from source so `yosys`/`openroad`/`klayout`/`verilator` are on PATH inside the container. First build is long; subsequent rebuilds reuse the cache.
+Requires `uv`, `docker`, and (for `llm_eval`) a `.env` with `CLAUDE_CODE_OAUTH_TOKEN` set (run `claude setup-token` and copy the token in by hand). Python pinned to 3.12. The devcontainer (`.devcontainer/Dockerfile`) builds OpenROAD-flow-scripts + Verilator from source so `yosys`/`openroad`/`klayout`/`verilator` are on PATH inside the container. First build is long; subsequent rebuilds reuse the cache.
 
 Submodule patches live in `common/patches/<repo>.diff` and are applied idempotently by `setup.sh`. If you re-clone a submodule manually, re-run `setup.sh` so its patch is re-applied (otherwise testbenches / cell-count targets drift from what's documented in `common/designs.py`).
 
