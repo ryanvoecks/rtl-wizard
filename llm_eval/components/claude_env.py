@@ -10,8 +10,12 @@ from __future__ import annotations
 import difflib
 import json
 import secrets
+import shlex
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
+
+from mcp.server.fastmcp import FastMCP
 
 from common.config import DesignConfig
 
@@ -23,10 +27,14 @@ SANDBOX_RTL_ROOT = "rtl"
 
 @dataclass
 class ClaudeEnv:
-    """Scoped unix user + home dir inside the shared container."""
+    """Scoped unix user + home dir inside the shared container, optionally
+    bound to a per-env FastMCP that's mounted on the container's shared MCP
+    host for the env's lifetime."""
 
     container: Container
+    mcp_factory: Callable[[ClaudeEnv], FastMCP] | None = None
     user: str = field(default_factory=lambda: f"claude-{secrets.token_hex(6)}")
+    url: str = field(default="", init=False)
 
     @property
     def workdir(self) -> str:
@@ -74,9 +82,15 @@ class ClaudeEnv:
                 user="root",
             ),
         )
+        if self.mcp_factory is not None:
+            self.url = self.container.mcp.mount(self.user, self.mcp_factory(self))
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        # Unmount this env's FastMCP from the eval-wide MCP host
+        if self.url:
+            self.container.mcp.unmount(self.user)
+            self.url = ""
         # -f -r: force-remove even if processes are still running
         self.container.execute(
             ["userdel", "-f", "-r", self.user],
@@ -119,10 +133,11 @@ class ClaudeEnv:
         resume_session: str | None = None,
         timeout: float = 1800.0,
     ) -> ExecResult:
-        """Run `claude -p` as the env's user with `prompt` on stdin."""
-        cmd = [
+        """Run `claude -p` as the env's user."""
+        claude_args = [
             "claude",
             "-p",
+            prompt,
             "--output-format",
             "stream-json",
             "--verbose",
@@ -134,18 +149,26 @@ class ClaudeEnv:
         ]
         if mcp_servers is not None:
             self.write_file("mcp.json", json.dumps({"mcpServers": mcp_servers}))
-            cmd += [
+            claude_args += [
                 "--mcp-config",
                 f"{self.workdir}/mcp.json",
                 "--strict-mcp-config",
             ]
         if allowed_tools:
-            cmd += ["--allowedTools", ",".join(allowed_tools)]
+            claude_args += ["--allowedTools", ",".join(allowed_tools)]
         if resume_session:
-            cmd += ["--resume", resume_session]
-        return self.container.execute(
+            claude_args += ["--resume", resume_session]
+
+        # `script` wraps claude in a PTY so Node line-flushes stdout, and
+        # writes the typescript to a file inside the container so timeouts
+        # don't lose events to the SIGKILLed host docker-exec pipe.
+        log_rel = "claude.log"
+        log_abs = f"{self.workdir}/{log_rel}"
+        shell_cmd = " ".join(shlex.quote(a) for a in claude_args)
+        cmd = ["script", "-q", "-f", "-c", shell_cmd, log_abs]
+
+        raw = self.container.execute(
             cmd,
-            input=prompt,
             # Isolated sandbox environment
             env={
                 "IS_SANDBOX": "1",
@@ -156,6 +179,12 @@ class ClaudeEnv:
             user=self.user,
             workdir=self.workdir,
             timeout=timeout,
+        )
+
+        return ExecResult(
+            returncode=raw.returncode,
+            stdout=self.read_file(log_rel),
+            stderr=raw.stderr,
         )
 
     @staticmethod

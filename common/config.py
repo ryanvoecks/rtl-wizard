@@ -13,6 +13,7 @@ from typing import Any, ClassVar, get_args, get_origin, get_type_hints
 HERE = Path(__file__).resolve().parent
 SCRIPTS_DIR = HERE / "scripts"
 REPO_ROOT = HERE.parent
+EDA_EVAL = REPO_ROOT / "eda_eval"
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
@@ -52,6 +53,12 @@ PNR_FLOW_TARGETS = (
     "do-finish",
 )
 ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
+
+
+# Raise if ORFS isn't installed at `ORFS_HOME`
+if not (ORFS_HOME / "Makefile").is_file():
+    raise FileNotFoundError(f"ORFS flow not found at {ORFS_HOME}")
+
 
 # Common types
 Result = tuple[str, int]  # Output message, return code tuple
