@@ -29,10 +29,12 @@ def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
     """Start, retry, or skip based on any existing .eval log in `run_dir`."""
     existing = sorted(run_dir.glob("*.eval"))
     if not existing:
-        inspect_eval(task, run_dir=str(run_dir), **kwargs)
+        inspect_eval(task, log_dir=str(run_dir), **kwargs)
+        return
     log = read_eval_log(str(existing[-1]), header_only=True)
     if log.status == "success":
         print(f"Skipping (success): {existing[-1]}")
+        return
     print(f"Retrying ({log.status}): {existing[-1]}")
     eval_retry(log)
 
