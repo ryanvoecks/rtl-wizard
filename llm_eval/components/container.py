@@ -1,7 +1,8 @@
 """Single Docker container for the Claude Code agent - one devcontainer for the
-whole eval. Context manager: `__enter__` creates+starts the container, `__exit__`
-removes it. `execute` shells into it via `docker compose exec` and is intended
-to be called inside the `with` block."""
+whole eval. Async context manager: `__aenter__` creates+starts the docker
+container AND boots the eval-wide MCPService; `__aexit__` tears both down.
+`execute` shells into it via `docker compose exec` and is intended to be called
+inside the `async with` block."""
 
 from __future__ import annotations
 
@@ -10,13 +11,17 @@ from dataclasses import dataclass
 
 from common.config import LLM_EVAL
 
-from .mcp_connect import discover_host_ip
+from .mcp_connect import MCPService, discover_host_ip
 
+# Setup config
 SANDBOX_DIR = LLM_EVAL / "sandbox"
 COMPOSE_FILE = SANDBOX_DIR / "compose.yaml"
 PROJECT = "rtl-wizard"
 SERVICE = "solver"
 OAUTH_HOME = "/opt/claude-oauth"
+
+# Conventional GNU `timeout` exit code
+TIMEOUT_RC = 124
 
 
 @dataclass
@@ -29,10 +34,17 @@ class ExecResult:
 
 
 class Container:
-    """Context manager wrapper around `docker compose` for the sandbox service."""
+    """Async context manager wrapping `docker compose` for the sandbox service
+    plus the eval-wide `MCPService` (so the uvicorn server lives for the entire
+    eval and `sse_starlette`'s process-global shutdown flag never fires
+    mid-eval)."""
 
-    def __enter__(self) -> Container:
-        """Build (if needed), create, and start the container."""
+    def __init__(self) -> None:
+        self.mcp = MCPService()
+
+    async def __aenter__(self) -> Container:
+        """Build (if needed), create, and start the container; then bring up
+        the shared MCP host."""
         self._compose("create")
         self._compose("start")
 
@@ -70,10 +82,14 @@ class Container:
 
         # Make the oauth dir traversable+readable by env users
         self.execute(["chmod", "-R", "a+rX", OAUTH_HOME], user="root")
+
+        # Bring up the shared MCP host inside the eval's asyncio loop.
+        await self.mcp.__aenter__()
         return self
 
-    def __exit__(self, *_exc: object) -> None:
-        """`docker compose down` -- stops and removes the container."""
+    async def __aexit__(self, *_exc: object) -> None:
+        """Tear down the MCP host, then `docker compose down`."""
+        await self.mcp.__aexit__()
         self._compose("down")
 
     def execute(
@@ -96,14 +112,22 @@ class Container:
         for k, v in (env or {}).items():
             args += ["--env", f"{k}={v}"]
         args += [SERVICE, *cmd]
-        proc = subprocess.run(
-            args,
-            input=input,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
+        try:
+            proc = subprocess.run(
+                args,
+                input=input,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as e:
+            # Recover partial output buffered up to the kill
+            return ExecResult(
+                returncode=TIMEOUT_RC,
+                stdout=str(e.stdout or ""),
+                stderr=str(e.stderr or ""),
+            )
         return ExecResult(
             returncode=proc.returncode,
             stdout=proc.stdout,
