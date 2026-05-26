@@ -42,7 +42,6 @@ from typing import Any
 from common.config import (
     ALL_FLOW_TARGETS,
     EDA_RUNS,
-    ORFS_HOME,
     DesignConfig,
     RunConfig,
     StudyConfig,
@@ -497,9 +496,6 @@ def main() -> None:
         help="OpenSTA path pool size for fix-scope measurement.",
     )
     args = parser.parse_args()
-
-    if not (ORFS_HOME / "Makefile").is_file():
-        raise FileNotFoundError("ORFS flow not found - set config.ORFS_HOME")
 
     cfg = StudyConfig()
     design = all_designs[args.benchmark][args.name][args.variant]

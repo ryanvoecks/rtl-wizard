@@ -54,6 +54,12 @@ PNR_FLOW_TARGETS = (
 )
 ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
 
+
+# Raise if ORFS isn't installed at `ORFS_HOME`
+if not (ORFS_HOME / "Makefile").is_file():
+    raise FileNotFoundError(f"ORFS flow not found at {ORFS_HOME}")
+
+
 # Common types
 Result = tuple[str, int]  # Output message, return code tuple
 
