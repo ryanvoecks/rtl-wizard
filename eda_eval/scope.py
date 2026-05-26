@@ -3,8 +3,8 @@
 
 Iterates ORFS at progressively tighter periods to find the highest
 frequency at which the design fails timing **but** the fix is still
-localised: the union of modules / starting registers / RTL line-count
-touched by every negative-slack path stays inside fixed budgets.
+localised: the union of modules / starting registers touched by every
+negative-slack path stays inside fixed budgets.
 
 Three phases:
 
@@ -13,14 +13,14 @@ Three phases:
   the target ratio pinned to 0 (i.e. just-meets-timing).
 * Phase B: shrink period by `step` per iter. At each step compute the
   fix scope across all `slack<0` paths and check against the module /
-  start-stem / LOC budgets. Continue while criteria hold; stop on the
-  first break (or on a period-floor / pool-saturation guard).
+  start-stem budgets. Continue while criteria hold; stop on the first
+  break (or on a period-floor / pool-saturation guard).
 * Phase C: bisect `(t_bad, t_good)` for `--bisect-iters` rounds to
   refine `T_sweet`.
 
 A run is suitable for optimisation iff (a) a valid `T_sweet` was found
 and (b) `(T_baseline - T_sweet) / T_baseline >= --min-improvement`. The
-last three budget criteria are enforced by construction at `T_sweet`.
+budget criteria are enforced by construction at `T_sweet`.
 
 Usage:
     uv run eda_eval/scope.py
@@ -113,12 +113,12 @@ def measure_fix_scope(
     phase_dir: Path,
     top_module: str,
     platform: str,
-    hier: dict[str, dict],
+    hier: dict[str, dict[str, str]],
     libs: list[Path],
     pool: int,
 ) -> dict[str, Any]:
     """Run OpenROAD STA on the routed DB, parse the path pool, and roll
-    up modules / starting registers / LOC across every `slack<0` path.
+    up modules / starting registers across every `slack<0` path.
 
     On OpenROAD/parse failure returns `{"scope_error": <msg>, ...}` with
     the count fields set to None -- the caller treats this as fix_ok=False
@@ -128,25 +128,13 @@ def measure_fix_scope(
         reports_dir = phase_dir / "reports" / platform / top_module / "base"
         reports_dir.mkdir(parents=True, exist_ok=True)
         raw_tsv = reports_dir / "critical_paths_raw.tsv"
-        congest_tsv = reports_dir / "congestion_hotspots_raw.tsv"
-        congest_rpt = analyse.locate_congestion_rpt(reports_dir)
-        analyse.run_openroad_extract(
-            odb,
-            sdc,
-            spef,
-            libs,
-            pool,
-            raw_tsv,
-            congest_rpt,
-            congest_tsv,
-        )
+        analyse.run_openroad_extract(odb, sdc, spef, libs, pool, raw_tsv)
         records = analyse.read_pool_tsv(raw_tsv)
     except Exception as exc:
         return {
             "n_failing": None,
             "n_modules": None,
             "n_starts": None,
-            "total_loc": None,
             "modules": None,
             "scope_error": f"{type(exc).__name__}: {exc}",
         }
@@ -158,12 +146,10 @@ def measure_fix_scope(
         for cell in cells:
             cell_mods, _ = analyse.cell_modules(cell, top_module, hier)
             mods |= cell_mods
-    total_loc = sum(hier.get(m, {}).get("line_count", 0) for m in mods)
     return {
         "n_failing": len(failing),
         "n_modules": len(mods),
         "n_starts": len(starts),
-        "total_loc": total_loc,
         "modules": sorted(mods),
         "scope_error": None,
     }
@@ -176,9 +162,7 @@ class Budgets:
 
     max_modules: int
     max_starts: int
-    max_loc: int
     pool: int
-    total_design_loc: int
 
 
 def classify_fix(ws_ns: float, scope_m: dict, b: Budgets) -> tuple[bool, str]:
@@ -196,14 +180,10 @@ def classify_fix(ws_ns: float, scope_m: dict, b: Budgets) -> tuple[bool, str]:
     n_failing = scope_m["n_failing"]
     if n_failing >= 0.9 * b.pool:
         return False, "pool_saturated"
-    if b.total_design_loc > 0 and scope_m["total_loc"] >= 0.8 * b.total_design_loc:
-        return False, "loc_engulfed"
     if scope_m["n_modules"] > b.max_modules:
         return False, "modules_exceeded"
     if scope_m["n_starts"] > b.max_starts:
         return False, "starts_exceeded"
-    if scope_m["total_loc"] > b.max_loc:
-        return False, "loc_exceeded"
     return True, "ok"
 
 
@@ -245,7 +225,6 @@ def phase_a(
                 "n_failing": None,
                 "n_modules": None,
                 "n_starts": None,
-                "total_loc": None,
                 "modules": None,
                 "scope_error": None,
                 "fix_ok": None,
@@ -428,7 +407,7 @@ def _fmt_scope_line(
     else:
         body = (
             f"failing={scope_m['n_failing']} modules={scope_m['n_modules']} "
-            f"starts={scope_m['n_starts']} loc={scope_m['total_loc']}"
+            f"starts={scope_m['n_starts']}"
         )
     tag = "fix_ok" if fix_ok else f"fix_break({reason})"
     return f"[{phase} iter {i}] period={t:.4f} ns -> ws={ws:+.4f} ns  {body}  {tag}"
@@ -455,8 +434,7 @@ def print_summary(
     if sweet_scope is not None and sweet_scope.get("modules") is not None:
         print(
             f"Fix scope:         {sweet_scope['n_modules']} modules / "
-            f"{sweet_scope['n_starts']} start regs / "
-            f"{sweet_scope['total_loc']} LOC"
+            f"{sweet_scope['n_starts']} start regs"
         )
         print(f"  modules:         {','.join(sweet_scope['modules'])}")
     print()
@@ -509,7 +487,6 @@ def main() -> None:
     )
     parser.add_argument("--max-modules", type=int, default=6)
     parser.add_argument("--max-start-stems", type=int, default=5)
-    parser.add_argument("--max-loc", type=int, default=2000)
     parser.add_argument("--min-improvement", type=float, default=0.10)
     parser.add_argument(
         "--pool",
@@ -553,18 +530,14 @@ def main() -> None:
             f"{sorted(hier)}"
         )
     libs = analyse.liberty_files(cfg.platform)
-    total_design_loc = sum(m.get("line_count", 0) for m in hier.values())
     budgets = Budgets(
         max_modules=args.max_modules,
         max_starts=args.max_start_stems,
-        max_loc=args.max_loc,
         pool=args.pool,
-        total_design_loc=total_design_loc,
     )
     print(
-        f"Hierarchy: {len(hier)} modules, {total_design_loc} total LOC. "
-        f"Budgets: <={args.max_modules} modules, <={args.max_start_stems} starts, "
-        f"<={args.max_loc} LOC."
+        f"Hierarchy: {len(hier)} modules. "
+        f"Budgets: <={args.max_modules} modules, <={args.max_start_stems} starts."
     )
 
     history: list[dict] = []
@@ -573,11 +546,9 @@ def main() -> None:
         "name": design.name,
         "variant": design.variant,
         "top_module": design.top_module,
-        "total_design_loc": total_design_loc,
         "budgets": {
             "max_modules": args.max_modules,
             "max_start_stems": args.max_start_stems,
-            "max_loc": args.max_loc,
             "min_improvement": args.min_improvement,
         },
     }
@@ -666,7 +637,6 @@ def main() -> None:
                 sweet_scope = {
                     "n_modules": h["n_modules"],
                     "n_starts": h["n_starts"],
-                    "total_loc": h["total_loc"],
                     "modules": h["modules"],
                 }
                 break

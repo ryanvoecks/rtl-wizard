@@ -144,7 +144,6 @@ def analyse_synth(
         top_logical,
         top_module,
         hierarchy,
-        pool_size=len(records),
         clock_period_ns=parse_period_ps(sdc) / 1000,
     )
     return logical_path.read_text()

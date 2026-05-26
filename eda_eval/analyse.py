@@ -1,32 +1,5 @@
 #!/usr/bin/env python3
-"""Analyse a single ORFS variant phase dir for optimisation opportunities.
-
-Queries the post-route OpenROAD database for the worst-slack setup paths
-**and** the worst routing-congestion tiles, groups each by logical RTL
-relationship using the original module hierarchy, and writes ranked
-reports next to the EDA tool's own output.
-
-Reports land in `<phase_dir>/reports/<platform>/<design>/<variant>/`:
-    critical_paths.rpt          -- top M worst-slack individual paths
-    critical_paths_raw.tsv      -- the full sampled timing pool, with
-                                   per-path cell chain detail
-    logical_paths.rpt           -- top N logical register-to-register
-                                   groups, with worst/best slack, path
-                                   count, the union of containing
-                                   modules, and their total LOC
-    congestion_hotspots.rpt     -- top M overflowing GR tiles by overflow
-                                   magnitude (empty stub if the design
-                                   routed clean)
-    congestion_hotspots_raw.tsv -- every overflow tile, enriched with the
-                                   instances + IO pins driving the
-                                   contributing nets
-    logical_congestion.rpt      -- top N RTL-module groups by aggregate
-                                   overflow exposure
-
-Usage:
-    uv run eda_eval/analyse.py eda_results/<batch>/<benchmark>/<name>/<variant>/
-    uv run eda_eval/analyse.py <phase_dir> --top-paths 20 --top-logical 10
-"""
+"""Dump per-path and logical-group setup-timing reports for an ORFS phase dir."""
 
 from __future__ import annotations
 
@@ -36,30 +9,24 @@ import os
 import re
 import subprocess
 import sys
-from dataclasses import dataclass
 from pathlib import Path
 
-from common.config import ORFS_HOME, YOSYS_BIN, RunConfig
+from common.config import EDA_EVAL, ORFS_HOME, YOSYS_BIN, RunConfig
 from eda_eval.extract_metrics import find_unique, parse_period_ps
 
-HERE = Path(__file__).resolve().parent
-EXTRACT_TCL = HERE / "tcl" / "extract_critical_paths.tcl"
-EXTRACT_CONGEST_TCL = HERE / "tcl" / "extract_congestion.tcl"
+# tcl path
+EXTRACT_TCL = EDA_EVAL / "tcl" / "extract_critical_paths.tcl"
 
-# ORFS emits up to four congestion reports across the GR pass; the later
-# the stage, the closer to the final routed state. Pick the latest that
-# exists (per-iteration `-N.rpt` snapshots are intentionally ignored).
-_CONGESTION_RPT_PRIORITY = (
-    "congestion_post_recover_power.rpt",
-    "congestion_post_repair_timing.rpt",
-    "congestion_post_repair_design.rpt",
-    "congestion.rpt",
-)
+# Regexes for lexing
+INDEX_RE = re.compile(r"\[\d+\]")
+HIER_SEP_RE = re.compile(r"[/.]")
+
+
+# Helpers
 
 
 def load_run_config(phase_dir: Path) -> dict:
-    """Read the `run_config.json` written by run.py at the top of the phase
-    dir. Raises if absent."""
+    """Read run_config.json from phase_dir."""
     return json.loads((phase_dir / RunConfig.FILENAME).read_text())
 
 
@@ -72,19 +39,15 @@ def locate_post_route(
     base = f"results/{platform}/{design}/*"
     odb = find_unique(phase_dir, f"{base}/6_final.odb", "6_final.odb")
     sdc = find_unique(phase_dir, f"{base}/6_final.sdc", "6_final.sdc")
-    spef_matches = list(phase_dir.glob(f"{base}/6_final.spef"))
-    spef = spef_matches[0] if spef_matches else None
+    spef = next(iter(phase_dir.glob(f"{base}/6_final.spef")), None)
     return odb, sdc, spef
 
 
 def liberty_files(platform: str) -> list[Path]:
-    """Resolve every .lib for `platform` under the ORFS platforms dir."""
-    lib_dir = ORFS_HOME / "platforms" / platform / "lib"
-    if not lib_dir.is_dir():
-        raise FileNotFoundError(f"platform lib dir not found: {lib_dir}")
-    libs = sorted(lib_dir.glob("*.lib"))
+    """All .lib files for `platform` under the ORFS platforms dir."""
+    libs = sorted((ORFS_HOME / "platforms" / platform / "lib").glob("*.lib"))
     if not libs:
-        raise FileNotFoundError(f"no .lib files under {lib_dir}")
+        raise FileNotFoundError(f"no .lib files for platform {platform!r}")
     return libs
 
 
@@ -95,70 +58,24 @@ def run_openroad_extract(
     libs: list[Path],
     pool: int,
     tsv_out: Path,
-    congest_rpt: Path | None,
-    congest_tsv_out: Path,
 ) -> None:
-    """Pipe an STA + congestion driver script into openroad. One openroad
-    invocation produces both `tsv_out` (timing pool) and
-    `congest_tsv_out` (enriched congestion). When `congest_rpt` is
-    None the congestion tcl short-circuits and `congest_tsv_out` is
-    written with just its header (the clean-design case)."""
+    """Drive openroad to dump the worst-slack timing pool to tsv_out."""
     lines = [f"read_liberty {lib}" for lib in libs]
-    lines.append(f"read_db {odb}")
-    lines.append(f"read_sdc {sdc}")
+    lines += [f"read_db {odb}", f"read_sdc {sdc}"]
     if spef is not None:
         lines.append(f"read_spef {spef}")
     lines.append(f"source {EXTRACT_TCL}")
-    lines.append(f"source {EXTRACT_CONGEST_TCL}")
-    script = "\n".join(lines)
-
-    env = {
-        **os.environ,
-        "ANALYSE_OUT_TSV": str(tsv_out),
-        "ANALYSE_POOL": str(pool),
-        "ANALYSE_CONGEST_TSV": str(congest_tsv_out),
-    }
-    if congest_rpt is not None:
-        env["ANALYSE_CONGEST_RPT"] = str(congest_rpt)
+    env = {**os.environ, "ANALYSE_OUT_TSV": str(tsv_out), "ANALYSE_POOL": str(pool)}
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
-        input=script,
+        input="\n".join(lines),
         env=env,
         text=True,
         capture_output=True,
     )
     if proc.returncode != 0:
-        sys.stderr.write(proc.stdout)
-        sys.stderr.write(proc.stderr)
-        raise RuntimeError(
-            f"openroad extraction failed (rc={proc.returncode}). See output above."
-        )
-    if not tsv_out.is_file():
-        raise RuntimeError(f"openroad did not write {tsv_out}")
-    if not congest_tsv_out.is_file():
-        raise RuntimeError(f"openroad did not write {congest_tsv_out}")
-
-
-def locate_congestion_rpt(reports_dir: Path) -> Path | None:
-    """Return the most-final GR-emitted congestion rpt that exists, or
-    None. ORFS writes these only when overflowing tiles exist (see
-    `flow/scripts/global_route.tcl`), so a missing file is the
-    clean-design case."""
-    for name in _CONGESTION_RPT_PRIORITY:
-        candidate = reports_dir / name
-        if candidate.is_file():
-            return candidate
-    return None
-
-
-# Hierarchy via yosys ----------------------------------------------------------
-
-_INDEX_RE = re.compile(r"\[\d+\]")
-# OpenSTA's `full_name` emits hierarchical cell paths joined by `.` when the
-# upstream synth flattened with preserved names (the ORFS default) and by
-# `/` when synth was hierarchical and ODB carries true scopes. Either is
-# treated as a separator by the walk.
-_HIER_SEP_RE = re.compile(r"[/.]")
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise RuntimeError("openroad extraction failed")
 
 
 def dump_hierarchy(
@@ -167,17 +84,7 @@ def dump_hierarchy(
     json_out: Path,
     include_dirs: list[Path] | None = None,
 ) -> None:
-    """Have yosys read the RTL, elaborate the hierarchy, and dump it as JSON.
-
-    `proc` is the minimum yosys needs before `write_json` accepts the design
-    (it lowers always-blocks to structured logic). We deliberately do NOT
-    run `flatten` or `synth` -- we want the original module structure with
-    one cells entry per submodule instantiation. `include_dirs` is passed
-    through as `-I <dir>` flags so include directives resolve against the
-    same paths ORFS sees via VERILOG_INCLUDE_DIRS; omitting them lets
-    yosys silently stub the missing modules as blackboxes, which then
-    truncates the hierarchy walk at every blackbox boundary.
-    """
+    """Have yosys elaborate the module hierarchy and dump it as JSON."""
     inc_args = "".join(f" -I {d}" for d in (include_dirs or []))
     rtl_args = " ".join(str(f) for f in rtl_files)
     script = (
@@ -191,141 +98,76 @@ def dump_hierarchy(
         text=True,
         capture_output=True,
     )
-    if proc.returncode != 0 or not json_out.is_file():
-        sys.stderr.write(proc.stdout)
-        sys.stderr.write(proc.stderr)
-        raise RuntimeError(f"yosys hierarchy dump failed (rc={proc.returncode}).")
-
-
-def _module_loc(src_attr: str | None) -> int:
-    """Yosys emits `attributes.src` like `"path/to/file.v:41.1-269.10"`,
-    occasionally `"...|..."` for spans across multiple ranges. Take the
-    first range and count inclusive lines. Missing/unparseable -> 0."""
-    if not src_attr:
-        return 0
-    first = src_attr.split("|", 1)[0]
-    try:
-        _, span = first.rsplit(":", 1)
-        start_s, end_s = span.split("-")
-        start = int(start_s.split(".")[0])
-        end = int(end_s.split(".")[0])
-        return max(0, end - start + 1)
-    except (ValueError, IndexError):
-        return 0
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise RuntimeError("yosys hierarchy dump failed")
 
 
 def _clean_instance(name: str) -> str:
-    """Normalize one path component to its user-visible Verilog instance
-    name. Strips yosys's escape-id syntax (leading `\\`, trailing
-    whitespace), `[N]` array indices, and the trailing `$_CELLTYPE_` tag
-    yosys appends to mapped leaf cells. Applied to both hierarchy keys at
-    load time and path tokens at lookup time so the two compare cleanly."""
-    name = name.lstrip("\\").rstrip()
-    name = name.split("$", 1)[0]
-    return _INDEX_RE.sub("", name)
+    """Strip yosys escape syntax, `[N]` indices, and trailing `$_CELLTYPE_`."""
+    name = name.lstrip("\\").rstrip().split("$", 1)[0]
+    return INDEX_RE.sub("", name)
 
 
-def load_hierarchy(json_path: Path) -> dict[str, dict]:
-    """Reshape yosys's write_json output into:
-        module_name -> {line_count: int,
-                        instances: {clean_inst_name: child_module_name}}
-
-    Only cells whose `type` is itself a module get recorded as instances --
-    leaf primitives (`$_DFFE_`, gate cells, etc.) are skipped because the
-    walk in `cell_modules` only cares about module-to-module hops.
-    Instance keys are normalized via `_clean_instance` so the post-`[N]`
-    -strip lookup from a path token matches generate-for instances (which
-    yosys writes as `name[0]`, `name[1]`, ...).
-    """
-    raw = json.loads(json_path.read_text())
-    modules_raw = raw.get("modules", {})
-    valid = set(modules_raw.keys())
-    hierarchy: dict[str, dict] = {}
-    for name, info in modules_raw.items():
-        instances: dict[str, str] = {}
-        for inst, cell in info.get("cells", {}).items():
-            t = cell.get("type")
-            if t in valid:
-                # Generate-for elaborates to N keys (`name[0]`, ...) all of
-                # the same module type; collapsing to a single clean key is
-                # what the walk expects.
-                instances[_clean_instance(inst)] = t
-        src = info.get("attributes", {}).get("src")
-        hierarchy[name] = {
-            "line_count": _module_loc(src),
-            "instances": instances,
+def load_hierarchy(json_path: Path) -> dict[str, dict[str, str]]:
+    """Module -> {clean_inst_name: child_module} from yosys write_json output."""
+    modules_raw = json.loads(json_path.read_text()).get("modules", {})
+    valid = set(modules_raw)
+    return {
+        name: {
+            _clean_instance(inst): cell["type"]
+            for inst, cell in info.get("cells", {}).items()
+            if cell.get("type") in valid
         }
-    return hierarchy
+        for name, info in modules_raw.items()
+    }
 
 
 def cell_modules(
     inst_path: str,
     top_module: str,
-    hierarchy: dict[str, dict],
+    hierarchy: dict[str, dict[str, str]],
 ) -> tuple[set[str], bool]:
-    """Walk a hierarchical instance path and return (modules touched, walk
-    truncated). Modules include top + each submodule type traversed + the
-    leaf-containing module. `truncated` is True if an intermediate path
-    token didn't resolve to a known submodule -- a signal that the yosys
-    hierarchy is incomplete (typical causes: missing include paths,
-    blackbox stubs, or names with chars `_clean_instance` doesn't cover).
-    """
+    """Walk an instance path; return (modules touched, walk truncated early)."""
     mods = {top_module}
-    parts = _HIER_SEP_RE.split(inst_path)
     current = top_module
-    truncated = False
+    parts = HIER_SEP_RE.split(inst_path)
     for inst in parts[:-1]:
-        clean = _clean_instance(inst)
-        instances = hierarchy.get(current, {}).get("instances", {})
-        if clean not in instances:
-            truncated = True
-            break
-        current = instances[clean]
+        child = hierarchy.get(current, {}).get(_clean_instance(inst))
+        if child is None:
+            return mods, True
+        current = child
         mods.add(current)
-    return mods, truncated
+    return mods, False
 
 
 def logical_stem(full_name: str) -> str:
-    """Drop the trailing /<pin>, the yosys $_CELLTYPE_ tag, and any `[N]`
-    indices to leave a register-array-shaped stem. Mirrors the Tcl
-    cell-name handling in extract_critical_paths.tcl so start/end stems
-    compare cleanly. Splits at the *last* `/` because hierarchical synth
-    keeps `/`-joined cell paths and only the final `/` separates the pin."""
-    inst = full_name.rsplit("/", 1)[0]
-    inst = inst.split("$", 1)[0]
-    return _INDEX_RE.sub("", inst)
+    """Pin name -> register-array stem (drop /<pin>, $-tag, and [N] indices)."""
+    return INDEX_RE.sub("", full_name.rsplit("/", 1)[0].split("$", 1)[0])
 
 
-# Report writers ---------------------------------------------------------------
+# Report writers
 
 
 def read_pool_tsv(tsv: Path) -> list[tuple[float, str, str, list[str]]]:
-    """Return [(slack_ns, startpoint, endpoint, cells_list), ...]."""
-    records: list[tuple[float, str, str, list[str]]] = []
+    """Parse the timing-pool TSV into (slack_ns, sp, ep, cells) records."""
+    records = []
     for line in tsv.read_text().splitlines():
         if not line or line.startswith("#"):
             continue
-        slack_s, sp, ep, cells = line.split("\t")
-        records.append(
-            (
-                float(slack_s),
-                sp,
-                ep,
-                cells.split("|") if cells else [],
-            )
-        )
-    records.sort(key=lambda r: r[0])
+        slack, sp, ep, cells = line.split("\t")
+        records.append((float(slack), sp, ep, cells.split("|") if cells else []))
     return records
 
 
 def write_critical_paths(records: list, out_path: Path, top_m: int) -> int:
+    """Write the top_m worst-slack paths as a ranked TSV."""
+    rows = records[:top_m]
     with out_path.open("w") as fh:
         fh.write("# rank\tslack_ns\tstartpoint\tendpoint\n")
-        written = 0
-        for rank, (slack, sp, ep, _) in enumerate(records[:top_m], 1):
+        for rank, (slack, sp, ep, _) in enumerate(rows, 1):
             fh.write(f"{rank}\t{slack:.4f}\t{sp}\t{ep}\n")
-            written += 1
-    return written
+    return len(rows)
 
 
 def write_logical_paths(
@@ -333,362 +175,123 @@ def write_logical_paths(
     out_path: Path,
     top_n: int,
     top_module: str,
-    hierarchy: dict[str, dict],
-    pool_size: int,
+    hierarchy: dict[str, dict[str, str]],
     clock_period_ns: float,
 ) -> int:
+    """Group records by (start_stem, end_stem); write the ranked top_n."""
     groups: dict[tuple[str, str], dict] = {}
     walks_total = 0
     walks_truncated = 0
     for slack, sp, ep, cells in records:
-        ss, es = logical_stem(sp), logical_stem(ep)
         mods: set[str] = set()
         for cell in cells:
             cell_mods, truncated = cell_modules(cell, top_module, hierarchy)
             mods |= cell_mods
             walks_total += 1
-            if truncated:
-                walks_truncated += 1
-        key = (ss, es)
-        g = groups.get(key)
-        if g is None:
-            g = {"count": 0, "worst": slack, "best": slack, "modules": set()}
-            groups[key] = g
+            walks_truncated += truncated
+        g = groups.setdefault(
+            (logical_stem(sp), logical_stem(ep)),
+            {"count": 0, "worst": slack, "best": slack, "modules": set()},
+        )
         g["count"] += 1
         g["worst"] = min(g["worst"], slack)
         g["best"] = max(g["best"], slack)
         g["modules"] |= mods
 
-    ranked = sorted(
-        groups.items(),
-        key=lambda kv: (kv[1]["worst"], -kv[1]["count"]),
-    )
+    ranked = sorted(groups.items(), key=lambda kv: (kv[1]["worst"], -kv[1]["count"]))
+    top = ranked[:top_n]
 
     with out_path.open("w") as fh:
         fh.write(f"# target_period_ns\t{clock_period_ns:.4f}\n")
-        fh.write(f"# pool_size\t{pool_size}\n")
+        fh.write(f"# pool_size\t{len(records)}\n")
         fh.write(f"# top_module\t{top_module}\n")
         fh.write(f"# truncated_walks\t{walks_truncated}/{walks_total}\n")
         fh.write(
             "# rank\tworst_slack_ns\tbest_slack_ns\tcount"
-            "\ttotal_loc\tstart_stem\tend_stem\tmodules\n"
+            "\tstart_stem\tend_stem\tmodules\n"
         )
-        written = 0
-        for rank, ((ss, es), g) in enumerate(ranked[:top_n], 1):
-            mods_sorted = sorted(g["modules"])
-            total_loc = sum(
-                hierarchy.get(m, {}).get("line_count", 0) for m in mods_sorted
-            )
+        for rank, ((ss, es), g) in enumerate(top, 1):
+            mods_str = ",".join(sorted(g["modules"]))
             fh.write(
                 f"{rank}\t{g['worst']:.4f}\t{g['best']:.4f}\t{g['count']}"
-                f"\t{total_loc}\t{ss}\t{es}\t{','.join(mods_sorted)}\n"
+                f"\t{ss}\t{es}\t{mods_str}\n"
             )
-            written += 1
-    return written
+    return len(top)
 
 
-# Congestion ------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class CongestionTile:
-    """One overflowing GR tile, post-enrichment by extract_congestion.tcl."""
-
-    direction: str  # "H" / "V" (or "?" if GR labelled unusually)
-    overflow: int  # usage - capacity, positive
-    capacity: int
-    usage: int
-    layer: str  # GR commonly writes "-" for per-direction aggregate
-    bbox_um: tuple[float, float, float, float]  # xL, yL, xH, yH
-    nets: tuple[str, ...]  # contributing nets per GR's `srcs:`
-    insts: tuple[str, ...]  # instance names connected to those nets
-    io_pins: tuple[str, ...]  # "IO:<bterm_name>" markers
-
-
-def read_congestion_tsv(tsv: Path) -> list[CongestionTile]:
-    """Parse the enriched congestion TSV. Ranked by overflow descending so
-    the first row is the worst tile."""
-    tiles: list[CongestionTile] = []
-    for line in tsv.read_text().splitlines():
-        if not line or line.startswith("#"):
-            continue
-        parts = line.split("\t")
-        if len(parts) != 12:
-            continue
-        d, ovfl, cap, use, lyr, xL, yL, xH, yH, nets_s, insts_s, io_s = parts
-        tiles.append(
-            CongestionTile(
-                direction=d,
-                overflow=int(ovfl),
-                capacity=int(cap),
-                usage=int(use),
-                layer=lyr,
-                bbox_um=(float(xL), float(yL), float(xH), float(yH)),
-                nets=tuple(nets_s.split("|")) if nets_s else (),
-                insts=tuple(insts_s.split("|")) if insts_s else (),
-                io_pins=tuple(io_s.split("|")) if io_s else (),
-            )
-        )
-    tiles.sort(key=lambda t: (-t.overflow, -t.usage))
-    return tiles
-
-
-def write_congestion_hotspots(
-    tiles: list[CongestionTile],
-    out_path: Path,
-    top_m: int,
-) -> int:
-    with out_path.open("w") as fh:
-        fh.write(f"# total_overflow_tiles\t{len(tiles)}\n")
-        fh.write(
-            "# rank\toverflow\tcapacity\tusage\tdir\tlayer"
-            "\txL\tyL\txH\tyH\tnet_count\tinst_count\ttop_net\n"
-        )
-        if not tiles:
-            fh.write("# no overflowing tiles\n")
-            return 0
-        written = 0
-        for rank, t in enumerate(tiles[:top_m], 1):
-            xL, yL, xH, yH = t.bbox_um
-            top_net = t.nets[0] if t.nets else "-"
-            fh.write(
-                f"{rank}\t{t.overflow}\t{t.capacity}\t{t.usage}"
-                f"\t{t.direction}\t{t.layer}"
-                f"\t{xL:.4f}\t{yL:.4f}\t{xH:.4f}\t{yH:.4f}"
-                f"\t{len(t.nets)}\t{len(t.insts)}\t{top_net}\n"
-            )
-            written += 1
-    return written
-
-
-def write_logical_congestion(
-    tiles: list[CongestionTile],
-    out_path: Path,
-    top_n: int,
-    top_module: str,
-    hierarchy: dict[str, dict],
-) -> int:
-    """Group overflow tiles by the frozenset of RTL modules their
-    contributing instances touch (via `cell_modules`). IO-pin contributions
-    are recorded separately as an `io_driven` flag so primary-port-fed
-    congestion is visible without diluting the module-set key."""
-    groups: dict[frozenset[str], dict] = {}
-    walks_total = 0
-    walks_truncated = 0
-    for t in tiles:
-        mods: set[str] = set()
-        for inst in t.insts:
-            cell_mods, truncated = cell_modules(inst, top_module, hierarchy)
-            mods |= cell_mods
-            walks_total += 1
-            if truncated:
-                walks_truncated += 1
-        key = frozenset(mods)
-        g = groups.get(key)
-        if g is None:
-            g = {
-                "tile_count": 0,
-                "max_overflow": t.overflow,
-                "sum_overflow": 0,
-                "insts": set(),
-                "io_driven": False,
-            }
-            groups[key] = g
-        g["tile_count"] += 1
-        g["max_overflow"] = max(g["max_overflow"], t.overflow)
-        g["sum_overflow"] += t.overflow
-        g["insts"] |= set(t.insts)
-        if t.io_pins:
-            g["io_driven"] = True
-
-    ranked = sorted(
-        groups.items(),
-        key=lambda kv: (-kv[1]["sum_overflow"], -kv[1]["tile_count"]),
-    )
-
-    with out_path.open("w") as fh:
-        fh.write(f"# overflow_tiles\t{len(tiles)}\n")
-        fh.write(f"# top_module\t{top_module}\n")
-        fh.write(f"# truncated_walks\t{walks_truncated}/{walks_total}\n")
-        fh.write(
-            "# rank\tsum_overflow\tmax_overflow\ttile_count\tunique_insts"
-            "\tio_driven\ttotal_loc\tmodules\n"
-        )
-        if not tiles:
-            fh.write("# no overflowing tiles\n")
-            return 0
-        written = 0
-        for rank, (mods_key, g) in enumerate(ranked[:top_n], 1):
-            mods_sorted = sorted(mods_key)
-            total_loc = sum(
-                hierarchy.get(m, {}).get("line_count", 0) for m in mods_sorted
-            )
-            mods_str = ",".join(mods_sorted) if mods_sorted else "(no instances)"
-            fh.write(
-                f"{rank}\t{g['sum_overflow']}\t{g['max_overflow']}"
-                f"\t{g['tile_count']}\t{len(g['insts'])}"
-                f"\t{int(g['io_driven'])}\t{total_loc}\t{mods_str}\n"
-            )
-            written += 1
-    return written
-
-
-# Entry point ------------------------------------------------------------------
+# Entry point
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
-    ap.add_argument(
-        "phase_dir",
-        type=Path,
-        help="Variant phase dir (contains inputs/, results/, logs/, reports/).",
-    )
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("phase_dir", type=Path)
     ap.add_argument(
         "--top-paths",
         type=int,
         default=50,
         metavar="M",
-        help="How many worst-slack individual paths to report (default 50).",
+        help="worst-slack individual paths to report",
     )
     ap.add_argument(
         "--top-logical",
         type=int,
         default=50,
         metavar="N",
-        help="How many logical register-to-register groups to report (default 50).",
+        help="logical register-to-register groups to report",
     )
     ap.add_argument(
         "--pool",
         type=int,
         default=1000,
         metavar="P",
-        help="Path pool size for find_timing_paths (default 1000). "
-        "Larger pools give better logical-group statistics.",
-    )
-    ap.add_argument(
-        "--top-tiles",
-        type=int,
-        default=50,
-        metavar="M",
-        help="How many worst-overflow congestion tiles to report (default 50).",
-    )
-    ap.add_argument(
-        "--top-modules-congest",
-        type=int,
-        default=50,
-        metavar="N",
-        help="How many RTL-module groups to report in the "
-        "logical congestion rollup (default 50).",
+        help="find_timing_paths pool size",
     )
     args = ap.parse_args(argv)
 
     phase_dir = args.phase_dir.resolve()
-    if not phase_dir.is_dir():
-        ap.error(f"not a directory: {phase_dir}")
-
     run_cfg = load_run_config(phase_dir)
-    target = run_cfg["synth_target"]
-    design = target["design"]
+    design = run_cfg["synth_target"]["design"]
     top_module = design["top_module"]
-    platform = target["cfg"]["platform"]
+    platform = run_cfg["synth_target"]["cfg"]["platform"]
     abs_rtl_dir = Path(design["root"]) / design["rtl_dir"]
     rtl_files = [abs_rtl_dir / p for p in design["rtl_files"]]
     include_dirs = [abs_rtl_dir / d for d in design.get("include_dirs", [])]
-    missing = [p for p in rtl_files if not p.is_file()]
-    if missing:
-        ap.error(f"missing RTL files referenced from {RunConfig.FILENAME}: {missing}")
 
     odb, sdc, spef = locate_post_route(phase_dir, top_module, platform)
     libs = liberty_files(platform)
-
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
+
+    # Stage the tsv next to the final report so the rename is same-filesystem.
     raw_tsv = reports_dir / "critical_paths_raw.tsv"
-    congest_raw_tsv = reports_dir / "congestion_hotspots_raw.tsv"
-    congest_rpt = locate_congestion_rpt(reports_dir)
-
-    print(f"==> Phase dir:   {phase_dir}")
-    print(f"==> Platform:    {platform}")
-    print(f"==> Design:      {top_module}")
-    print(f"==> Routed DB:   {odb}")
-    print(f"==> SDC:         {sdc}")
-    print(f"==> SPEF:        {spef if spef else '(absent; STA estimates parasitics)'}")
-    congest_str = congest_rpt if congest_rpt else "(absent; design routed clean)"
-    print(f"==> GR congest:  {congest_str}")
-    print(f"==> Reports:     {reports_dir}")
-    print(
-        f"==> Pool / paths / logical:"
-        f" {args.pool} / {args.top_paths} / {args.top_logical}"
-    )
-    print(f"==> Tiles / module groups:  {args.top_tiles} / {args.top_modules_congest}")
-
-    # Stage both tsv outputs to siblings of the final reports so the
-    # atomic rename stays on one filesystem (workspace and /tmp can be
-    # separate mounts in the devcontainer).
     staging = raw_tsv.with_suffix(".tsv.partial")
-    congest_staging = congest_raw_tsv.with_suffix(".tsv.partial")
-    run_openroad_extract(
-        odb,
-        sdc,
-        spef,
-        libs,
-        args.pool,
-        staging,
-        congest_rpt,
-        congest_staging,
-    )
+    run_openroad_extract(odb, sdc, spef, libs, args.pool, staging)
     staging.replace(raw_tsv)
-    congest_staging.replace(congest_raw_tsv)
 
     records = read_pool_tsv(raw_tsv)
     if not records:
-        sys.stderr.write(
-            "warning: OpenSTA returned zero paths -- is the design purely "
-            "combinational with no constrained outputs?\n"
-        )
+        sys.stderr.write("OpenSTA returned zero paths\n")
         return 1
 
     hier_json = reports_dir / "hierarchy.json"
     dump_hierarchy(rtl_files, top_module, hier_json, include_dirs)
     hierarchy = load_hierarchy(hier_json)
-    if top_module not in hierarchy:
-        ap.error(
-            f"top module {top_module!r} not found in yosys-dumped hierarchy: "
-            f"{sorted(hierarchy)}"
-        )
 
     crit_path = reports_dir / "critical_paths.rpt"
-    n_crit = write_critical_paths(records, crit_path, args.top_paths)
-
     logical_path = reports_dir / "logical_paths.rpt"
+    n_crit = write_critical_paths(records, crit_path, args.top_paths)
     n_log = write_logical_paths(
         records,
         logical_path,
         args.top_logical,
         top_module,
         hierarchy,
-        pool_size=len(records),
         clock_period_ns=parse_period_ps(sdc) / 1000,
     )
 
-    tiles = read_congestion_tsv(congest_raw_tsv)
-    congest_path = reports_dir / "congestion_hotspots.rpt"
-    n_tiles = write_congestion_hotspots(tiles, congest_path, args.top_tiles)
-    logical_congest = reports_dir / "logical_congestion.rpt"
-    n_lcong = write_logical_congestion(
-        tiles,
-        logical_congest,
-        args.top_modules_congest,
-        top_module,
-        hierarchy,
-    )
-
-    print(f"==> Wrote {n_crit} worst paths to {crit_path}")
-    print(f"==> Wrote {n_log} logical groups to {logical_path}")
-    print(f"==> Raw timing pool ({len(records)} paths): {raw_tsv}")
-    print(f"==> Wrote {n_tiles} congestion tiles to {congest_path}")
-    print(f"==> Wrote {n_lcong} logical congestion groups to {logical_congest}")
-    print(f"==> Overflow tiles total: {len(tiles)}")
+    print(f"{n_crit} paths   -> {crit_path}")
+    print(f"{n_log} groups   -> {logical_path}")
+    print(f"{len(records)} raw -> {raw_tsv}")
     return 0
 
 
