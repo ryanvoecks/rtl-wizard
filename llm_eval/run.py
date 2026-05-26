@@ -9,12 +9,32 @@ container (which keeps one OAUTH Claude Code session across samples).
 """
 
 from datetime import datetime
+from pathlib import Path
+from typing import Any
 
 from components.container import Container
 from components.tasks import optimize_timing
+from inspect_ai import Task, eval_retry
 from inspect_ai import eval as inspect_eval
+from inspect_ai.log import read_eval_log
 
 from common.config import LLM_RESULTS
+
+# Eval config
+MAX_PARALLEL_SESSIONS = 4
+MODEL = "anthropic/claude-sonnet-4-5"
+
+
+def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
+    """Start, retry, or skip based on any existing .eval log in `run_dir`."""
+    existing = sorted(run_dir.glob("*.eval"))
+    if not existing:
+        inspect_eval(task, run_dir=str(run_dir), **kwargs)
+    log = read_eval_log(str(existing[-1]), header_only=True)
+    if log.status == "success":
+        print(f"Skipping (success): {existing[-1]}")
+    print(f"Retrying ({log.status}): {existing[-1]}")
+    eval_retry(log)
 
 
 def main() -> None:
@@ -23,10 +43,15 @@ def main() -> None:
     print(f"Output dir: {run_dir}", flush=True)
 
     with Container() as container:
-        inspect_eval(
+        run(
+            run_dir,
             optimize_timing(run_dir, container),
-            model="anthropic/claude-sonnet-4-5",
-            log_dir=str(run_dir),
+            model=MODEL,
+            max_samples=MAX_PARALLEL_SESSIONS,
+            sample_id=[
+                "secworks/aes/reference",
+                "abdelazeem201/systolic_tpu/reference",
+            ],
         )
 
 
