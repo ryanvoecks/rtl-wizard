@@ -25,6 +25,7 @@ from inspect_ai.model._model import active_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, store
+from mcp.server.fastmcp import FastMCP
 
 from common.config import TargetConfig
 
@@ -34,8 +35,8 @@ from .mcp_servers import make_server
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
-AGENT_TURNS = 30
-AGENT_TIMEOUT = 1800
+AGENT_TURNS = 50
+AGENT_TIMEOUT = 3600
 
 # MCP config
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -55,21 +56,20 @@ def _parse_stream_json(
     stdout: str, *, allow_truncated_tail: bool = False
 ) -> list[dict]:
     """Parse line-delimited JSON events from `claude --output-format stream-json`.
-
-    With `allow_truncated_tail`, an incomplete final line (e.g. from a SIGKILL
-    mid-write on timeout) is silently dropped instead of raising.
+    Non-JSON lines are silently dropped, and with `allow_truncated_tail`, an incomplete
+    final JSON line is also dropped.
     """
     lines = stdout.splitlines(keepends=True)
     events: list[dict] = []
     for lineno, raw in enumerate(lines, 1):
         is_last = lineno == len(lines)
         line = raw.strip()
-        if not line:
+        if not line or not line.startswith("{"):
             continue
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError as e:
-            # A killed process may have flushed a partial final line.
+            # A killed process may have flushed a partial final JSON line.
             if allow_truncated_tail and is_last and not raw.endswith("\n"):
                 break
             raise RuntimeError(
@@ -210,9 +210,8 @@ def claude_code_oauth(
         allowed_tools = tuple(DEFAULT_TOOLS + mcp_tool_names)
 
         # MCP constructor needs user environment
-        mcp_factory = (
-            lambda e: make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, e),
-        )
+        def mcp_factory(e: ClaudeEnv) -> FastMCP:
+            return make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, e)
 
         # Per-sample environment in a shared container
         with ClaudeEnv(container, mcp_factory) as env:
@@ -249,23 +248,23 @@ def claude_code_oauth(
 
         # stdout contains stream, even on max turns and timeout errors
         events = _parse_stream_json(result.stdout, allow_truncated_tail=timed_out)
-        if not events:
+        if not events and not timed_out:
             raise RuntimeError(f"claude failed (rc={result.returncode})")
 
         # The final `result` event carries the summary. Always last.
         final = next((e for e in reversed(events) if e.get("type") == "result"), None)
-        if final is None:
+        if final is None and not timed_out:
             raise RuntimeError("claude transcript contained no `result` event")
 
         # End gracefully on `error_max_turns` and on timeout
-        max_turns_hit = final.get("subtype") == "error_max_turns"
-        if final.get("is_error") and not max_turns_hit:
+        max_turns_hit = final is not None and final.get("subtype") == "error_max_turns"
+        if final is not None and final.get("is_error") and not max_turns_hit:
             raise RuntimeError(f"claude reported error: {final.get('result')}")
 
         # Parse events, messages and usage
         parsed = _events_to_messages(events)
         state.messages.extend(parsed)
-        usage = _build_usage(final)
+        usage = _build_usage(final) if final is not None else None
 
         # Viewer treats final response specially
         last_assistant = next(
@@ -273,13 +272,15 @@ def claude_code_oauth(
             None,
         )
         if last_assistant is None:
-            raise ValueError("could not find final response")
+            if not timed_out:
+                raise ValueError("could not find final response")
+            last_assistant = ChatMessageAssistant(content="", model=model)
 
         # Final message and stop reason
         if timed_out:
-            stop_reason = "time"
+            stop_reason = "unknown"
         elif max_turns_hit:
-            stop_reason = "messages"
+            stop_reason = "model_length"
         else:
             stop_reason = "stop"
         state.output = ModelOutput(
@@ -291,10 +292,11 @@ def claude_code_oauth(
         )
 
         # Additional useful fields
-        store().set("cc_session_id", final.get("session_id"))
-        store().set("cc_num_turns", final.get("num_turns"))
-        store().set("cc_duration_ms", final.get("duration_ms"))
-        store().set("cc_stop_subtype", final.get("subtype"))
+        if final is not None:
+            store().set("cc_session_id", final.get("session_id"))
+            store().set("cc_num_turns", final.get("num_turns"))
+            store().set("cc_duration_ms", final.get("duration_ms"))
+            store().set("cc_stop_subtype", final.get("subtype"))
         store().set("cc_timed_out", timed_out)
 
         # Surface timeout / max-turns as an Inspect limit and system message
