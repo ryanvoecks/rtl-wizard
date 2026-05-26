@@ -124,7 +124,9 @@ def measure_fix_scope(
     the count fields set to None -- the caller treats this as fix_ok=False
     but does not abort the whole scope run."""
     try:
-        odb, sdc, spef = analyse.locate_post_route(phase_dir, top_module, platform)
+        odb, sdc, spef = analyse.locate_results(
+            phase_dir, top_module, platform, "6_final"
+        )
         reports_dir = phase_dir / "reports" / platform / top_module / "base"
         reports_dir.mkdir(parents=True, exist_ok=True)
         raw_tsv = reports_dir / "critical_paths_raw.tsv"

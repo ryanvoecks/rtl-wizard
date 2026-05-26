@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `rtl-wizard` is a research harness for evaluating LLM agents at the task of **post-synthesis timing optimisation** on real open-source RTL. It has two halves that share the same design registry:
 
-1. **`eda_eval/`** -- non-LLM ORFS flow that runs every design through `synth -> floorplan -> place -> CTS -> route` on nangate45, calibrates per-design clock periods, and produces ranked logical-path / congestion reports off the routed `.odb`.
+1. **`eda_eval/`** -- non-LLM ORFS flow that runs every design through `synth -> floorplan -> place -> CTS -> route` on nangate45, calibrates per-design clock periods, and produces ranked logical-path reports off the routed `.odb`.
 2. **`llm_eval/`** -- drives a Claude Code agent (OAUTH-token, not API key) against a sandboxed copy of a single design, exposing the EDA flow as MCP tools (`run_testbench`, `synth_timing_report`) so the agent can iterate. Scored by `yosys` synthesisability plus the design's upstream testbench.
 
 `common/` is the shared spine: `common/config.py` defines `StudyConfig`/`DesignConfig`/`TargetConfig`/`RunConfig` and resolves all path constants; `common/designs.py` is a hand-curated registry of every design; `common/scripts/<name>.sh` is the per-design testbench runner.
@@ -36,7 +36,7 @@ uv run eda_eval/calibrate.py --benchmark secworks --name aes
 # Find the optimisation "sweet spot" period: tightest T at which fix scope stays small
 uv run eda_eval/scope.py --benchmark secworks --name aes
 
-# Analyse a routed phase dir -> critical_paths.rpt, logical_paths.rpt, congestion_hotspots.rpt
+# Analyse a routed phase dir -> critical_paths.rpt, logical_paths.rpt
 uv run eda_eval/analyse.py eda_results/<batch>/<benchmark>/<name>/<variant>/
 
 # Run the LLM eval (Claude Code agent against a single hard-coded target, currently AES)
@@ -79,17 +79,15 @@ There are three calibration entry points; pick the right one:
 
 - `eda_eval/run.py` -- single-shot calibration (10ns + 1000um) per group, then full P&R at the derived period for every variant. The default end-to-end flow.
 - `eda_eval/calibrate.py` -- three-step deterministic calibration for a single design (no iteration loops): (1) synth-only at an over-constrained clock (default 0.5 ns) on a 1mm x 1mm die; record `synth_ws_ns` and `synth_area_um2`. (2) first full P&R at `T2 = T1 - synth_ws_1` (synth's projected period) and `side2 = derive_final_side_um(synth_area_1, cfg)`. (3) second full P&R at `T3 = T2 - route_ws_2` (predicts `route_ws -> 0`) and `side3 = derive_final_side_um(route_area_2, cfg)` -- re-deriving the die from post-route stdcell area corrects the utilisation for CTS + repair_timing buffers that synth didn't see. Step 3's `(period, side)` are the calibrated outputs. Writes `calibration.json` plus three phase dirs `iter_synth_0/`, `iter_pnr_0/`, `iter_pnr_1/` under `eda_results/<batch>/__iter_calibration__/<benchmark>/<name>/`.
-- `eda_eval/scope.py` -- three-phase scoping: (A) fixed-point to `T_baseline` with `k=0`, (B) shrink period until fix scope (modules / start stems / LOC touched by negative-slack paths) exceeds budget, (C) bisect to refine `T_sweet`. Used to decide whether a design is interesting to optimise at all.
+- `eda_eval/scope.py` -- three-phase scoping: (A) fixed-point to `T_baseline` with `k=0`, (B) shrink period until fix scope (modules / start stems touched by negative-slack paths) exceeds budget, (C) bisect to refine `T_sweet`. Used to decide whether a design is interesting to optimise at all.
 
 ### Logical-path analysis (`eda_eval/analyse.py`)
 
-`analyse.py` and `analyse_synth.py` share extraction logic (`analyse_synth` imports the helpers). The two differ only by which ODB they load: `6_final.odb`+SPEF (post-route, post-parasitics) vs `1_synth.odb` (post-synth, zero-RC estimate). The post-synth version is what the MCP `synth_timing_report` tool returns to the agent.
+`analyse(run)` picks the stage from `run.flow_targets`: post-route (`6_final.odb`+SPEF, post-parasitics) when any P&R target was run, otherwise post-synth (`1_synth.odb`, zero-RC estimate). The post-synth path is what the MCP `synth_timing_report` tool returns to the agent. Output filenames are the same in both modes; the `# stage` header line in each report names the source.
 
-The pipeline: pipe a TCL script into one `openroad -no_init -exit` invocation that runs `extract_critical_paths.tcl` (samples a `pool` of worst paths via `find_timing_paths`, emits TSV of `slack | startpoint | endpoint | cells`) and `extract_congestion.tcl` (enriches the GR-emitted overflow tiles with the instances + IO bterms driving each contributing net). Then yosys dumps a hierarchy JSON (`read_verilog ... ; hierarchy -top <top>; proc; write_json`) so each timing path's cell chain can be mapped back to the union of containing RTL modules + their LOC. **Do not run `flatten` or `synth`** in that yosys pass -- you want one cells entry per submodule instantiation, not a primitive-level netlist.
+The pipeline: pipe a TCL script into one `openroad -no_init -exit` invocation that runs `extract_critical_paths.tcl` (samples a `pool` of worst paths via `find_timing_paths`, emits TSV of `slack | startpoint | endpoint | cells`). Then yosys dumps a hierarchy JSON (`read_verilog ... ; hierarchy -top <top>; proc; write_json`) so each timing path's cell chain can be mapped back to the union of containing RTL modules. **Do not run `flatten` or `synth`** in that yosys pass -- you want one cells entry per submodule instantiation, not a primitive-level netlist.
 
 The "logical group" of a path is `(start_stem, end_stem)` after stripping yosys cell-type suffixes (`$_DFFE_*`) and array indices (`[N]`). Groups are ranked by `(worst_slack, -count)` so high-multiplicity ties break in favour of the more-replicated path.
-
-Congestion rpt selection priority (most-final wins) is `congestion_post_recover_power -> ..._repair_timing -> ..._repair_design -> congestion.rpt`. ORFS only writes these when overflow tiles exist; an absent file is the *clean routing* case, not an error.
 
 ### LLM eval -- agent + sandbox + MCP server
 

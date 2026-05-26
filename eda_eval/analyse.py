@@ -12,7 +12,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from common.config import EDA_EVAL, ORFS_HOME, YOSYS_BIN, RunConfig
+from common.config import EDA_EVAL, ORFS_HOME, PNR_FLOW_TARGETS, YOSYS_BIN, RunConfig
 from eda_eval.extract_metrics import find_unique, parse_period_ps
 
 # Default config
@@ -31,16 +31,17 @@ HIER_SEP_RE = re.compile(r"[/.]")
 # Helpers
 
 
-def locate_post_route(
+def locate_results(
     phase_dir: Path,
     design: str,
     platform: str,
+    stage: str,
 ) -> tuple[Path, Path, Path | None]:
-    """Return (odb, sdc, spef_or_none) for this phase dir."""
+    """Return (odb, sdc, spef_or_none) for `stage` (`1_synth` or `6_final`)."""
     base = f"results/{platform}/{design}/*"
-    odb = find_unique(phase_dir, f"{base}/6_final.odb", "6_final.odb")
-    sdc = find_unique(phase_dir, f"{base}/6_final.sdc", "6_final.sdc")
-    spef = next(iter(phase_dir.glob(f"{base}/6_final.spef")), None)
+    odb = find_unique(phase_dir, f"{base}/{stage}.odb", f"{stage}.odb")
+    sdc = find_unique(phase_dir, f"{base}/{stage}.sdc", f"{stage}.sdc")
+    spef = next(iter(phase_dir.glob(f"{base}/{stage}.spef")), None)
     return odb, sdc, spef
 
 
@@ -161,10 +162,16 @@ def read_pool_tsv(tsv: Path) -> list[tuple[float, str, str, list[str]]]:
     return records
 
 
-def write_critical_paths(records: list, out_path: Path, top_m: int) -> int:
+def write_critical_paths(
+    records: list,
+    out_path: Path,
+    top_m: int,
+    stage_label: str,
+) -> int:
     """Write the top_m worst-slack paths as a ranked TSV."""
     rows = records[:top_m]
     with out_path.open("w") as fh:
+        fh.write(f"# stage\t{stage_label}\n")
         fh.write("# rank\tslack_ns\tstartpoint\tendpoint\n")
         for rank, (slack, sp, ep, _) in enumerate(rows, 1):
             fh.write(f"{rank}\t{slack:.4f}\t{sp}\t{ep}\n")
@@ -178,6 +185,7 @@ def write_logical_paths(
     top_module: str,
     hierarchy: dict[str, dict[str, str]],
     clock_period_ns: float,
+    stage_label: str,
 ) -> int:
     """Group records by (start_stem, end_stem); write the ranked top_n."""
     groups: dict[tuple[str, str], dict] = {}
@@ -203,6 +211,7 @@ def write_logical_paths(
     top = ranked[:top_n]
 
     with out_path.open("w") as fh:
+        fh.write(f"# stage\t{stage_label}\n")
         fh.write(f"# target_period_ns\t{clock_period_ns:.4f}\n")
         fh.write(f"# pool_size\t{len(records)}\n")
         fh.write(f"# top_module\t{top_module}\n")
@@ -230,8 +239,8 @@ def analyse(
     top_logical: int = TOP_LOGICAL,
     pool: int = POOL_SIZE,
 ) -> str:
-    """Run post-route STA on the phase dir at `run.output_dir`, write the
-    critical/logical-paths reports, and return the logical-paths report."""
+    """Run STA on the phase dir and write critical/logical-paths reports.
+    Determines stage (synth/route) based on RunConfig."""
     design = run.synth_target.design
     top_module = design.top_module
     platform = run.synth_target.cfg.platform
@@ -239,7 +248,12 @@ def analyse(
     rtl_dir = design.root / design.rtl_dir
     include_dirs = [rtl_dir / d for d in design.include_dirs]
 
-    odb, sdc, spef = locate_post_route(phase_dir, top_module, platform)
+    if set(run.flow_targets) & set(PNR_FLOW_TARGETS):
+        stage, stage_label = "6_final", "post-route"
+    else:
+        stage, stage_label = "1_synth", "post-synth"
+
+    odb, sdc, spef = locate_results(phase_dir, top_module, platform, stage)
     libs = liberty_files(platform)
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
@@ -260,7 +274,7 @@ def analyse(
 
     crit_path = reports_dir / "critical_paths.rpt"
     logical_path = reports_dir / "logical_paths.rpt"
-    write_critical_paths(records, crit_path, top_paths)
+    write_critical_paths(records, crit_path, top_paths, stage_label)
     write_logical_paths(
         records,
         logical_path,
@@ -268,6 +282,7 @@ def analyse(
         top_module,
         hierarchy,
         clock_period_ns=parse_period_ps(sdc) / 1000,
+        stage_label=stage_label,
     )
     return logical_path.read_text()
 

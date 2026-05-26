@@ -13,6 +13,7 @@ from typing import Any, ClassVar, get_args, get_origin, get_type_hints
 HERE = Path(__file__).resolve().parent
 SCRIPTS_DIR = HERE / "scripts"
 REPO_ROOT = HERE.parent
+EDA_EVAL = REPO_ROOT / "eda_eval"
 EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
