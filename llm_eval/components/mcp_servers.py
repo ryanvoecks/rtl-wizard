@@ -42,6 +42,7 @@ def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
         synth_target=patched_target,
         output_dir=output_dir,
         flow_targets=SYNTH_FLOW_TARGETS,
+        num_threads=1,
     )
     rc = run_job(run)
     if rc != 0:

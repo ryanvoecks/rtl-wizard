@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
-from dataclasses import asdict, dataclass, fields, is_dataclass
+from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from functools import cached_property
 from pathlib import Path
 from typing import Any, ClassVar, get_args, get_origin, get_type_hints
@@ -154,6 +155,7 @@ class RunConfig:
     synth_target: TargetConfig  # calibrated synthesis target for design
     output_dir: Path  # where this phase's artifacts land
     flow_targets: tuple[str, ...]  # ORFS targets to run, in dependency order
+    num_threads: int = field(default_factory=lambda: os.cpu_count() or 1)  # ORFS cores
 
     def dump(self, path: Path) -> None:
         """Serialise to JSON."""

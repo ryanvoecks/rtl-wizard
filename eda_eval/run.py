@@ -9,6 +9,7 @@ calibration step is needed. Artifacts land under
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import time
@@ -86,6 +87,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
             flow_targets=" ".join(run.flow_targets),
             place_pins_args=cfg.place_pins_args,
             synth_memory_max_bits=cfg.synth_memory_max_bits,
+            num_threads=run.num_threads,
         )
     )
     return makefile_dst
@@ -129,7 +131,18 @@ def main():
         required=True,
         help="Name of the TargetConfig to run (from common.targets).",
     )
+    parser.add_argument(
+        "--threads-per-run",
+        type=int,
+        default=None,
+        help="NUM_CORES exported to each ORFS invocation (default: spread "
+        "host CPUs evenly across --num-threads workers). Lower this to "
+        "avoid oversubscription when running many parallel jobs.",
+    )
     args = parser.parse_args()
+    if args.threads_per_run is None:
+        host_cpus = os.cpu_count() or args.num_threads
+        args.threads_per_run = max(1, host_cpus // args.num_threads)
 
     target = resolve_target(args.target)
     design = target.design
@@ -143,6 +156,7 @@ def main():
         synth_target=target,
         output_dir=output_dir,
         flow_targets=ALL_FLOW_TARGETS,
+        num_threads=args.threads_per_run,
     )
     rc = run_job(run)
     if rc != 0:
