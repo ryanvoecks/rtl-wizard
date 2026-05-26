@@ -1,19 +1,9 @@
 #!/usr/bin/env python3
-"""Three-step deterministic calibration:
-
-  1. Synth-only at an over-constrained clock (default 0.5 ns) on an
-     under-constrained 1mm x 1mm die. Read post-synth worst slack and
-     cell area.
-  2. First full P&R at T = T1 - synth_ws (the synth's projected period)
-     and side derived from the synth cell area at `cfg.target_utilization`.
-  3. Second full P&R at T = T2 - route_ws (predicts ws = 0) and side
-     re-derived from step 2's post-route stdcell area (corrects the
-     utilisation now that CTS / repair buffers are accounted for).
-
-Step 3's (period, side) are the calibrated targets for the design.
+"""Calibrate a design's clock period and floorplan size via a synth +
+P&R sweep. Writes `calibration.json` with the chosen (period, side,
+utilization) and the per-iteration log.
 
 Usage:
-    uv run eda_eval/calibrate.py
     uv run eda_eval/calibrate.py --benchmark secworks --name aes
 """
 
@@ -24,6 +14,7 @@ import json
 import math
 import os
 import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Literal
 
@@ -42,8 +33,9 @@ from eda_eval.run import run_job
 
 Phase = Literal["synth", "pnr"]
 
-# Number of corrective P&R passes after the initial over-constrained synth.
-PNR_PASSES = 2
+PNR_PASSES = 4  # Total number of P&R passes
+PRESSURE = 1.5  # Target ratio of post-route achievable period to clock period
+UTILIZATION_STEP = 0.10  # Utilization step used to relax density after a P&R failure
 
 
 def iter_output_dir(
@@ -54,15 +46,38 @@ def iter_output_dir(
 
 
 def derive_final_side_um(
-    cell_area_um2: float, io_pin_count: int, cfg: StudyConfig
+    cell_area_um2: float,
+    io_pin_count: int,
+    cfg: StudyConfig,
+    utilization: float,
 ) -> float:
     """Square-die side that satisfies all three lower bounds: cell-area
-    at `target_utilization`, IO perimeter at `effective_pin_width` per
-    pin, and the absolute `minimum_side_um`."""
-    area_side = math.sqrt(cell_area_um2 / cfg.target_utilization)
+    at `utilization`, IO perimeter at `effective_pin_width` per pin, and
+    the absolute `minimum_side_um`."""
+    area_side = math.sqrt(cell_area_um2 / utilization)
     area_side += 2 * cfg.core_margin_um
     pin_side = io_pin_count * cfg.effective_pin_width / 4
     return max(area_side, pin_side, cfg.minimum_side_um)
+
+
+class RunJobFailed(RuntimeError):
+    """The ORFS flow returned a non-zero exit code."""
+
+
+@dataclass(frozen=True)
+class PnrStep:
+    """One iteration of the P&R sweep. Route metrics are present iff
+    `completed` is True."""
+
+    iter: int
+    period_ns: float
+    side_um: float
+    utilization: float
+    output_dir: Path
+    completed: bool
+    route_ws_ns: float = float("NaN")
+    route_area_um2: float = float("NaN")
+    realised_pressure: float = float("NaN")
 
 
 def run_iteration(
@@ -75,9 +90,10 @@ def run_iteration(
     cfg: StudyConfig,
     flow_targets: tuple[str, ...],
     num_threads: int,
-) -> tuple[RunConfig, dict]:
-    """One ORFS pass at the given period and die size. Returns the run
-    config plus parsed metrics."""
+) -> dict:
+    """Run one ORFS pass and return its parsed metrics. Raises
+    `RunJobFailed` if the flow did not complete."""
+    output_dir = iter_output_dir(design, batch_dir, phase, i)
     run = RunConfig(
         synth_target=TargetConfig(
             design=design,
@@ -85,17 +101,14 @@ def run_iteration(
             side_um=side_um,
             cfg=cfg,
         ),
-        output_dir=iter_output_dir(design, batch_dir, phase, i),
+        output_dir=output_dir,
         flow_targets=flow_targets,
         num_threads=num_threads,
     )
-    rc = run_job(run)
-    if rc != 0:
-        raise RuntimeError(
-            f"iter_{phase}_{i} ORFS run failed: see {run.output_dir}/flow.log"
-        )
+    if run_job(run) != 0:
+        raise RunJobFailed(f"see {output_dir}/flow.log")
     extractor = extract_synth if phase == "synth" else extract
-    return run, extractor(run.output_dir, design.top_module)
+    return extractor(output_dir, design.top_module)
 
 
 def fmax_mhz(period_ns: float) -> float:
@@ -137,12 +150,12 @@ def main() -> None:
         f"(top={design.top_module})"
     )
 
-    # Single over-constrained synth pass (tight clock, large die).
+    # Step 1: synth-only at the over-constrained calibration clock.
     print(
         f"\nStep 1: synth-only at T={cfg.calibration_period_ns} ns, "
         f"side={cfg.calibration_side_um:.0f} um (over-constrained)"
     )
-    run1, m1 = run_iteration(
+    m1 = run_iteration(
         design,
         batch_dir,
         "synth",
@@ -162,45 +175,80 @@ def main() -> None:
         f"io_pins={io_pin_count}"
     )
 
-    # Multiple P&R passes driving ws -> 0 and re-sizing from the last cell area
-    t = cfg.calibration_period_ns
-    ws = synth_ws_1
+    # Anchor + corrective sweep.
+    # Iteration 0: (T = pressure * T_synth_close, U = U_def).
+    # Iterations 1..N-1: shrink T toward T_close on success, relax U on failure.
+    t_synth_close = cfg.calibration_period_ns - synth_ws_1
+    t = PRESSURE * t_synth_close
+    u = cfg.target_utilization
     area = synth_area_1
-    pnr_steps: list[dict] = []
-    for j in range(PNR_PASSES):
-        t = t - ws
-        side = derive_final_side_um(area, io_pin_count, cfg)
+
+    pnr_steps: list[PnrStep] = []
+    completed: list[PnrStep] = []
+
+    for i in range(PNR_PASSES):
+        side = derive_final_side_um(area, io_pin_count, cfg, utilization=u)
         print(
-            f"\nStep {j + 2}: P&R at T={t:.4f} ns ({fmax_mhz(t):.2f} MHz), "
-            f"side={side:.2f} um"
+            f"\nStep {i + 2}: P&R at T={t:.4f} ns "
+            f"({fmax_mhz(t):.2f} MHz), U={u:.2f}, side={side:.2f} um"
         )
-        run, m = run_iteration(
-            design,
-            batch_dir,
-            "pnr",
-            j,
-            t,
-            side,
-            cfg,
-            ALL_FLOW_TARGETS,
-            args.num_threads,
-        )
+        output_dir = iter_output_dir(design, batch_dir, "pnr", i)
+        try:
+            m = run_iteration(
+                design,
+                batch_dir,
+                "pnr",
+                i,
+                t,
+                side,
+                cfg,
+                ALL_FLOW_TARGETS,
+                args.num_threads,
+            )
+        except RunJobFailed as exc:
+            pnr_steps.append(
+                PnrStep(
+                    iter=i,
+                    period_ns=t,
+                    side_um=side,
+                    utilization=u,
+                    output_dir=output_dir,
+                    completed=False,
+                )
+            )
+            print(f"  FAILED: {exc}")
+            u = u - UTILIZATION_STEP
+            continue
         ws = _require_finite(m, "route_ws_ns")
         area = _require_finite(m, "route_area_um2")
-        print(f"  route_ws={ws:+.4f} ns, route_area={area:.1f} um^2")
-        pnr_steps.append(
-            {
-                "period_ns": t,
-                "side_um": side,
-                "route_ws_ns": ws,
-                "route_area_um2": area,
-                "output_dir": str(run.output_dir),
-            }
+        realised = (t - ws) / t
+        step = PnrStep(
+            iter=i,
+            period_ns=t,
+            side_um=side,
+            utilization=u,
+            output_dir=output_dir,
+            completed=True,
+            route_ws_ns=ws,
+            route_area_um2=area,
+            realised_pressure=realised,
         )
+        completed.append(step)
+        pnr_steps.append(step)
+        print(
+            f"  route_ws={ws:+.4f} ns, route_area={area:.1f} um^2, "
+            f"realised_pressure={realised:.3f}"
+        )
+        t = (t - ws) / PRESSURE
 
-    # Report results
-    final = pnr_steps[-1]
-    meets = ws >= 0
+    if not completed:
+        raise RuntimeError("no P&R run completed")
+
+    best = min(
+        completed,
+        key=lambda s: abs((s.realised_pressure or 0.0) - PRESSURE),
+    )
+
     summary = {
         "design": {
             "benchmark": design.benchmark,
@@ -209,30 +257,35 @@ def main() -> None:
             "top_module": design.top_module,
         },
         "result": {
-            "period_ns": final["period_ns"],
-            "side_um": final["side_um"],
-            "fmax_mhz": fmax_mhz(final["period_ns"]),
-            "route_ws_ns": ws,
-            "route_area_um2": area,
-            "meets_timing": meets,
+            "period_ns": best.period_ns,
+            "side_um": best.side_um,
+            "utilization": best.utilization,
+            "fmax_mhz": fmax_mhz(best.period_ns),
+            "route_ws_ns": best.route_ws_ns,
+            "route_area_um2": best.route_area_um2,
+            "realised_pressure": best.realised_pressure,
+            "selected_iter": best.iter,
         },
         "step1_synth": {
             "period_ns": cfg.calibration_period_ns,
             "side_um": cfg.calibration_side_um,
             "synth_ws_ns": synth_ws_1,
             "synth_area_um2": synth_area_1,
-            "output_dir": str(run1.output_dir),
+            "io_pin_count": io_pin_count,
+            "output_dir": str(iter_output_dir(design, batch_dir, "synth", 0)),
         },
-        "pnr_steps": pnr_steps,
+        "pnr_steps": [asdict(s) for s in pnr_steps],
     }
     summary_path = batch_dir / design.benchmark / design.name / "calibration.json"
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2, default=str))
 
     print(
-        f"\nResult: period={final['period_ns']:.4f} ns | "
-        f"side={final['side_um']:.2f} um | "
-        f"fmax={fmax_mhz(final['period_ns']):.2f} MHz | meets_timing={meets}"
+        f"\nResult: iter={best.iter} | "
+        f"period={best.period_ns:.4f} ns | "
+        f"side={best.side_um:.2f} um | U={best.utilization:.2f} | "
+        f"fmax={fmax_mhz(best.period_ns):.2f} MHz | "
+        f"realised_pressure={best.realised_pressure:.3f}"
     )
     print(f"Summary: {summary_path}")
 
