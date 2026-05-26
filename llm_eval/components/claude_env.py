@@ -10,8 +10,11 @@ from __future__ import annotations
 import difflib
 import json
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import PurePosixPath
+
+from mcp.server.fastmcp import FastMCP
 
 from common.config import DesignConfig
 
@@ -23,10 +26,14 @@ SANDBOX_RTL_ROOT = "rtl"
 
 @dataclass
 class ClaudeEnv:
-    """Scoped unix user + home dir inside the shared container."""
+    """Scoped unix user + home dir inside the shared container, optionally
+    bound to a per-env FastMCP that's mounted on the container's shared MCP
+    host for the env's lifetime."""
 
     container: Container
+    mcp_factory: Callable[[ClaudeEnv], FastMCP] | None = None
     user: str = field(default_factory=lambda: f"claude-{secrets.token_hex(6)}")
+    url: str = field(default="", init=False)
 
     @property
     def workdir(self) -> str:
@@ -74,9 +81,15 @@ class ClaudeEnv:
                 user="root",
             ),
         )
+        if self.mcp_factory is not None:
+            self.url = self.container.mcp.mount(self.user, self.mcp_factory(self))
         return self
 
     def __exit__(self, *_exc: object) -> None:
+        # Unmount this env's FastMCP from the eval-wide MCP host
+        if self.url:
+            self.container.mcp.unmount(self.user)
+            self.url = ""
         # -f -r: force-remove even if processes are still running
         self.container.execute(
             ["userdel", "-f", "-r", self.user],

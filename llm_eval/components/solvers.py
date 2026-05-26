@@ -16,6 +16,7 @@ from inspect_ai.model import (
     ChatCompletionChoice,
     ChatMessage,
     ChatMessageAssistant,
+    ChatMessageSystem,
     ChatMessageTool,
     ModelOutput,
     ModelUsage,
@@ -23,17 +24,18 @@ from inspect_ai.model import (
 from inspect_ai.model._model import active_model
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
-from inspect_ai.util import store
+from inspect_ai.util import LimitExceededError, store
 
 from common.config import TargetConfig
 
 from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
-from .container import Container
-from .mcp_connect import MCPService
+from .container import TIMEOUT_RC, Container
 from .mcp_servers import make_server
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
+AGENT_TURNS = 30
+AGENT_TIMEOUT = 1800
 
 # MCP config
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -49,16 +51,27 @@ def _resolve_model() -> str:
     return m.name
 
 
-def _parse_stream_json(stdout: str) -> list[dict]:
-    """Parse line-delimited JSON events from `claude --output-format stream-json`."""
+def _parse_stream_json(
+    stdout: str, *, allow_truncated_tail: bool = False
+) -> list[dict]:
+    """Parse line-delimited JSON events from `claude --output-format stream-json`.
+
+    With `allow_truncated_tail`, an incomplete final line (e.g. from a SIGKILL
+    mid-write on timeout) is silently dropped instead of raising.
+    """
+    lines = stdout.splitlines(keepends=True)
     events: list[dict] = []
-    for lineno, raw in enumerate(stdout.splitlines(), 1):
+    for lineno, raw in enumerate(lines, 1):
+        is_last = lineno == len(lines)
         line = raw.strip()
         if not line:
             continue
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError as e:
+            # A killed process may have flushed a partial final line.
+            if allow_truncated_tail and is_last and not raw.endswith("\n"):
+                break
             raise RuntimeError(
                 f"claude stdout line {lineno} is not valid JSON ({e}). "
                 f"Preview (first 200 chars): {line[:200]!r}"
@@ -187,8 +200,8 @@ def _build_usage(final: dict) -> ModelUsage:
 def claude_code_oauth(
     synth_target: TargetConfig,
     container: Container,
-    timeout: int = 1800,
-    max_turns: int = 8,
+    timeout: int = AGENT_TIMEOUT,
+    max_turns: int = AGENT_TURNS,
 ):
     async def execute(state: AgentState) -> AgentState:
         model = _resolve_model()
@@ -196,8 +209,13 @@ def claude_code_oauth(
         mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{tool}" for tool in MCP_TOOLS]
         allowed_tools = tuple(DEFAULT_TOOLS + mcp_tool_names)
 
+        # MCP constructor needs user environment
+        mcp_factory = (
+            lambda e: make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, e),
+        )
+
         # Per-sample environment in a shared container
-        with ClaudeEnv(container) as env:
+        with ClaudeEnv(container, mcp_factory) as env:
             # Stage RTL. Each sample gets a clean copy
             for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
                 env.write_file(
@@ -205,24 +223,20 @@ def claude_code_oauth(
                     abs_file.read_text(),
                 )
 
-            # MCP server is per-env
-            host_mcp = make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, env)
-
-            async with MCPService(host_mcp) as host_service:
-                prompt = state.messages[-1].text
-                sid = store().get("cc_session_id")
-                result = await asyncio.to_thread(
-                    env.run_claude,
-                    prompt,
-                    model=model,
-                    mcp_servers={
-                        HOST_MCP_NAME: {"type": "sse", "url": host_service.url},
-                    },
-                    allowed_tools=allowed_tools,
-                    max_turns=max_turns,
-                    resume_session=sid,
-                    timeout=timeout,
-                )
+            prompt = state.messages[-1].text
+            sid = store().get("cc_session_id")
+            result = await asyncio.to_thread(
+                env.run_claude,
+                prompt,
+                model=model,
+                mcp_servers={
+                    HOST_MCP_NAME: {"type": "sse", "url": env.url},
+                },
+                allowed_tools=allowed_tools,
+                max_turns=max_turns,
+                resume_session=sid,
+                timeout=timeout,
+            )
 
             # Capture the final RTL state for scorers before env tear-down
             diff = await asyncio.to_thread(build_diff_from_env, env, design)
@@ -231,8 +245,10 @@ def claude_code_oauth(
         # Claude CLI logs MCP connection failures to stderr
         store().set("cc_stderr_tail", result.stderr[-4000:])
 
-        # `claude -p` errors when it hits --max-turns, stdout contains stream
-        events = _parse_stream_json(result.stdout)
+        timed_out = result.returncode == TIMEOUT_RC
+
+        # stdout contains stream, even on max turns and timeout errors
+        events = _parse_stream_json(result.stdout, allow_truncated_tail=timed_out)
         if not events:
             raise RuntimeError(f"claude failed (rc={result.returncode})")
 
@@ -241,7 +257,7 @@ def claude_code_oauth(
         if final is None:
             raise RuntimeError("claude transcript contained no `result` event")
 
-        # End gracefully on `error_max_turns`
+        # End gracefully on `error_max_turns` and on timeout
         max_turns_hit = final.get("subtype") == "error_max_turns"
         if final.get("is_error") and not max_turns_hit:
             raise RuntimeError(f"claude reported error: {final.get('result')}")
@@ -260,7 +276,12 @@ def claude_code_oauth(
             raise ValueError("could not find final response")
 
         # Final message and stop reason
-        stop_reason = "model_length" if max_turns_hit else "stop"
+        if timed_out:
+            stop_reason = "time"
+        elif max_turns_hit:
+            stop_reason = "messages"
+        else:
+            stop_reason = "stop"
         state.output = ModelOutput(
             model=model,
             choices=[
@@ -274,6 +295,21 @@ def claude_code_oauth(
         store().set("cc_num_turns", final.get("num_turns"))
         store().set("cc_duration_ms", final.get("duration_ms"))
         store().set("cc_stop_subtype", final.get("subtype"))
+        store().set("cc_timed_out", timed_out)
+
+        # Surface timeout / max-turns as an Inspect limit and system message
+        if timed_out:
+            msg = f"[Timed out after {timeout}s]"
+            state.messages.append(ChatMessageSystem(content=msg))
+            raise LimitExceededError(
+                type="time", value=timeout, limit=timeout, message=msg
+            )
+        if max_turns_hit:
+            msg = f"[Reached max turns of {max_turns}]"
+            state.messages.append(ChatMessageSystem(content=msg))
+            raise LimitExceededError(
+                type="message", value=max_turns, limit=max_turns, message=msg
+            )
 
         return state
 
@@ -289,7 +325,12 @@ def claude_code_solver(container: Container) -> Solver:
         assert isinstance(synth_target, TargetConfig)
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(synth_target=synth_target, container=container)
-        result = await agent_fn(agent_state)
+        try:
+            result = await agent_fn(agent_state)
+        except LimitExceededError:
+            state.messages = agent_state.messages
+            state.output = agent_state.output
+            raise
         state.messages = result.messages
         state.output = result.output
         return state
