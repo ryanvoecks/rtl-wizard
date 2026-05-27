@@ -238,7 +238,7 @@ def rewrite_design(
     rewritten = dataclasses.replace(design, root=output_dir)
 
     if verify:
-        eqy_workdir = output_dir.parent / f"{output_dir.name}_eqy"
+        eqy_workdir = output_dir / "__eqy__"
         if not verify_equivalence(design, rewritten, eqy_workdir):
             raise RuntimeError(f"eqy: FAIL (workdir: {eqy_workdir})")
 
