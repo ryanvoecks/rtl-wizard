@@ -23,6 +23,7 @@ from common.config import (
     RunConfig,
 )
 from common.targets import resolve_target
+from eda_eval.cache import lookup, record, replay
 
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
@@ -96,14 +97,20 @@ def run_job(run: RunConfig) -> int:
     """Invoke the rendered per-design Makefile."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
     run.dump(run.output_dir / RunConfig.FILENAME)
+    cached = lookup(run)
+    if cached is not None:
+        replay(cached, run.output_dir)
+        return 0
     makefile = snapshot_inputs(run)
     log_path = run.output_dir / "flow.log"
     with log_path.open("w") as log:
-        return subprocess.run(
+        rc = subprocess.run(
             ["make", "-C", str(makefile.parent)],
             stdout=log,
             stderr=subprocess.STDOUT,
         ).returncode
+    record(run)
+    return rc
 
 
 def main():

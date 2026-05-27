@@ -100,7 +100,7 @@ def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
 
 
 def _sample_dir(output_dir: Path, state: TaskState) -> Path:
-    p = output_dir / str(state.sample_id)
+    p = output_dir / str(state.sample_id) / f"epoch_{state.epoch}"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
