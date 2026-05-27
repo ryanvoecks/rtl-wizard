@@ -25,10 +25,11 @@ from typing import cast
 
 import pyslang
 
-from common.config import DesignConfig
+from common.config import EQY_BIN, DesignConfig
 from common.designs import resolve_design
 
 FLIP_PROBABILITY = 0.5  # per-operator probability of swapping operands
+EQY_TIMEOUT = 600  # wall-clock cap on the equivalence check
 
 COMMUTATIVE_KINDS = frozenset(
     {
@@ -172,10 +173,50 @@ def _rewrite_text(
     return out, len(swaps)
 
 
+def _eqy_read_block(design: DesignConfig) -> str:
+    """Yosys script fragment to read `design`'s RTL."""
+    rtl_src = design.root / design.rtl_dir
+    inc_args = "".join(f" -I {(rtl_src / d).resolve()}" for d in design.include_dirs)
+    files = " ".join(str((rtl_src / f).resolve()) for f in design.rtl_files)
+    return f"read -sv{inc_args} {files}\nprep -top {design.top_module}\n"
+
+
+def verify_equivalence(
+    gold: DesignConfig,
+    gate: DesignConfig,
+    workdir: Path,
+) -> bool:
+    """Run eqy to prove `gold` and `gate` are logically equivalent."""
+    config = (
+        "[options]\n\n"
+        f"[gold]\n{_eqy_read_block(gold)}\n"
+        f"[gate]\n{_eqy_read_block(gate)}\n"
+        "[strategy simple]\nuse sat\ndepth 10\n"
+    )
+    workdir.parent.mkdir(parents=True, exist_ok=True)
+    cfg_path = workdir.parent / f"{workdir.name}.eqy"
+    cfg_path.write_text(config)
+    try:
+        proc = subprocess.run(
+            [str(EQY_BIN), "-f", "-d", str(workdir), str(cfg_path)],
+            capture_output=True,
+            text=True,
+            timeout=EQY_TIMEOUT,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"eqy timed out after {EQY_TIMEOUT}s", file=sys.stderr)
+        return False
+    if proc.returncode != 0:
+        print(proc.stdout, file=sys.stderr)
+        print(proc.stderr, file=sys.stderr)
+    return proc.returncode == 0
+
+
 def rewrite_design(
     design: DesignConfig,
     output_dir: Path,
     seed: int = 0,
+    verify: bool = False,
 ) -> DesignConfig:
     """Reflink-copy `design.root` to `output_dir`, rewrite each file in
     `design.rtl_files` in place and return a DesignConfig pointed at the copy."""
@@ -194,7 +235,14 @@ def rewrite_design(
             abs_copy.write_text(new_text, encoding="utf-8")
         print(f"  {rel}: {n_swapped} swap(s)")
 
-    return dataclasses.replace(design, root=output_dir)
+    rewritten = dataclasses.replace(design, root=output_dir)
+
+    if verify:
+        eqy_workdir = output_dir.parent / f"{output_dir.name}_eqy"
+        if not verify_equivalence(design, rewritten, eqy_workdir):
+            raise RuntimeError(f"eqy: FAIL (workdir: {eqy_workdir})")
+
+    return rewritten
 
 
 def main() -> None:
@@ -219,6 +267,11 @@ def main() -> None:
         default=0,
         help="Master RNG seed. Same seed reproduces byte-identical output.",
     )
+    parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Run eqy to prove the rewrite is logically equivalent.",
+    )
     args = parser.parse_args()
 
     design = resolve_design(args.design)
@@ -232,7 +285,9 @@ def main() -> None:
         f"-> {output_dir} (seed={args.seed})"
     )
     try:
-        rewritten = rewrite_design(design, output_dir, seed=args.seed)
+        rewritten = rewrite_design(
+            design, output_dir, seed=args.seed, verify=args.verify
+        )
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         raise SystemExit(1) from e

@@ -12,7 +12,7 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from common.config import EDA_EVAL, ORFS_HOME, PNR_FLOW_TARGETS, YOSYS_BIN, RunConfig
+from common.config import EDA_EVAL, ORFS_FLOW, PNR_FLOW_TARGETS, YOSYS_BIN, RunConfig
 from eda_eval.extract_metrics import find_unique, parse_period_ps
 
 # Default config
@@ -47,7 +47,7 @@ def locate_results(
 
 def liberty_files(platform: str) -> list[Path]:
     """All .lib files for `platform` under the ORFS platforms dir."""
-    libs = sorted((ORFS_HOME / "platforms" / platform / "lib").glob("*.lib"))
+    libs = sorted((ORFS_FLOW / "platforms" / platform / "lib").glob("*.lib"))
     if not libs:
         raise FileNotFoundError(f"no .lib files for platform {platform!r}")
     return libs
