@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -40,6 +41,19 @@ COMMUTATIVE_KINDS = frozenset(
         pyslang.SyntaxKind.BinaryXorExpression,
         pyslang.SyntaxKind.EqualityExpression,
         pyslang.SyntaxKind.InequalityExpression,
+    }
+)
+
+PERMUTABLE_MEMBER_KINDS = frozenset(
+    {
+        pyslang.SyntaxKind.AlwaysBlock,
+        pyslang.SyntaxKind.AlwaysCombBlock,
+        pyslang.SyntaxKind.AlwaysFFBlock,
+        pyslang.SyntaxKind.AlwaysLatchBlock,
+        pyslang.SyntaxKind.InitialBlock,
+        pyslang.SyntaxKind.FinalBlock,
+        pyslang.SyntaxKind.ContinuousAssign,
+        pyslang.SyntaxKind.HierarchyInstantiation,
     }
 )
 
@@ -79,12 +93,12 @@ def _error_signature(diags: pyslang.Diagnostics) -> Counter:
     return Counter(str(d.code) for d in diags if d.isError())
 
 
-def _count_commutative(root: pyslang.SyntaxNode) -> int:
+def _count_kinds(root: pyslang.SyntaxNode, kinds: frozenset) -> int:
     total = 0
 
     def visit(node: pyslang.SyntaxNode) -> pyslang.VisitAction:
         nonlocal total
-        if node.kind in COMMUTATIVE_KINDS:
+        if node.kind in kinds:
             total += 1
         return pyslang.VisitAction.Advance
 
@@ -101,18 +115,17 @@ def _per_file_rng(rel_path: Path, master_seed: int) -> random.Random:
     return random.Random(int.from_bytes(digest, "little"))
 
 
-def _rewrite_text(
+def _transform_operand_swap(
     src: str,
     abs_path: Path,
     include_dirs: list[str],
     rng: random.Random,
 ) -> tuple[str, int]:
-    """Rewrite a single RTL source string. Returns (new_text, n_swapped).
-    Silently returns original on error."""
+    """Swap operands around commutative binary operators."""
     sm = _make_source_manager(include_dirs)
     tree = pyslang.SyntaxTree.fromFileInMemory(src, sm, path=str(abs_path))
     orig_errors = _error_signature(tree.diagnostics)
-    orig_count = _count_commutative(tree.root)
+    orig_count = _count_kinds(tree.root, COMMUTATIVE_KINDS)
     file_buffer = tree.root.sourceRange.start.buffer
 
     swaps: list[tuple[int, int, int, int]] = []  # (L_start, L_end, R_start, R_end)
@@ -162,15 +175,111 @@ def _rewrite_text(
     check_sm = _make_source_manager(include_dirs)
     check_tree = pyslang.SyntaxTree.fromFileInMemory(out, check_sm, path=str(abs_path))
     new_errors = _error_signature(check_tree.diagnostics)
-    if (new_errors - orig_errors) or _count_commutative(check_tree.root) != orig_count:
+    new_count = _count_kinds(check_tree.root, COMMUTATIVE_KINDS)
+    if (new_errors - orig_errors) or new_count != orig_count:
         raise RuntimeError(
-            f"self-check failed for {abs_path}: "
+            f"operand_swap self-check failed for {abs_path}: "
             f"new_errors={sorted((new_errors - orig_errors).items())}, "
-            f"orig_ops={orig_count}, "
-            f"new_ops={_count_commutative(check_tree.root)}"
+            f"orig_ops={orig_count}, new_ops={new_count}"
         )
 
     return out, len(swaps)
+
+
+def _transform_decl_reorder(
+    src: str,
+    abs_path: Path,
+    include_dirs: list[str],
+    rng: random.Random,
+) -> tuple[str, int]:
+    """Permute the order of permutable module-body members (always blocks,
+    initial/final blocks, continuous assigns, submodule instantiations)."""
+    sm = _make_source_manager(include_dirs)
+    tree = pyslang.SyntaxTree.fromFileInMemory(src, sm, path=str(abs_path))
+    orig_errors = _error_signature(tree.diagnostics)
+    orig_count = _count_kinds(tree.root, PERMUTABLE_MEMBER_KINDS)
+    file_buffer = tree.root.sourceRange.start.buffer
+
+    edits: list[tuple[int, int, str]] = []  # (old_start, old_end, replacement_text)
+    moved = 0
+
+    def visit(node: pyslang.SyntaxNode) -> pyslang.VisitAction:
+        nonlocal moved
+        if node.kind != pyslang.SyntaxKind.ModuleDeclaration:
+            return pyslang.VisitAction.Advance
+        mod = cast(pyslang.ModuleDeclarationSyntax, node)
+        perm: list[pyslang.SyntaxNode] = []
+        for m in mod.members:
+            if (
+                m.kind in PERMUTABLE_MEMBER_KINDS
+                and m.sourceRange.start.buffer == file_buffer
+                and m.sourceRange.end.buffer == file_buffer
+            ):
+                perm.append(m)
+        if len(perm) < 2:
+            return pyslang.VisitAction.Advance
+        order = list(range(len(perm)))
+        rng.shuffle(order)
+        for slot, src_idx in enumerate(order):
+            if slot == src_idx:
+                continue
+            old = perm[slot]
+            new = perm[src_idx]
+            edits.append(
+                (
+                    old.sourceRange.start.offset,
+                    old.sourceRange.end.offset,
+                    src[new.sourceRange.start.offset : new.sourceRange.end.offset],
+                )
+            )
+            moved += 1
+        return pyslang.VisitAction.Advance
+
+    tree.root.visit(visit)
+
+    if not edits:
+        return src, 0
+
+    out = src
+    for start, end, replacement in sorted(edits, key=lambda e: -e[0]):
+        out = out[:start] + replacement + out[end:]
+
+    check_sm = _make_source_manager(include_dirs)
+    check_tree = pyslang.SyntaxTree.fromFileInMemory(out, check_sm, path=str(abs_path))
+    new_errors = _error_signature(check_tree.diagnostics)
+    new_count = _count_kinds(check_tree.root, PERMUTABLE_MEMBER_KINDS)
+    if (new_errors - orig_errors) or new_count != orig_count:
+        raise RuntimeError(
+            f"decl_reorder self-check failed for {abs_path}: "
+            f"new_errors={sorted((new_errors - orig_errors).items())}, "
+            f"orig_members={orig_count}, new_members={new_count}"
+        )
+
+    return out, moved
+
+
+TRANSFORMS: list[
+    tuple[str, Callable[[str, Path, list[str], random.Random], tuple[str, int]]]
+] = [
+    ("operand_swap", _transform_operand_swap),
+    ("decl_reorder", _transform_decl_reorder),
+]
+
+
+def _rewrite_text(
+    src: str,
+    abs_path: Path,
+    include_dirs: list[str],
+    rng: random.Random,
+) -> tuple[str, dict[str, int]]:
+    """Apply every transform in TRANSFORMS in sequence. Returns the final
+    text plus a per-transform count of changes made."""
+    counts: dict[str, int] = {}
+    cur = src
+    for name, transform in TRANSFORMS:
+        cur, n = transform(cur, abs_path, include_dirs, rng)
+        counts[name] = n
+    return cur, counts
 
 
 def _eqy_read_block(design: DesignConfig) -> str:
@@ -230,10 +339,9 @@ def rewrite_design(
         abs_copy = output_dir / design.rtl_dir / rel
         src = abs_orig.read_text(encoding="utf-8")
         rng = _per_file_rng(rel, seed)
-        new_text, n_swapped = _rewrite_text(src, abs_orig, include_dirs, rng)
-        if n_swapped:
+        new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
+        if new_text != src:
             abs_copy.write_text(new_text, encoding="utf-8")
-        print(f"  {rel}: {n_swapped} swap(s)")
 
     rewritten = dataclasses.replace(design, root=output_dir)
 
