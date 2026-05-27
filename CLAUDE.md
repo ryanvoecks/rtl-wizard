@@ -28,10 +28,10 @@ Submodule patches live in `common/patches/<repo>.diff` and are applied idempoten
 uv run eda_eval/run.py --target aes_target
 
 # Iterative k-based calibration for a single design (converges on clock period for target slack/period ratio)
-uv run eda_eval/calibrate.py --benchmark secworks --name aes
+uv run eda_eval/calibrate.py --design aes_reference
 
 # Find the optimisation "sweet spot" period: tightest T at which fix scope stays small
-uv run eda_eval/scope.py --benchmark secworks --name aes
+uv run eda_eval/scope.py --design aes_reference
 
 # Analyse a routed phase dir -> critical_paths.rpt, logical_paths.rpt
 uv run eda_eval/analyse.py eda_results/<batch>/<benchmark>/<name>/<variant>/
@@ -50,7 +50,7 @@ Outputs go to `eda_results/<timestamp>/...` and `llm_results/<timestamp>/...`; b
 
 ### The design registry (`common/designs.py`)
 
-Every design is a `DesignConfig` (frozen dataclass) emitted inline in `designs.py`, aggregated into a 3-level `all_designs: {benchmark: {name: {variant: DesignConfig}}}` tree. Each entry locks down:
+Every design is a `DesignConfig` (frozen dataclass) emitted inline in `designs.py` as a module-level `<name>_<variant>` binding (e.g. `aes_reference`). Consumers either import the binding directly (`common/targets.py`) or resolve it by name via `resolve_design("aes_reference")` (the calibrate / scope CLIs use `--design <name>`). Each entry locks down:
 
 - `rtl_files` (ordered tuple, paths relative to `rtl_dir`): explicit because RTLLM-style auto-globbing breaks on repos that ship sim-only TB models next to RTL.
 - `top_module`, `clock_port` (default `clk` -- override per design, several use `clk_i`/`CLK`/`i_controller_clk`).
@@ -60,7 +60,7 @@ Every design is a `DesignConfig` (frozen dataclass) emitted inline in `designs.p
 
 Each design has comments above its block documenting *why* the file list and patch are what they are -- read those before editing, they record load-bearing decisions (e.g. uberddr3 only synthesizes the controller, not the PHY; verilog_axi uses the 8x8 wrapper not the parameterized crossbar; e203 deliberately removes ITCM/DTCM RAMs).
 
-When adding a design: drop a `.diff` in `common/patches/` (applied by `setup.sh`), add a `<name>.sh` test script, add the entry under the right benchmark in `all_designs`, and document it in `docs/designs.md` (single source of truth for cell counts and modifications).
+When adding a design: drop a `.diff` in `common/patches/` (applied by `setup.sh`), add a `<name>.sh` test script, add a module-level `<name>_<variant>` `DesignConfig` binding in `common/designs.py`, and document it in `docs/designs.md` (single source of truth for cell counts and modifications).
 
 ### Single-target ORFS run (`eda_eval/run.py`)
 
@@ -87,7 +87,7 @@ The "logical group" of a path is `(start_stem, end_stem)` after stripping yosys 
 
 `llm_eval/run.py` is the entry point; it creates `llm_results/<timestamp>/`, asks `inspect_eval` to run the `optimize_timing` task, and writes the `.eval` log alongside per-sample artifacts (`diff.patch`, `synthesis.log`, `testbench.log`, `target_config.json`).
 
-The task is built from `common/targets.py` (`aes_target`, `viterbi_target`, `bitonic_target`, `systolic_target`, aggregated as `all_targets`) -- each `TargetConfig` carries the design + the calibrated `(period_ns, side_um)`. Per sample, `_build_sample` mounts the design's RTL into the sandbox under `rtl/<file>` (`SANDBOX_RTL_ROOT = "rtl"`).
+The task is built from `common/targets.py` (one `<name>_target` per calibrated design, aggregated as `all_targets`) -- each `TargetConfig` carries the design + the calibrated `(period_ns, side_um)`. Per sample, `_build_sample` mounts the design's RTL into the sandbox under `rtl/<file>` (`SANDBOX_RTL_ROOT = "rtl"`).
 
 `claude_code_solver` (in `llm_eval/components/solvers.py`) is a **custom Inspect agent** that shells out to `claude -p --output-format stream-json --strict-mcp-config ...` inside the sandbox and translates each NDJSON event back into Inspect `ChatMessage{Assistant,Tool}` objects so `inspect view` renders the transcript correctly. Auth is OAUTH-token-only (`CLAUDE_CODE_OAUTH_TOKEN` from `.env`); `ANTHROPIC_API_KEY` is deliberately *not* forwarded because the Claude CLI prefers it over the OAUTH token. Model name comes from Inspect's `--model` flag at solve time via `active_model()`. Resumes across multiple `solve` calls are wired through `--resume <session_id>` (session id stored in `store()`), though the current task only invokes `claude` once per sample.
 

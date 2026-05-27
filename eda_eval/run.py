@@ -15,15 +15,14 @@ import subprocess
 import time
 from pathlib import Path
 
-from common import targets as targets_module
 from common.config import (
     ALL_FLOW_TARGETS,
     EDA_EVAL,
     EDA_RUNS,
     ORFS_HOME,
     RunConfig,
-    TargetConfig,
 )
+from common.targets import resolve_target
 
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
@@ -107,20 +106,6 @@ def run_job(run: RunConfig) -> int:
         ).returncode
 
 
-def resolve_target(name: str) -> TargetConfig:
-    """Look up a `TargetConfig` by its variable name in `common.targets`."""
-    obj = getattr(targets_module, name, None)
-    if not isinstance(obj, TargetConfig):
-        available = sorted(
-            n for n, v in vars(targets_module).items() if isinstance(v, TargetConfig)
-        )
-        raise ValueError(
-            f"No TargetConfig named {name!r} in common.targets. "
-            f"Available: {', '.join(available)}"
-        )
-    return obj
-
-
 def main():
     parser = argparse.ArgumentParser(
         description=(__doc__ or "").splitlines()[0],
@@ -129,7 +114,7 @@ def main():
     parser.add_argument(
         "--target",
         required=True,
-        help="Name of the TargetConfig to run (from common.targets).",
+        help="Name of the target to run.",
     )
     parser.add_argument(
         "--threads-per-run",

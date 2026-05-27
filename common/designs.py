@@ -1,16 +1,8 @@
-"""Hand-curated registry of every design we currently evaluate.
-
-Each design is wired up inline: enough RTL discovery to find its sources,
-its testbench runner, and one `DesignConfig` literal per variant. The
-combined `all_designs` tree is what every downstream consumer reads.
-
-Per-design test invocation lives in `common/scripts/<name>.sh`. Each
-script is run from the design root by `DesignConfig.run_tb()` and must
-exit 0 on pass / non-zero on fail; stdout/stderr go back to the caller.
-"""
+"""Registry of every design we currently evaluate."""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 from common.config import (
@@ -179,17 +171,7 @@ systolic_tpu_reference = DesignConfig(
 
 
 # alexforencich/verilog-axi
-#
-# 8x8 AXI4 crossbar, 32-bit data path. Synthesizes the
-# `axi_crossbar_wrap_8x8` wrapper rather than the parameterized
-# `axi_crossbar` directly: the wrapper hardcodes S_COUNT/M_COUNT into
-# the port list, which is what ORFS expects, and it names ports the
-# same way the cocotb bench does. The wrapper is the output of upstream's
-# `rtl/axi_crossbar_wrap.py -p 8 8`, dropped in via
-# `common/patches/verilog_axi.diff` so it doesn't need to be regenerated
-# at setup time. It lives under `tb/axi_crossbar/` rather than `rtl/`;
-# ORFS's snapshot copies it flat alongside the rest, so the basename
-# collision check is fine.
+# 8x8 AXI4 crossbar, 32-bit data path. Auto-generated wrapper added in patch
 
 VERILOG_AXI_RTL = (
     Path("rtl") / "arbiter.v",
@@ -216,21 +198,6 @@ verilog_axi_reference = DesignConfig(
 
 
 # mcjtag/bitonic_sorter
-#
-# Fully-pipelined Batcher bitonic sorting network. We synthesize the
-# basic (non-AXI-Stream) variant; `common/patches/bitonic_sorter.diff`
-# bumps the upstream `CHAN_NUM` default from 8 to 32 so the synth top
-# lands ~27k cells (the unmodified default lands ~9k, below our
-# 20-50k-cell window). DATA_WIDTH stays at 16. With PIPE_REG=1 (the
-# default) every comparator stage is registered, giving a single `clk`
-# domain and a pipeline depth of log2(N)*(log2(N)+1)/2 = 15 cycles.
-#
-# Upstream ships no testbench, so the same patch also drops in
-# `test/tb_bitonic_sort.v`: a self-checking iverilog/Verilator TB that
-# drives 128 stimuli (zeros, all-ones, sorted, reverse-sorted,
-# duplicates, then random), captures `data_out` every cycle, and
-# compares against a software insertion sort at the right pipeline
-# offset.
 
 BITONIC_SORTER_RTL_DIR = Path("hdl") / "basic"
 BITONIC_SORTER_RTL = (
@@ -252,19 +219,6 @@ bitonic_sorter_reference = DesignConfig(
 
 
 # coole198669/viterbi_decoder
-#
-# LTE/NB-IoT/GSM-style Viterbi decoder, parametric K=4-7 / rate 1/2-1/6 but
-# hardwired for 64 BMU+ACS, so synthesis always builds the full K=7 trellis
-# (~53k cells in nangate45). Single `clk_i` domain. The viterbi_core exposes
-# external SRAM interfaces; the TB-side memory models (sram_64x64,
-# sram_24x4096) live next to the RTL but are only compiled into the TB.
-#
-# `common/patches/viterbi.diff` comments out two Synopsys-only calls
-# (`$fsdbDumpfile` / `$fsdbDumpvars`) in tb_tcase1.v so the TB builds under
-# iverilog. The other tcase files don't reference fsdb so they build clean.
-# We deliberately exclude the upstream `sram_24x2048.v` from the compile
-# list -- it redeclares the same `sram_24x4096` module that `sram_24x4096.v`
-# already provides, so including both is a duplicate-module error.
 
 VITERBI_RTL = (
     Path("viterbi_core.v"),
@@ -365,22 +319,6 @@ e203_reference = DesignConfig(
 
 
 # OpenCores wb_dma (Rudolf Usselmann)
-#
-# Wishbone DMA/Bridge core with up to 31 channels, linked-list descriptors,
-# circular buffer mode, and HW/SW handshakes. Single `clk_i` domain (both
-# WB interfaces share the clock). Pure Verilog-2001, no SRAM macros -- the
-# per-channel descriptor state lives in flop arrays sized by ch_count, which
-# is the knob for cell count. The patch bumps ch_count from 1 to 16 and
-# enables ch0..ch15 via their conf defaults so synth lands in our cell-count
-# window, bumps the TB's `CH_COUNT` define to match, and flips the upstream
-# "Long Regression" if(1) to if(0) so the in-budget "Short Regression"
-# branch executes within tb_timeout_s.
-#
-# Pass/fail is derived from the sim log directly (no TB instrumentation): the
-# script greps for `^ERROR:` lines and filters out upstream's bogus "ACK
-# count Mismatch" assertions, whose formulas are off by 2x against the actual
-# master-port ack rate (data correctness checks are unaffected). The watchdog
-# already prints `ERROR: Watch Dog Counter Expired` on its own.
 
 WB_DMA_RTL_DIR = Path("rtl") / "verilog"
 WB_DMA_RTL = (
@@ -414,29 +352,6 @@ wb_dma_reference = DesignConfig(
 
 
 # AngeloJacobo/UberDDR3
-#
-# Open-source DDR3 SDRAM controller originally written for the ZipCPU eth10g
-# switch. We synthesize only `rtl/ddr3_controller.v` -- the standalone
-# controller module is the DUT and runs in a single `i_controller_clk` domain
-# (every `always @(posedge ...)` block uses that clock). The other clock
-# inputs (i_ddr3_clk, i_ref_clk, i_ddr3_clk_90) live solely in `ddr3_phy.v`
-# and never enter the synth target. Default 8-lane DDR3-1600 config with
-# BIST built in (BIST_MODE=2, ECC off) lands ~35k cells on nangate45,
-# centre of the 20-50k window, with no SRAM macros (pure DFF + std cells).
-#
-# The testbench drives `ddr3_top` (controller + PHY + Micron 8Gb DDR3 model)
-# rather than the controller alone, because exercising real DDR3 traffic
-# needs the PHY's deserialised DQ/DQS. The PHY instantiates Xilinx UNISIM
-# primitives (OSERDESE2, IDELAYE2, IOBUF*), but the repo ships behavioral
-# stubs under `testbench/models/` and switches to them when `SIM_MODEL` is
-# defined, so the full chain runs under iverilog without Vivado.
-#
-# Test script invokes the built-in BIST (BIST_MODE=1): 4608 writes + 4608
-# reads across burst/random/alternating-rw patterns. The TB deliberately
-# injects 4 bit errors after each pattern to exercise the error-detection
-# path, so the pass criterion is `Number of Fails == Number of Injected
-# Errors` rather than `Fails == 0`. Synthesis-target file (ddr3_controller.v)
-# never sees SIM_MODEL.
 
 UBERDDR3_RTL_DIR = Path("rtl")
 UBERDDR3_RTL = (Path("ddr3_controller.v"),)
@@ -454,38 +369,17 @@ uberddr3_reference = DesignConfig(
 )
 
 
-# Aggregate
-
-# benchmark -> name -> variant -> DesignConfig.
-DesignTree = dict[str, dict[str, dict[str, DesignConfig]]]
-
-all_designs: DesignTree = {
-    "secworks": {
-        "aes": {"reference": aes_reference},
-        "sha512": {"reference": sha512_reference},
-    },
-    "opencores": {
-        "double_fpu": {"reference": double_fpu_reference},
-        "reed_solomon": {"reference": reed_solomon_reference},
-        "jpeg_encoder": {"reference": jpeg_encoder_reference},
-        "wb_dma": {"reference": wb_dma_reference},
-    },
-    "abdelazeem201": {
-        "systolic_tpu": {"reference": systolic_tpu_reference},
-    },
-    "forencich": {
-        "verilog_axi": {"reference": verilog_axi_reference},
-    },
-    "mcjtag": {
-        "bitonic_sorter": {"reference": bitonic_sorter_reference},
-    },
-    "coole198669": {
-        "viterbi": {"reference": viterbi_reference},
-    },
-    "riscv-mcu": {
-        "e203": {"reference": e203_reference},
-    },
-    "angelo-jacobo": {
-        "uberddr3": {"reference": uberddr3_reference},
-    },
-}
+def resolve_design(name: str) -> DesignConfig:
+    """Look up a `DesignConfig` by its variable name in this module."""
+    obj = getattr(sys.modules[__name__], name, None)
+    if not isinstance(obj, DesignConfig):
+        available = sorted(
+            n
+            for n, v in vars(sys.modules[__name__]).items()
+            if isinstance(v, DesignConfig)
+        )
+        raise ValueError(
+            f"No DesignConfig named {name!r} in common.designs. "
+            f"Available: {', '.join(available)}"
+        )
+    return obj

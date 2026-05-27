@@ -4,7 +4,7 @@ P&R sweep. Writes `calibration.json` with the chosen (period, side,
 utilization) and the per-iteration log.
 
 Usage:
-    uv run eda_eval/calibrate.py --benchmark secworks --name aes
+    uv run eda_eval/calibrate.py --design aes_reference
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-from common.designs import all_designs
+from common.designs import resolve_design
 from eda_eval.extract_metrics import extract, extract_synth
 from eda_eval.run import run_job
 
@@ -127,9 +127,11 @@ def main() -> None:
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--benchmark", default="corpus")
-    parser.add_argument("--name", default="counter_array")
-    parser.add_argument("--variant", default="claude")
+    parser.add_argument(
+        "--design",
+        required=True,
+        help="Name of the design to calibrate.",
+    )
     parser.add_argument(
         "--num-threads",
         type=int,
@@ -139,7 +141,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = StudyConfig()
-    design = all_designs[args.benchmark][args.name][args.variant]
+    design = resolve_design(args.design)
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
