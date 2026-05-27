@@ -23,9 +23,8 @@ and (b) `(T_baseline - T_sweet) / T_baseline >= --min-improvement`. The
 budget criteria are enforced by construction at `T_sweet`.
 
 Usage:
-    uv run eda_eval/scope.py
-    uv run eda_eval/scope.py --benchmark corpus --name counter_array \\
-        --variant claude --scope-iters 6
+    uv run eda_eval/scope.py --design aes_reference
+    uv run eda_eval/scope.py --design aes_reference --scope-iters 6
 """
 
 from __future__ import annotations
@@ -47,7 +46,7 @@ from common.config import (
     StudyConfig,
     TargetConfig,
 )
-from common.designs import all_designs
+from common.designs import resolve_design
 from eda_eval import analyse
 from eda_eval.extract_metrics import extract
 from eda_eval.run import run_job
@@ -460,9 +459,11 @@ def main() -> None:
         description=(__doc__ or "").splitlines()[0],
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--benchmark", default="corpus")
-    parser.add_argument("--name", default="counter_array")
-    parser.add_argument("--variant", default="claude")
+    parser.add_argument(
+        "--design",
+        required=True,
+        help="Name of the design to scope.",
+    )
     parser.add_argument("--initial-period-ns", type=float, default=0.5)
     parser.add_argument("--die-side-um", type=float, default=1000.0)
     parser.add_argument("--baseline-iters", type=int, default=3)
@@ -498,7 +499,7 @@ def main() -> None:
     args = parser.parse_args()
 
     cfg = StudyConfig()
-    design = all_designs[args.benchmark][args.name][args.variant]
+    design = resolve_design(args.design)
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
