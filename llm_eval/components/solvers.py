@@ -57,7 +57,7 @@ class SolverVariant:
     timeout: int
     instructions: str
     include_initial_report: bool = False
-    edit_rounds: int = 0
+    edit_rounds: int = 1
 
 
 def _resolve_model() -> str:
@@ -347,9 +347,6 @@ def claude_code_oauth(
                     store().set("cc_num_turns", final.get("num_turns"))
                     store().set("cc_duration_ms", final.get("duration_ms"))
                     store().set("cc_stop_subtype", final.get("subtype"))
-
-                if timed_out or max_turns_hit:
-                    break
 
                 if round_idx < rounds - 1:
                     cur_diff = await asyncio.to_thread(build_diff_from_env, env, design)
