@@ -33,12 +33,10 @@ from common.config import TargetConfig
 
 from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from .container import TIMEOUT_RC, Container
-from .mcp_servers import make_server
+from .mcp_servers import _synth_and_report, make_server
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
-AGENT_TURNS = 50
-AGENT_TIMEOUT = 3600
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -53,6 +51,7 @@ class SolverVariant:
     max_turns: int
     timeout: int
     instructions: str
+    include_initial_report: bool = False
 
 
 def _resolve_model() -> str:
@@ -347,6 +346,14 @@ def _make_solver(container: Container, variant: SolverVariant) -> Solver:
         # Append solver's instructions to task prompt
         task_prompt = state.messages[-1].text
         prompt = f"{task_prompt}\n\n{variant.instructions}"
+        if variant.include_initial_report:
+            report = await asyncio.to_thread(_synth_and_report, synth_target)
+            prompt += (
+                "\n\nA post-synth logical-paths report for the unmodified "
+                "design follows. It ranks register-to-register path groups "
+                "by slack and includes the area/power totals.\n\n"
+                f"```\n{report}\n```"
+            )
         state.messages = [ChatMessageUser(content=prompt)]
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(
@@ -412,3 +419,26 @@ def claude_code_no_feedback_solver(container: Container) -> Solver:
     )
 
     return _make_solver(container, no_feedback_config)
+
+
+@solver
+def claude_code_single_feedback_solver(container: Container) -> Solver:
+    """One-shot baseline. No tools, but a post-synth PPA report is included
+    in the initial prompt."""
+
+    instructions = (
+        "You have no testbench or synthesis tools available. Your edits "
+        "will be graded by a hidden testbench and by yosys synthesisability "
+        "after you finish, so every change must be obviously safe."
+    )
+
+    single_feedback_config = SolverVariant(
+        name="single-feedback",
+        mcp_tools=(),
+        max_turns=10,
+        timeout=900,
+        instructions=instructions,
+        include_initial_report=True,
+    )
+
+    return _make_solver(container, single_feedback_config)
