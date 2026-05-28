@@ -10,6 +10,8 @@ aren't shared across containers (TOS: one login per "device").
 
 import asyncio
 import json
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from inspect_ai.agent import AgentState, agent
 from inspect_ai.model import (
@@ -18,6 +20,7 @@ from inspect_ai.model import (
     ChatMessageAssistant,
     ChatMessageSystem,
     ChatMessageTool,
+    ChatMessageUser,
     ModelOutput,
     ModelUsage,
 )
@@ -27,7 +30,7 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, store
 from mcp.server.fastmcp import FastMCP
 
-from common.config import TargetConfig
+from common.config import DesignConfig, TargetConfig
 
 from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from .container import TIMEOUT_RC, Container
@@ -38,9 +41,92 @@ DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 AGENT_TURNS = 50
 AGENT_TIMEOUT = 3600
 
-# MCP config
+# MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
-MCP_TOOLS = ["run_testbench", "synth_report"]
+
+
+@dataclass(frozen=True)
+class SolverVariant:
+    """Knobs that vary between `claude -p`-based solvers."""
+
+    name: str
+    mcp_tools: tuple[str, ...]
+    max_turns: int
+    timeout: int
+    build_prompt: Callable[[TargetConfig], str]
+
+
+def _top_sandbox(design: DesignConfig) -> str:
+    top_file = next(
+        (p for p in design.rtl_files if p.stem == design.top_module),
+        design.rtl_files[0],
+    )
+    return f"{SANDBOX_RTL_ROOT}/{top_file}"
+
+
+def _with_feedback_prompt(target: TargetConfig) -> str:
+    design = target.design
+    top_sandbox = _top_sandbox(design)
+    return (
+        f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
+        f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
+        "increase the maximum clock frequency of the design by as much "
+        " as possible.\n\n"
+        "Constraints:\n"
+        "- Preserve functional behaviour. You cannot read the "
+        "testbench, but you can call the `run_testbench` MCP tool to "
+        "run it against your current RTL - it returns the testbench's "
+        "exit code and stdout so you can validate edits.\n"
+        "- The design must remain synthesisable by yosys.\n"
+        "- The area/power of the design should not increase by more than "
+        "10%."
+        f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
+        "rename them.\n\n"
+        "To measure your progress, call the `synth_report` MCP "
+        "tool: it synthesises your current RTL through ORFS and returns "
+        "a post-synth logical-paths report - the worst register-to-"
+        "register groups ranked by slack. Use it to find which paths to "
+        "focus on. It will also give you an update on the area/power of "
+        "the design."
+    )
+
+
+def _no_feedback_prompt(target: TargetConfig) -> str:
+    design = target.design
+    top_sandbox = _top_sandbox(design)
+    return (
+        f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
+        f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
+        "increase the maximum clock frequency of the design by as much "
+        "as possible.\n\n"
+        "Constraints:\n"
+        "- Preserve functional behaviour. You have no testbench and no "
+        "synthesis tool available - your edits will be graded by a "
+        "hidden testbench and by yosys synthesisability after you "
+        "finish, so every change must be obviously safe.\n"
+        "- The design must remain synthesisable by yosys.\n"
+        "- The area/power of the design should not increase by more than "
+        "10%.\n"
+        f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
+        "rename them."
+    )
+
+
+WITH_FEEDBACK = SolverVariant(
+    name="with-feedback",
+    mcp_tools=("run_testbench", "synth_report"),
+    max_turns=AGENT_TURNS,
+    timeout=AGENT_TIMEOUT,
+    build_prompt=_with_feedback_prompt,
+)
+
+NO_FEEDBACK = SolverVariant(
+    name="no-feedback",
+    mcp_tools=(),
+    max_turns=AGENT_TURNS,
+    timeout=AGENT_TIMEOUT,
+    build_prompt=_no_feedback_prompt,
+)
 
 
 def _resolve_model() -> str:
@@ -200,18 +286,18 @@ def _build_usage(final: dict) -> ModelUsage:
 def claude_code_oauth(
     synth_target: TargetConfig,
     container: Container,
-    timeout: int = AGENT_TIMEOUT,
-    max_turns: int = AGENT_TURNS,
+    variant: SolverVariant,
 ):
     async def execute(state: AgentState) -> AgentState:
         model = _resolve_model()
         design = synth_target.design
-        mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{tool}" for tool in MCP_TOOLS]
+        mcp_tool_list = list(variant.mcp_tools)
+        mcp_tool_names = [f"mcp__{HOST_MCP_NAME}__{t}" for t in mcp_tool_list]
         allowed_tools = tuple(DEFAULT_TOOLS + mcp_tool_names)
 
         # MCP constructor needs user environment
         def mcp_factory(e: ClaudeEnv) -> FastMCP:
-            return make_server(HOST_MCP_NAME, MCP_TOOLS, synth_target, e)
+            return make_server(HOST_MCP_NAME, mcp_tool_list, synth_target, e)
 
         # Per-sample environment in a shared container
         with ClaudeEnv(container, mcp_factory) as env:
@@ -222,19 +308,19 @@ def claude_code_oauth(
                     abs_file.read_text(),
                 )
 
+            mcp_servers = {HOST_MCP_NAME: {"type": "sse", "url": env.url}}
+
             prompt = state.messages[-1].text
             sid = store().get("cc_session_id")
             result = await asyncio.to_thread(
                 env.run_claude,
                 prompt,
                 model=model,
-                mcp_servers={
-                    HOST_MCP_NAME: {"type": "sse", "url": env.url},
-                },
+                mcp_servers=mcp_servers,
                 allowed_tools=allowed_tools,
-                max_turns=max_turns,
+                max_turns=variant.max_turns,
                 resume_session=sid,
-                timeout=timeout,
+                timeout=variant.timeout,
             )
 
             # Capture the final RTL state for scorers before env tear-down
@@ -301,16 +387,22 @@ def claude_code_oauth(
 
         # Surface timeout / max-turns as an Inspect limit and system message
         if timed_out:
-            msg = f"[Timed out after {timeout}s]"
+            msg = f"[Timed out after {variant.timeout}s]"
             state.messages.append(ChatMessageSystem(content=msg))
             raise LimitExceededError(
-                type="time", value=timeout, limit=timeout, message=msg
+                type="time",
+                value=variant.timeout,
+                limit=variant.timeout,
+                message=msg,
             )
         if max_turns_hit:
-            msg = f"[Reached max turns of {max_turns}]"
+            msg = f"[Reached max turns of {variant.max_turns}]"
             state.messages.append(ChatMessageSystem(content=msg))
             raise LimitExceededError(
-                type="message", value=max_turns, limit=max_turns, message=msg
+                type="message",
+                value=variant.max_turns,
+                limit=variant.max_turns,
+                message=msg,
             )
 
         return state
@@ -318,15 +410,21 @@ def claude_code_oauth(
     return execute
 
 
-@solver
-def claude_code_solver(container: Container) -> Solver:
-    """Per-sample Solver wrapper around `claude_code_oauth`."""
+def _make_solver(container: Container, variant: SolverVariant) -> Solver:
+    """Shared solver body parameterised by variant."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
+        del generate  # claude -p drives generation; Inspect's generate is unused
         synth_target = state.metadata["synth_target"]
         assert isinstance(synth_target, TargetConfig)
+
+        state.messages = [ChatMessageUser(content=variant.build_prompt(synth_target))]
         agent_state = AgentState(messages=state.messages)
-        agent_fn = claude_code_oauth(synth_target=synth_target, container=container)
+        agent_fn = claude_code_oauth(
+            synth_target=synth_target,
+            container=container,
+            variant=variant,
+        )
         try:
             result = await agent_fn(agent_state)
         except LimitExceededError:
@@ -338,3 +436,17 @@ def claude_code_solver(container: Container) -> Solver:
         return state
 
     return solve
+
+
+@solver
+def claude_code_solver(container: Container) -> Solver:
+    """`claude -p` against the design RTL with MCP feedback tools
+    (`run_testbench`, `synth_report`) available."""
+    return _make_solver(container, WITH_FEEDBACK)
+
+
+@solver
+def claude_code_no_feedback_solver(container: Container) -> Solver:
+    """`claude -p` against the design RTL with no MCP tools at all -- the
+    agent edits blind and is graded once it finishes."""
+    return _make_solver(container, NO_FEEDBACK)
