@@ -9,3 +9,25 @@ index f2bc83890..52a6b704b 100644
 +      $fatal(1, "RS testbench timed out without simOver");
     end
  endmodule
+diff --git a/example/rtl/RsDecodeDpRam.v b/example/rtl/RsDecodeDpRam.v
+index c81f4136b..b97435570 100644
+--- a/example/rtl/RsDecodeDpRam.v
++++ b/example/rtl/RsDecodeDpRam.v
+@@ -60,7 +60,7 @@ module RsDecodeDpRam (/*AUTOARG*/
+ 
+     //------------------------------------------------------------------
+     // + rRdEn
+-    //  - リードイネーブ?
++    //  -
+     //------------------------------------------------------------------
+     reg  rRdEn;
+     always@(posedge clock) begin
+@@ -71,7 +71,7 @@ module RsDecodeDpRam (/*AUTOARG*/
+ 
+     //------------------------------------------------------------------
+     // + q
+-    //  - リード処理
++    //  -
+     //------------------------------------------------------------------
+     reg [8:0] q;
+     always@(posedge clock) begin
