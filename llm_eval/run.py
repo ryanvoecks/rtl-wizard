@@ -25,6 +25,7 @@ from common.config import LLM_RESULTS
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
 MODEL = "anthropic/claude-sonnet-4-5"
+EPOCHS = 3
 
 
 async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
@@ -53,6 +54,7 @@ async def main_async() -> None:
             optimize_timing(run_dir, container),
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
+            epochs=EPOCHS,
         )
 
 
