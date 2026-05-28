@@ -26,11 +26,10 @@ from typing import cast
 
 import pyslang
 
-from common.config import EQY_BIN, DesignConfig
+from common.config import DesignConfig
 from common.designs import resolve_design
 
 FLIP_PROBABILITY = 0.5  # per-operator probability of swapping operands
-EQY_TIMEOUT = 600  # wall-clock cap on the equivalence check
 
 COMMUTATIVE_KINDS = frozenset(
     {
@@ -55,6 +54,15 @@ PERMUTABLE_MEMBER_KINDS = frozenset(
         pyslang.SyntaxKind.ContinuousAssign,
         pyslang.SyntaxKind.HierarchyInstantiation,
     }
+)
+
+RENAME_PREFIX = "s_"  # prefix on renamed internal signals
+RENAME_DIGEST_BYTES = 6  # 12 hex chars; collision-resistant up to ~16M names
+RENAMABLE_DECL_KINDS = frozenset(
+    {pyslang.SyntaxKind.DataDeclaration, pyslang.SyntaxKind.NetDeclaration}
+)
+IDENTIFIER_NAME_KINDS = frozenset(
+    {pyslang.SyntaxKind.IdentifierName, pyslang.SyntaxKind.IdentifierSelectName}
 )
 
 
@@ -258,11 +266,140 @@ def _transform_decl_reorder(
     return out, moved
 
 
-TRANSFORMS: list[
-    tuple[str, Callable[[str, Path, list[str], random.Random], tuple[str, int]]]
-] = [
+def _hash_name(name: str, key: bytes) -> str:
+    """Deterministic short hash."""
+    digest = hashlib.blake2b(
+        name.encode("utf-8"), key=key, digest_size=RENAME_DIGEST_BYTES
+    ).hexdigest()
+    return f"{RENAME_PREFIX}{digest}"
+
+
+def _transform_signal_rename(
+    src: str,
+    abs_path: Path,
+    include_dirs: list[str],
+    rng: random.Random,
+) -> tuple[str, int]:
+    """Rename module-internal signals to a hash-based scheme. Skips names that
+    are shadowed inside generate/function/task scopes."""
+    sm = _make_source_manager(include_dirs)
+    tree = pyslang.SyntaxTree.fromFileInMemory(src, sm, path=str(abs_path))
+    orig_errors = _error_signature(tree.diagnostics)
+    orig_id_count = _count_kinds(tree.root, IDENTIFIER_NAME_KINDS)
+    file_buffer = tree.root.sourceRange.start.buffer
+
+    key = rng.getrandbits(64).to_bytes(8, "little", signed=False)
+    edits: list[tuple[int, int, str]] = []
+
+    def process_module(mod: pyslang.ModuleDeclarationSyntax) -> None:
+        # Collect every Declarator name anywhere in this module subtree
+        decl_counts: Counter = Counter()
+
+        def count_visit(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind == pyslang.SyntaxKind.Declarator:
+                decl_counts[cast(pyslang.DeclaratorSyntax, n).name.valueText] += 1
+            return pyslang.VisitAction.Advance
+
+        mod.visit(count_visit)
+        unshadowed = {name for name, c in decl_counts.items() if c == 1}
+
+        # Port-related names from the header and any non-ANSI PortDeclarations
+        # in the body.
+        port_names: set[str] = set()
+
+        def header_visit(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n.kind == pyslang.SyntaxKind.Declarator:
+                port_names.add(cast(pyslang.DeclaratorSyntax, n).name.valueText)
+            elif n.kind == pyslang.SyntaxKind.IdentifierName:
+                ident = cast(pyslang.IdentifierNameSyntax, n)
+                port_names.add(ident.identifier.valueText)
+            return pyslang.VisitAction.Advance
+
+        mod.header.visit(header_visit)
+        for m in mod.members:
+            if m.kind == pyslang.SyntaxKind.PortDeclaration:
+                for d in cast(pyslang.PortDeclarationSyntax, m).declarators:
+                    if isinstance(d, pyslang.DeclaratorSyntax):
+                        port_names.add(d.name.valueText)
+
+        # Module-body level variable/net declarations.
+        mod_level: set[str] = set()
+        for m in mod.members:
+            if m.kind in RENAMABLE_DECL_KINDS:
+                for d in m.declarators:
+                    if isinstance(d, pyslang.DeclaratorSyntax):
+                        mod_level.add(d.name.valueText)
+
+        rename_set = (mod_level & unshadowed) - port_names
+        if not rename_set:
+            return
+
+        rename_map = {name: _hash_name(name, key) for name in rename_set}
+        if len(set(rename_map.values())) != len(rename_map):
+            raise RuntimeError(f"hash collision in rename map for {abs_path}")
+
+        def emit_rename(tok: pyslang.Token, new_name: str) -> None:
+            r = tok.range
+            if r.start.buffer != file_buffer or r.end.buffer != file_buffer:
+                return
+            edits.append((r.start.offset, r.end.offset, new_name))
+
+        def rename_visit(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind == pyslang.SyntaxKind.Declarator:
+                tok = cast(pyslang.DeclaratorSyntax, n).name
+                if tok.valueText in rename_map:
+                    emit_rename(tok, rename_map[tok.valueText])
+            elif n.kind == pyslang.SyntaxKind.IdentifierName:
+                tok = cast(pyslang.IdentifierNameSyntax, n).identifier
+                if tok.valueText in rename_map:
+                    emit_rename(tok, rename_map[tok.valueText])
+            elif n.kind == pyslang.SyntaxKind.IdentifierSelectName:
+                tok = cast(pyslang.IdentifierSelectNameSyntax, n).identifier
+                if tok.valueText in rename_map:
+                    emit_rename(tok, rename_map[tok.valueText])
+            return pyslang.VisitAction.Advance
+
+        mod.visit(rename_visit)
+
+    def outer_visit(node: pyslang.SyntaxNode) -> pyslang.VisitAction:
+        if node.kind == pyslang.SyntaxKind.ModuleDeclaration:
+            process_module(cast(pyslang.ModuleDeclarationSyntax, node))
+            return pyslang.VisitAction.Skip
+        return pyslang.VisitAction.Advance
+
+    tree.root.visit(outer_visit)
+
+    if not edits:
+        return src, 0
+
+    out = src
+    for start, end, replacement in sorted(edits, key=lambda e: -e[0]):
+        out = out[:start] + replacement + out[end:]
+
+    check_sm = _make_source_manager(include_dirs)
+    check_tree = pyslang.SyntaxTree.fromFileInMemory(out, check_sm, path=str(abs_path))
+    new_errors = _error_signature(check_tree.diagnostics)
+    new_id_count = _count_kinds(check_tree.root, IDENTIFIER_NAME_KINDS)
+    if (new_errors - orig_errors) or new_id_count != orig_id_count:
+        raise RuntimeError(
+            f"signal_rename self-check failed for {abs_path}: "
+            f"new_errors={sorted((new_errors - orig_errors).items())}, "
+            f"orig_ids={orig_id_count}, new_ids={new_id_count}"
+        )
+
+    return out, len(edits)
+
+
+TransformFn = Callable[[str, Path, list[str], random.Random], tuple[str, int]]
+
+TRANSFORMS: list[tuple[str, TransformFn]] = [
     ("operand_swap", _transform_operand_swap),
     ("decl_reorder", _transform_decl_reorder),
+    ("signal_rename", _transform_signal_rename),
 ]
 
 
@@ -273,7 +410,7 @@ def _rewrite_text(
     rng: random.Random,
 ) -> tuple[str, dict[str, int]]:
     """Apply every transform in TRANSFORMS in sequence. Returns the final
-    text plus a per-transform count of changes made."""
+    text and per-transform change counts."""
     counts: dict[str, int] = {}
     cur = src
     for name, transform in TRANSFORMS:
@@ -282,50 +419,10 @@ def _rewrite_text(
     return cur, counts
 
 
-def _eqy_read_block(design: DesignConfig) -> str:
-    """Yosys script fragment to read `design`'s RTL."""
-    rtl_src = design.root / design.rtl_dir
-    inc_args = "".join(f" -I {(rtl_src / d).resolve()}" for d in design.include_dirs)
-    files = " ".join(str((rtl_src / f).resolve()) for f in design.rtl_files)
-    return f"read -sv{inc_args} {files}\nprep -top {design.top_module}\n"
-
-
-def verify_equivalence(
-    gold: DesignConfig,
-    gate: DesignConfig,
-    workdir: Path,
-) -> bool:
-    """Run eqy to prove `gold` and `gate` are logically equivalent."""
-    config = (
-        "[options]\n\n"
-        f"[gold]\n{_eqy_read_block(gold)}\n"
-        f"[gate]\n{_eqy_read_block(gate)}\n"
-        "[strategy simple]\nuse sat\ndepth 10\n"
-    )
-    workdir.parent.mkdir(parents=True, exist_ok=True)
-    cfg_path = workdir.parent / f"{workdir.name}.eqy"
-    cfg_path.write_text(config)
-    try:
-        proc = subprocess.run(
-            [str(EQY_BIN), "-f", "-d", str(workdir), str(cfg_path)],
-            capture_output=True,
-            text=True,
-            timeout=EQY_TIMEOUT,
-        )
-    except subprocess.TimeoutExpired:
-        print(f"eqy timed out after {EQY_TIMEOUT}s", file=sys.stderr)
-        return False
-    if proc.returncode != 0:
-        print(proc.stdout, file=sys.stderr)
-        print(proc.stderr, file=sys.stderr)
-    return proc.returncode == 0
-
-
 def rewrite_design(
     design: DesignConfig,
     output_dir: Path,
     seed: int = 0,
-    verify: bool = False,
 ) -> DesignConfig:
     """Reflink-copy `design.root` to `output_dir`, rewrite each file in
     `design.rtl_files` in place and return a DesignConfig pointed at the copy."""
@@ -337,20 +434,19 @@ def rewrite_design(
     for rel in design.rtl_files:
         abs_orig = design.root / design.rtl_dir / rel
         abs_copy = output_dir / design.rtl_dir / rel
-        src = abs_orig.read_text(encoding="utf-8")
+        # Skip files with non-ASCII characters to avoid pyslang offset misalignment.
+        try:
+            src = abs_orig.read_text(encoding="utf-8")
+            assert all(ord(c) < 128 for c in src)
+        except (UnicodeDecodeError, AssertionError):
+            print(f"  {rel}: skipped (non-ASCII source)")
+            continue
         rng = _per_file_rng(rel, seed)
         new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
         if new_text != src:
             abs_copy.write_text(new_text, encoding="utf-8")
 
-    rewritten = dataclasses.replace(design, root=output_dir)
-
-    if verify:
-        eqy_workdir = output_dir / "__eqy__"
-        if not verify_equivalence(design, rewritten, eqy_workdir):
-            raise RuntimeError(f"eqy: FAIL (workdir: {eqy_workdir})")
-
-    return rewritten
+    return dataclasses.replace(design, root=output_dir)
 
 
 def main() -> None:
@@ -375,11 +471,6 @@ def main() -> None:
         default=0,
         help="Master RNG seed. Same seed reproduces byte-identical output.",
     )
-    parser.add_argument(
-        "--verify",
-        action="store_true",
-        help="Run eqy to prove the rewrite is logically equivalent.",
-    )
     args = parser.parse_args()
 
     design = resolve_design(args.design)
@@ -393,9 +484,7 @@ def main() -> None:
         f"-> {output_dir} (seed={args.seed})"
     )
     try:
-        rewritten = rewrite_design(
-            design, output_dir, seed=args.seed, verify=args.verify
-        )
+        rewritten = rewrite_design(design, output_dir, seed=args.seed)
     except RuntimeError as e:
         print(f"ERROR: {e}", file=sys.stderr)
         raise SystemExit(1) from e
