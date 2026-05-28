@@ -40,7 +40,7 @@ AGENT_TIMEOUT = 3600
 
 # MCP config
 HOST_MCP_NAME = "rtl-wizard-host"
-MCP_TOOLS = ["run_testbench", "synth_timing_report"]
+MCP_TOOLS = ["run_testbench", "synth_report"]
 
 
 def _resolve_model() -> str:

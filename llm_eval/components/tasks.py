@@ -26,7 +26,7 @@ def _build_sample(target: TargetConfig) -> Sample:
     if not rel_files:
         raise FileNotFoundError(
             f"design {design.benchmark}/{design.name}/{design.variant} has no "
-            "RTL files -- run `git submodule update --init` if the upstream "
+            "RTL files - run `git submodule update --init` if the upstream "
             "repo is a submodule"
         )
     top_file = next((p for p in rel_files if p.stem == design.top_module), rel_files[0])
@@ -36,24 +36,24 @@ def _build_sample(target: TargetConfig) -> Sample:
         input=(
             f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
             f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
-            "reduce the **longest combinational path** through the design "
-            "-- the path that gates the achievable clock period.\n\n"
+            "increase the maximum clock frequency of the design by as much "
+            " as possible.\n\n"
             "Constraints:\n"
             "- Preserve functional behaviour. You cannot read the "
             "testbench, but you can call the `run_testbench` MCP tool to "
-            "run it against your current RTL -- it returns the testbench's "
-            "exit code and stdout so you can sanity-check edits before "
-            "finishing.\n"
-            "- The design must remain synthesisable by yosys (the scorer "
-            f"runs yosys over `{SANDBOX_RTL_ROOT}/` after you finish).\n"
+            "run it against your current RTL - it returns the testbench's "
+            "exit code and stdout so you can validate edits.\n"
+            "- The design must remain synthesisable by yosys.\n"
+            "- The area/power of the design should not increase by more than "
+            "10%."
             f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
             "rename them.\n\n"
-            "To measure your progress, call the `synth_timing_report` MCP "
+            "To measure your progress, call the `synth_report` MCP "
             "tool: it synthesises your current RTL through ORFS and returns "
-            "a post-synth logical-paths report -- the worst register-to-"
-            "register groups ranked by slack, with their containing modules "
-            "and LOC. Use it to find which paths to attack and to confirm "
-            "an edit actually shortened the longest combinational path."
+            "a post-synth logical-paths report - the worst register-to-"
+            "register groups ranked by slack. Use it to find which paths to "
+            "focus on. It will also give you an update on the area/power of "
+            "the design."
         ),
         target="",
         metadata={"synth_target": target},

@@ -74,9 +74,10 @@ class Tools:
             header += f"[output truncated to last {OUTPUT_LIMIT} chars]\n"
         return header + log
 
-    async def synth_timing_report(self) -> str:
+    async def synth_report(self) -> str:
         """Synthesize your current RTL and return a post-synth logical-paths
-        timing report. Optimistic vs. post-route, but useful for ranking edits."""
+        timing report. Also reports total area/power. Optimistic vs. post-route,
+        but useful for ranking edits."""
         try:
             diff = await asyncio.to_thread(
                 build_diff_from_env,

@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `rtl-wizard` is a research harness for evaluating LLM agents at the task of **post-synthesis timing optimisation** on real open-source RTL. It has two halves that share the same design registry:
 
 1. **`eda_eval/`** -- non-LLM ORFS flow that runs every design through `synth -> floorplan -> place -> CTS -> route` on nangate45, calibrates per-design clock periods, and produces ranked logical-path reports off the routed `.odb`.
-2. **`llm_eval/`** -- drives a Claude Code agent (OAUTH-token, not API key) against a sandboxed copy of a single design, exposing the EDA flow as MCP tools (`run_testbench`, `synth_timing_report`) so the agent can iterate. Scored by `yosys` synthesisability plus the design's upstream testbench.
+2. **`llm_eval/`** -- drives a Claude Code agent (OAUTH-token, not API key) against a sandboxed copy of a single design, exposing the EDA flow as MCP tools (`run_testbench`, `synth_report`) so the agent can iterate. Scored by `yosys` synthesisability plus the design's upstream testbench.
 
 `common/` is the shared spine: `common/config.py` defines `StudyConfig`/`DesignConfig`/`TargetConfig`/`RunConfig` and resolves all path constants; `common/designs.py` is a hand-curated registry of every design; `common/scripts/<name>.sh` is the per-design testbench runner.
 
@@ -66,7 +66,7 @@ When adding a design: drop a `.diff` in `common/patches/` (applied by `setup.sh`
 
 `run.py` drives one `TargetConfig` (looked up from `common/targets.py` by variable name via `--target <name>`) through the full ORFS flow. The target already carries its calibrated `(period_ns, side_um)`, so there is no calibration step and no parallelism -- it builds one `RunConfig` and calls `run_job` directly. Output lands at `eda_results/<timestamp>/<benchmark>/<name>/<variant>/`; non-zero rc exits with the log path.
 
-`run_job` materialises one `inputs/Makefile` from `eda_eval/templates/Makefile.template` (parameterised on top module / RTL files / SDC / floorplan / flow targets). The two flow target groups are `SYNTH_FLOW_TARGETS = ("synth", "synth-report")` for synth-only runs (used by the MCP `synth_timing_report` tool) and `ALL_FLOW_TARGETS` for full P&R. `run_job` itself is reused by `calibrate.py`, `scope.py`, and `llm_eval/components/mcp_servers.py`; `derive_final_side_um` lives in `calibrate.py` (the only consumer).
+`run_job` materialises one `inputs/Makefile` from `eda_eval/templates/Makefile.template` (parameterised on top module / RTL files / SDC / floorplan / flow targets). The two flow target groups are `SYNTH_FLOW_TARGETS = ("synth", "synth-report")` for synth-only runs (used by the MCP `synth_report` tool) and `ALL_FLOW_TARGETS` for full P&R. `run_job` itself is reused by `calibrate.py`, `scope.py`, and `llm_eval/components/mcp_servers.py`; `derive_final_side_um` lives in `calibrate.py` (the only consumer).
 
 ### Calibration scripts -- two modes, different jobs
 
@@ -77,7 +77,7 @@ When adding a design: drop a `.diff` in `common/patches/` (applied by `setup.sh`
 
 ### Logical-path analysis (`eda_eval/analyse.py`)
 
-`analyse(run)` picks the stage from `run.flow_targets`: post-route (`6_final.odb`+SPEF, post-parasitics) when any P&R target was run, otherwise post-synth (`1_synth.odb`, zero-RC estimate). The post-synth path is what the MCP `synth_timing_report` tool returns to the agent. Output filenames are the same in both modes; the `# stage` header line in each report names the source.
+`analyse(run)` picks the stage from `run.flow_targets`: post-route (`6_final.odb`+SPEF, post-parasitics) when any P&R target was run, otherwise post-synth (`1_synth.odb`, zero-RC estimate). The post-synth path is what the MCP `synth_report` tool returns to the agent. Output filenames are the same in both modes; the `# stage` header line in each report names the source.
 
 The pipeline: pipe a TCL script into one `openroad -no_init -exit` invocation that runs `extract_critical_paths.tcl` (samples a `pool` of worst paths via `find_timing_paths`, emits TSV of `slack | startpoint | endpoint | cells`). Then yosys dumps a hierarchy JSON (`read_verilog ... ; hierarchy -top <top>; proc; write_json`) so each timing path's cell chain can be mapped back to the union of containing RTL modules. **Do not run `flatten` or `synth`** in that yosys pass -- you want one cells entry per submodule instantiation, not a primitive-level netlist.
 
@@ -101,7 +101,7 @@ The task is built from `common/targets.py` (one `<name>_target` per calibrated d
 
 **Diff-based scoring** (`llm_eval/components/scorers.py`):
 
-Both the `synthesis` and `testbench` scorers, plus both MCP tools (`run_testbench`, `synth_timing_report`), follow the same pattern:
+Both the `synthesis` and `testbench` scorers, plus both MCP tools (`run_testbench`, `synth_report`), follow the same pattern:
 
 1. `build_diff_from_sandbox` -- read each `rtl_files[i]` out of the sandbox, unified-diff against the on-disk original, paths formatted as `a/<rel>` `b/<rel>`.
 2. `_create_copy` -- `cp -R --reflink=auto` the entire `design.root` into a fresh tempdir.
