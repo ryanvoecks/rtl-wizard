@@ -4,10 +4,6 @@
 # Driven by analyse.py via two env vars:
 #   ANALYSE_OUT_TSV  -- output file path (required)
 #   ANALYSE_POOL     -- find_timing_paths -group_path_count (default 1000)
-#
-# Each output row is: slack_ns\tstartpoint\tendpoint\tcells
-# where "cells" is a "|"-joined list of unique instance names visited on
-# the path (path points whose pin has no "/" -- i.e. ports -- are skipped).
 
 if {![info exists env(ANALYSE_OUT_TSV)]} {
     error "ANALYSE_OUT_TSV env var not set"
@@ -19,10 +15,7 @@ if {[info exists env(ANALYSE_POOL)]} {
 }
 
 # -endpoint_path_count is set equal to the pool size so multiple paths to
-# the same endpoint are retained: the per-group `count` in the Python-side
-# logical-paths rollup then reflects true path multiplicity through each
-# (start_stem, end_stem) pair, not just the number of unique endpoint
-# flops. -group_path_count still caps the total at $pool per clock-group.
+# the same endpoint are retained
 set paths [find_timing_paths -path_delay max \
                              -group_path_count $pool \
                              -endpoint_path_count $pool]
