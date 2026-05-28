@@ -33,10 +33,15 @@ from common.config import TargetConfig
 
 from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from .container import TIMEOUT_RC, Container
-from .mcp_servers import _synth_and_report, make_server
+from .mcp_servers import OUTPUT_LIMIT, _synth_and_report, make_server
+from .scorers import evaluate_testbench
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
+AGENT_TURNS = 50
+AGENT_TIMEOUT = 3600
+ONE_ROUND_TURNS = 10
+ONE_ROUND_TIMEOUT = 600
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -52,6 +57,7 @@ class SolverVariant:
     timeout: int
     instructions: str
     include_initial_report: bool = False
+    edit_rounds: int = 0
 
 
 def _resolve_model() -> str:
@@ -207,6 +213,62 @@ def _build_usage(final: dict) -> ModelUsage:
     )
 
 
+def _sum_usages(usages: list[ModelUsage]) -> ModelUsage | None:
+    """Aggregate per-round ModelUsage objects."""
+    if not usages:
+        return None
+
+    def _sum_int(field: str) -> int | None:
+        vals = [getattr(u, field) for u in usages if getattr(u, field) is not None]
+        return sum(vals) if vals else None
+
+    def _sum_float(field: str) -> float | None:
+        vals = [getattr(u, field) for u in usages if getattr(u, field) is not None]
+        return sum(vals) if vals else None
+
+    input_t = sum(u.input_tokens for u in usages)
+    output_t = sum(u.output_tokens for u in usages)
+    return ModelUsage(
+        input_tokens=input_t,
+        output_tokens=output_t,
+        total_tokens=input_t + output_t,
+        input_tokens_cache_write=_sum_int("input_tokens_cache_write"),
+        input_tokens_cache_read=_sum_int("input_tokens_cache_read"),
+        total_cost=_sum_float("total_cost"),
+    )
+
+
+def _build_feedback(synth_target: TargetConfig, diff: str) -> str:
+    """Run the testbench and a post-synth report and format the results
+    as a feedback message."""
+    design = synth_target.design
+
+    tb_log, tb_rc = evaluate_testbench(design, diff)
+    if len(tb_log) > OUTPUT_LIMIT:
+        tb_log = (
+            tb_log[-OUTPUT_LIMIT:]
+            + f"\n[testbench output truncated to last {OUTPUT_LIMIT} chars]"
+        )
+
+    try:
+        synth_rpt = _synth_and_report(synth_target, diff)
+    except Exception as e:
+        synth_rpt = f"[synth error] {type(e).__name__}: {e}"
+    if len(synth_rpt) > OUTPUT_LIMIT:
+        synth_rpt = (
+            synth_rpt[-OUTPUT_LIMIT:]
+            + f"\n[synth report truncated to last {OUTPUT_LIMIT} chars]"
+        )
+
+    return (
+        "Your current RTL was checked against the hidden testbench and "
+        "synthesised through ORFS.\n\n"
+        f"Testbench [rc={tb_rc}]:\n```\n{tb_log}\n```\n\n"
+        f"Post-synth logical-paths report:\n```\n{synth_rpt}\n```\n\n"
+        "Continue optimising the design."
+    )
+
+
 @agent
 def claude_code_oauth(
     synth_target: TargetConfig,
@@ -224,6 +286,11 @@ def claude_code_oauth(
         def mcp_factory(e: ClaudeEnv) -> FastMCP:
             return make_server(HOST_MCP_NAME, mcp_tool_list, synth_target, e)
 
+        rounds = variant.edit_rounds
+        finals: list[dict] = []
+        timed_out = False
+        max_turns_hit = False
+
         # Per-sample environment in a shared container
         with ClaudeEnv(container, mcp_factory) as env:
             # Stage RTL. Each sample gets a clean copy
@@ -234,52 +301,73 @@ def claude_code_oauth(
                 )
 
             mcp_servers = {HOST_MCP_NAME: {"type": "sse", "url": env.url}}
-
             prompt = state.messages[-1].text
-            sid = store().get("cc_session_id")
-            result = await asyncio.to_thread(
-                env.run_claude,
-                prompt,
-                model=model,
-                mcp_servers=mcp_servers,
-                allowed_tools=allowed_tools,
-                max_turns=variant.max_turns,
-                resume_session=sid,
-                timeout=variant.timeout,
-            )
+
+            for round_idx in range(rounds):
+                # Feedback prompts after the first round get logged as user messages
+                if round_idx > 0:
+                    state.messages.append(ChatMessageUser(content=prompt))
+
+                sid = store().get("cc_session_id")
+                result = await asyncio.to_thread(
+                    env.run_claude,
+                    prompt,
+                    model=model,
+                    mcp_servers=mcp_servers,
+                    allowed_tools=allowed_tools,
+                    max_turns=variant.max_turns,
+                    resume_session=sid,
+                    timeout=variant.timeout,
+                )
+                store().set("cc_stderr_tail", result.stderr[-4000:])
+
+                timed_out = result.returncode == TIMEOUT_RC
+                events = _parse_stream_json(
+                    result.stdout, allow_truncated_tail=timed_out
+                )
+                if not events and not timed_out:
+                    raise RuntimeError(f"claude failed (rc={result.returncode})")
+
+                final = next(
+                    (e for e in reversed(events) if e.get("type") == "result"), None
+                )
+                if final is None and not timed_out:
+                    raise RuntimeError("claude transcript contained no `result` event")
+
+                max_turns_hit = (
+                    final is not None and final.get("subtype") == "error_max_turns"
+                )
+                if final is not None and final.get("is_error") and not max_turns_hit:
+                    raise RuntimeError(f"claude reported error: {final.get('result')}")
+
+                state.messages.extend(_events_to_messages(events))
+                if final is not None:
+                    finals.append(final)
+                    store().set("cc_session_id", final.get("session_id"))
+                    store().set("cc_num_turns", final.get("num_turns"))
+                    store().set("cc_duration_ms", final.get("duration_ms"))
+                    store().set("cc_stop_subtype", final.get("subtype"))
+
+                if timed_out or max_turns_hit:
+                    break
+
+                if round_idx < rounds - 1:
+                    cur_diff = await asyncio.to_thread(build_diff_from_env, env, design)
+                    prompt = await asyncio.to_thread(
+                        _build_feedback, synth_target, cur_diff
+                    )
 
             # Capture the final RTL state for scorers before env tear-down
             diff = await asyncio.to_thread(build_diff_from_env, env, design)
             store().set("rtl_diff", diff)
 
-        # Claude CLI logs MCP connection failures to stderr
-        store().set("cc_stderr_tail", result.stderr[-4000:])
-
-        timed_out = result.returncode == TIMEOUT_RC
-
-        # stdout contains stream, even on max turns and timeout errors
-        events = _parse_stream_json(result.stdout, allow_truncated_tail=timed_out)
-        if not events and not timed_out:
-            raise RuntimeError(f"claude failed (rc={result.returncode})")
-
-        # The final `result` event carries the summary. Always last.
-        final = next((e for e in reversed(events) if e.get("type") == "result"), None)
-        if final is None and not timed_out:
-            raise RuntimeError("claude transcript contained no `result` event")
-
-        # End gracefully on `error_max_turns` and on timeout
-        max_turns_hit = final is not None and final.get("subtype") == "error_max_turns"
-        if final is not None and final.get("is_error") and not max_turns_hit:
-            raise RuntimeError(f"claude reported error: {final.get('result')}")
-
-        # Parse events, messages and usage
-        parsed = _events_to_messages(events)
-        state.messages.extend(parsed)
-        usage = _build_usage(final) if final is not None else None
-
         # Viewer treats final response specially
         last_assistant = next(
-            (m for m in reversed(parsed) if isinstance(m, ChatMessageAssistant)),
+            (
+                m
+                for m in reversed(state.messages)
+                if isinstance(m, ChatMessageAssistant)
+            ),
             None,
         )
         if last_assistant is None:
@@ -294,6 +382,7 @@ def claude_code_oauth(
             stop_reason = "model_length"
         else:
             stop_reason = "stop"
+        usage = _sum_usages([_build_usage(f) for f in finals])
         state.output = ModelOutput(
             model=model,
             choices=[
@@ -302,12 +391,6 @@ def claude_code_oauth(
             usage=usage,
         )
 
-        # Additional useful fields
-        if final is not None:
-            store().set("cc_session_id", final.get("session_id"))
-            store().set("cc_num_turns", final.get("num_turns"))
-            store().set("cc_duration_ms", final.get("duration_ms"))
-            store().set("cc_stop_subtype", final.get("subtype"))
         store().set("cc_timed_out", timed_out)
 
         # Surface timeout / max-turns as an Inspect limit and system message
@@ -392,8 +475,8 @@ def claude_code_agentic_solver(container: Container) -> Solver:
     agent_config = SolverVariant(
         name="agentic",
         mcp_tools=("run_testbench", "synth_report"),
-        max_turns=50,
-        timeout=3600,
+        max_turns=AGENT_TURNS,
+        timeout=AGENT_TIMEOUT,
         instructions=instructions,
     )
 
@@ -413,8 +496,8 @@ def claude_code_no_feedback_solver(container: Container) -> Solver:
     no_feedback_config = SolverVariant(
         name="no-feedback",
         mcp_tools=(),
-        max_turns=10,
-        timeout=900,
+        max_turns=ONE_ROUND_TURNS,
+        timeout=ONE_ROUND_TIMEOUT,
         instructions=instructions,
     )
 
@@ -435,10 +518,35 @@ def claude_code_single_feedback_solver(container: Container) -> Solver:
     single_feedback_config = SolverVariant(
         name="single-feedback",
         mcp_tools=(),
-        max_turns=10,
-        timeout=900,
+        max_turns=ONE_ROUND_TURNS,
+        timeout=ONE_ROUND_TIMEOUT,
         instructions=instructions,
         include_initial_report=True,
     )
 
     return _make_solver(container, single_feedback_config)
+
+
+@solver
+def claude_code_iterative_solver(container: Container) -> Solver:
+    """Iterative mode with a fixed number of feedback rounds. After each round the
+    testbench and synth are run against the current RTL and results are fed back."""
+
+    instructions = (
+        "You have no tools to call yourself. After each of your responses, "
+        "your current RTL will be automatically checked against the hidden "
+        "testbench and synthesised through ORFS, and the results returned to "
+        "you for the next round. Use each round to make targeted edits."
+    )
+
+    iterative_config = SolverVariant(
+        name="iterative",
+        mcp_tools=(),
+        max_turns=ONE_ROUND_TURNS,
+        timeout=ONE_ROUND_TIMEOUT,
+        instructions=instructions,
+        edit_rounds=3,
+        include_initial_report=True,
+    )
+
+    return _make_solver(container, iterative_config)
