@@ -10,7 +10,6 @@ aren't shared across containers (TOS: one login per "device").
 
 import asyncio
 import json
-from collections.abc import Callable
 from dataclasses import dataclass
 
 from inspect_ai.agent import AgentState, agent
@@ -30,7 +29,7 @@ from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, store
 from mcp.server.fastmcp import FastMCP
 
-from common.config import DesignConfig, TargetConfig
+from common.config import TargetConfig
 
 from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from .container import TIMEOUT_RC, Container
@@ -53,80 +52,7 @@ class SolverVariant:
     mcp_tools: tuple[str, ...]
     max_turns: int
     timeout: int
-    build_prompt: Callable[[TargetConfig], str]
-
-
-def _top_sandbox(design: DesignConfig) -> str:
-    top_file = next(
-        (p for p in design.rtl_files if p.stem == design.top_module),
-        design.rtl_files[0],
-    )
-    return f"{SANDBOX_RTL_ROOT}/{top_file}"
-
-
-def _with_feedback_prompt(target: TargetConfig) -> str:
-    design = target.design
-    top_sandbox = _top_sandbox(design)
-    return (
-        f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
-        f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
-        "increase the maximum clock frequency of the design by as much "
-        " as possible.\n\n"
-        "Constraints:\n"
-        "- Preserve functional behaviour. You cannot read the "
-        "testbench, but you can call the `run_testbench` MCP tool to "
-        "run it against your current RTL - it returns the testbench's "
-        "exit code and stdout so you can validate edits.\n"
-        "- The design must remain synthesisable by yosys.\n"
-        "- The area/power of the design should not increase by more than "
-        "10%."
-        f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
-        "rename them.\n\n"
-        "To measure your progress, call the `synth_report` MCP "
-        "tool: it synthesises your current RTL through ORFS and returns "
-        "a post-synth logical-paths report - the worst register-to-"
-        "register groups ranked by slack. Use it to find which paths to "
-        "focus on. It will also give you an update on the area/power of "
-        "the design."
-    )
-
-
-def _no_feedback_prompt(target: TargetConfig) -> str:
-    design = target.design
-    top_sandbox = _top_sandbox(design)
-    return (
-        f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
-        f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
-        "increase the maximum clock frequency of the design by as much "
-        "as possible.\n\n"
-        "Constraints:\n"
-        "- Preserve functional behaviour. You have no testbench and no "
-        "synthesis tool available - your edits will be graded by a "
-        "hidden testbench and by yosys synthesisability after you "
-        "finish, so every change must be obviously safe.\n"
-        "- The design must remain synthesisable by yosys.\n"
-        "- The area/power of the design should not increase by more than "
-        "10%.\n"
-        f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
-        "rename them."
-    )
-
-
-WITH_FEEDBACK = SolverVariant(
-    name="with-feedback",
-    mcp_tools=("run_testbench", "synth_report"),
-    max_turns=AGENT_TURNS,
-    timeout=AGENT_TIMEOUT,
-    build_prompt=_with_feedback_prompt,
-)
-
-NO_FEEDBACK = SolverVariant(
-    name="no-feedback",
-    mcp_tools=(),
-    max_turns=AGENT_TURNS,
-    timeout=AGENT_TIMEOUT,
-    build_prompt=_no_feedback_prompt,
-)
+    instructions: str
 
 
 def _resolve_model() -> str:
@@ -414,11 +340,14 @@ def _make_solver(container: Container, variant: SolverVariant) -> Solver:
     """Shared solver body parameterised by variant."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
-        del generate  # claude -p drives generation; Inspect's generate is unused
+        del generate  # `claude -p` drives generation. Inspect's generate is unused
         synth_target = state.metadata["synth_target"]
         assert isinstance(synth_target, TargetConfig)
 
-        state.messages = [ChatMessageUser(content=variant.build_prompt(synth_target))]
+        # Append solver's instructions to task prompt
+        task_prompt = state.messages[-1].text
+        prompt = f"{task_prompt}\n\n{variant.instructions}"
+        state.messages = [ChatMessageUser(content=prompt)]
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(
             synth_target=synth_target,
@@ -439,14 +368,47 @@ def _make_solver(container: Container, variant: SolverVariant) -> Solver:
 
 
 @solver
-def claude_code_solver(container: Container) -> Solver:
-    """`claude -p` against the design RTL with MCP feedback tools
-    (`run_testbench`, `synth_report`) available."""
-    return _make_solver(container, WITH_FEEDBACK)
+def claude_code_agentic_solver(container: Container) -> Solver:
+    """Full agentic mode with functional and synthesis MCP tools."""
+
+    instructions = (
+        "You have two MCP tools to verify your work as you go:\n"
+        "- `run_testbench`: runs the hidden testbench against your current "
+        "RTL and returns its exit code plus stdout. Use it to confirm "
+        "functional correctness after each edit.\n"
+        "- `synth_report`: synthesises your current RTL through ORFS and "
+        "returns a post-synth logical-paths report - the worst register-to-"
+        "register groups ranked by slack - plus an area/power summary. Use "
+        "it to find which paths to focus on."
+    )
+
+    agent_config = SolverVariant(
+        name="agentic",
+        mcp_tools=("run_testbench", "synth_report"),
+        max_turns=50,
+        timeout=3600,
+        instructions=instructions,
+    )
+
+    return _make_solver(container, agent_config)
 
 
 @solver
 def claude_code_no_feedback_solver(container: Container) -> Solver:
-    """`claude -p` against the design RTL with no MCP tools at all -- the
-    agent edits blind and is graded once it finishes."""
-    return _make_solver(container, NO_FEEDBACK)
+    """No feedback baseline. No tools and no PPA info in prompt."""
+
+    instructions = (
+        "You have no testbench or synthesis tools available. Your edits "
+        "will be graded by a hidden testbench and by yosys synthesisability "
+        "after you finish, so every change must be obviously safe."
+    )
+
+    no_feedback_config = SolverVariant(
+        name="no-feedback",
+        mcp_tools=(),
+        max_turns=10,
+        timeout=900,
+        instructions=instructions,
+    )
+
+    return _make_solver(container, no_feedback_config)

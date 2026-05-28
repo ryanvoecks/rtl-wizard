@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from components.container import Container
-from components.solvers import claude_code_solver
+from components.solvers import claude_code_agentic_solver
 from components.tasks import optimize_timing
 from inspect_ai import Task, eval_async, eval_retry_async
 from inspect_ai.log import read_eval_log
@@ -29,7 +29,7 @@ from common.config import LLM_RESULTS
 MAX_PARALLEL_SESSIONS = 4
 MODEL = "anthropic/claude-sonnet-4-5"
 EPOCHS = 3
-SOLVER = claude_code_solver
+SOLVER = claude_code_agentic_solver
 
 
 async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
