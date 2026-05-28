@@ -139,9 +139,13 @@ def lookup(run: RunConfig) -> Path | None:
 
 
 def record(run: RunConfig) -> None:
-    """Insert `run.output_dir` into the cache index under `run`'s hash."""
+    """Insert `run.output_dir` into the cache index under `run`'s hash.
+    No-op when output_dir is outside EDA_RUNS, since those aren't persistent."""
+    try:
+        rel = run.output_dir.resolve().relative_to(EDA_RUNS.resolve()).as_posix()
+    except ValueError:
+        return
     h = compute_run_hash(run)
-    rel = run.output_dir.resolve().relative_to(EDA_RUNS.resolve()).as_posix()
     with _locked():
         index = load_index()
         index[h] = rel
