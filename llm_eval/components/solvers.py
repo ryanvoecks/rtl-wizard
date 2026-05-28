@@ -38,10 +38,11 @@ from .scorers import evaluate_testbench
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
-AGENT_TURNS = 50
+AGENT_TURNS = 60
 AGENT_TIMEOUT = 3600
-ONE_ROUND_TURNS = 10
-ONE_ROUND_TIMEOUT = 600
+ONE_ROUND_TURNS = 20
+ONE_ROUND_TIMEOUT = 1200
+ITERATIVE_ROUNDS = 3
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -542,7 +543,7 @@ def claude_code_iterative_solver(container: Container) -> Solver:
         max_turns=ONE_ROUND_TURNS,
         timeout=ONE_ROUND_TIMEOUT,
         instructions=instructions,
-        edit_rounds=3,
+        edit_rounds=ITERATIVE_ROUNDS,
         include_initial_report=True,
     )
 
