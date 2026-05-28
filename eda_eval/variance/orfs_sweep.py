@@ -7,7 +7,7 @@ StudyConfig swapped for one that pins `seed=i`. Per-job output lands at
 existing `extract_metrics.py` walker picks them up unchanged.
 
 Usage:
-    uv run eda_eval/noise_study.py --parallel-samples 8
+    uv run eda_eval/variance/orfs_sweep.py --parallel-samples 8
 """
 
 from __future__ import annotations

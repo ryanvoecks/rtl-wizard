@@ -7,7 +7,8 @@ tool noise floor by feeding the ORFS flow many "skins" of the same
 logical design.
 
 Usage:
-    uv run eda_eval/rewriter.py --design aes_reference [--output-dir PATH] [--seed N]
+    uv run eda_eval/variance/rewriter.py --design aes_reference \
+        [--output-dir PATH] [--seed N]
 """
 
 from __future__ import annotations

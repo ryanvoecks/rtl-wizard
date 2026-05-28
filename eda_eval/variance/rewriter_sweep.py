@@ -3,7 +3,7 @@
 RTL-rewrite variance.
 
 For each `TargetConfig` in `common.targets.all_targets`, the design's
-RTL is rewritten by `eda_eval.rewriter.rewrite_design` at seeds 0..9
+RTL is rewritten by `eda_eval.variance.rewriter.rewrite_design` at seeds 0..9
 into a per-job tempdir, then driven through the full ORFS flow with
 `StudyConfig.seed` pinned to its default so OR_SEED is constant across
 runs and the observed variance is attributable to the rewriter. Per-job
@@ -12,7 +12,7 @@ output lands at
 the existing `extract_metrics.py` walker picks them up unchanged.
 
 Usage:
-    uv run eda_eval/rewrite_noise_study.py --parallel-samples 8
+    uv run eda_eval/variance/rewriter_sweep.py --parallel-samples 8
 """
 
 from __future__ import annotations
@@ -32,8 +32,8 @@ from common.config import (
     TargetConfig,
 )
 from common.targets import all_targets
-from eda_eval.rewriter import rewrite_design
 from eda_eval.run import run_job
+from eda_eval.variance.rewriter import rewrite_design
 
 SEEDS = tuple(range(10))
 
