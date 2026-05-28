@@ -22,8 +22,9 @@ import dataclasses
 import shutil
 import tempfile
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+
+from tqdm import tqdm
 
 from common.config import (
     ALL_FLOW_TARGETS,
@@ -31,11 +32,12 @@ from common.config import (
     RunConfig,
     TargetConfig,
 )
+from common.executor import run_parallel
 from common.targets import all_targets
 from eda_eval.run import run_job
 from eda_eval.variance.rewriter import rewrite_design
 
-SEEDS = tuple(range(10))
+SEEDS = tuple(range(8))
 
 
 def _run_one(
@@ -102,22 +104,19 @@ def main() -> None:
     )
 
     failures: list[tuple[TargetConfig, int]] = []
-    with ProcessPoolExecutor(max_workers=args.parallel_samples) as ex:
-        futures = {
-            ex.submit(_run_one, t, s, batch_dir, args.threads_per_run): (t, s)
-            for t, s in jobs
-        }
-        done = 0
-        for fut in as_completed(futures):
-            t, s = futures[fut]
-            rc = fut.result()
-            done += 1
+    submitted = [((t, s), (t, s, batch_dir, args.threads_per_run)) for t, s in jobs]
+    for (t, s), rc in run_parallel(
+        _run_one,
+        submitted,
+        max_workers=args.parallel_samples,
+        description="rewriter sweep",
+    ):
+        if rc != 0:
             d = t.design
-            tag = f"{d.benchmark}/{d.name}/{d.variant}"
-            status = "OK" if rc == 0 else f"FAIL rc={rc}"
-            print(f"[{done}/{total}] {tag} rewrite_seed={s}: {status}")
-            if rc != 0:
-                failures.append((t, s))
+            tqdm.write(
+                f"FAIL {d.benchmark}/{d.name}/{d.variant} rewrite_seed={s} rc={rc}"
+            )
+            failures.append((t, s))
 
     if failures:
         print(f"\n{len(failures)} job(s) failed:")

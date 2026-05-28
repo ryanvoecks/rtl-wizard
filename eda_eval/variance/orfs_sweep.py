@@ -15,8 +15,9 @@ from __future__ import annotations
 import argparse
 import dataclasses
 import time
-from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
+
+from tqdm import tqdm
 
 from common.config import (
     ALL_FLOW_TARGETS,
@@ -24,10 +25,11 @@ from common.config import (
     RunConfig,
     TargetConfig,
 )
+from common.executor import run_parallel
 from common.targets import all_targets
 from eda_eval.run import run_job
 
-SEEDS = tuple(range(10))
+SEEDS = tuple(range(3))
 
 
 def _run_one(
@@ -35,8 +37,8 @@ def _run_one(
     seed: int,
     batch_dir: Path,
     num_threads: int,
-) -> tuple[str, int, int]:
-    """Run one target at one seed. Returns (tag, seed, rc)."""
+) -> int:
+    """Run one target at one ORFS seed. Returns the rc."""
     design = target.design
     seeded = dataclasses.replace(
         target,
@@ -51,9 +53,7 @@ def _run_one(
         flow_targets=ALL_FLOW_TARGETS,
         num_threads=num_threads,
     )
-    rc = run_job(run)
-    tag = f"{design.benchmark}/{design.name}/{design.variant}"
-    return tag, seed, rc
+    return run_job(run)
 
 
 def main() -> None:
@@ -88,25 +88,24 @@ def main() -> None:
         f"threads_per_run={args.threads_per_run}"
     )
 
-    failures: list[tuple[str, int]] = []
-    with ProcessPoolExecutor(max_workers=args.parallel_samples) as ex:
-        futures = {
-            ex.submit(_run_one, t, s, batch_dir, args.threads_per_run): (t, s)
-            for t, s in jobs
-        }
-        done = 0
-        for fut in as_completed(futures):
-            tag, seed, rc = fut.result()
-            done += 1
-            status = "OK" if rc == 0 else f"FAIL rc={rc}"
-            print(f"[{done}/{total}] {tag} seed={seed}: {status}")
-            if rc != 0:
-                failures.append((tag, seed))
+    failures: list[tuple[TargetConfig, int]] = []
+    submitted = [((t, s), (t, s, batch_dir, args.threads_per_run)) for t, s in jobs]
+    for (t, s), rc in run_parallel(
+        _run_one,
+        submitted,
+        max_workers=args.parallel_samples,
+        description="ORFS sweep",
+    ):
+        if rc != 0:
+            d = t.design
+            tqdm.write(f"FAIL {d.benchmark}/{d.name}/{d.variant} seed={s} rc={rc}")
+            failures.append((t, s))
 
     if failures:
         print(f"\n{len(failures)} job(s) failed:")
-        for tag, seed in failures:
-            print(f"  {tag} seed={seed}")
+        for t, s in failures:
+            d = t.design
+            print(f"  {d.benchmark}/{d.name}/{d.variant} seed={s}")
         raise SystemExit(1)
 
 
