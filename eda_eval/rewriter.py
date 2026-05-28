@@ -16,6 +16,7 @@ import argparse
 import dataclasses
 import hashlib
 import random
+import re
 import subprocess
 import sys
 import tempfile
@@ -194,6 +195,23 @@ def _transform_operand_swap(
     return out, len(swaps)
 
 
+def _directives_balanced(text: str) -> bool:
+    """True iff `text` has well-formed `ifdef/`ifndef/`else/`elsif/`endif nesting."""
+    DIRECTIVE_RE = re.compile(r"`(ifdef|ifndef|else|elsif|endif)\b")
+    depth = 0
+    for m in DIRECTIVE_RE.finditer(text):
+        kw = m.group(1)
+        if kw in ("ifdef", "ifndef"):
+            depth += 1
+        elif kw == "endif":
+            depth -= 1
+            if depth < 0:
+                return False
+        elif depth == 0:  # else/elsif outside any ifdef
+            return False
+    return depth == 0
+
+
 def _transform_decl_reorder(
     src: str,
     abs_path: Path,
@@ -216,31 +234,47 @@ def _transform_decl_reorder(
         if node.kind != pyslang.SyntaxKind.ModuleDeclaration:
             return pyslang.VisitAction.Advance
         mod = cast(pyslang.ModuleDeclarationSyntax, node)
-        perm: list[pyslang.SyntaxNode] = []
+        # Collect permutable members whose own text has balanced directives.
+        candidates: list[pyslang.SyntaxNode] = []
         for m in mod.members:
             if (
                 m.kind in PERMUTABLE_MEMBER_KINDS
                 and m.sourceRange.start.buffer == file_buffer
                 and m.sourceRange.end.buffer == file_buffer
             ):
-                perm.append(m)
-        if len(perm) < 2:
-            return pyslang.VisitAction.Advance
-        order = list(range(len(perm)))
-        rng.shuffle(order)
-        for slot, src_idx in enumerate(order):
-            if slot == src_idx:
-                continue
-            old = perm[slot]
-            new = perm[src_idx]
-            edits.append(
-                (
-                    old.sourceRange.start.offset,
-                    old.sourceRange.end.offset,
-                    src[new.sourceRange.start.offset : new.sourceRange.end.offset],
+                s, e = m.sourceRange.start.offset, m.sourceRange.end.offset
+                if _directives_balanced(src[s:e]):
+                    candidates.append(m)
+        # Split into groups based on `ifdef/`endif to avoid swaps across this boundary.
+        groups: list[list[pyslang.SyntaxNode]] = []
+        current: list[pyslang.SyntaxNode] = []
+        prev_end: int | None = None
+        for m in candidates:
+            s = m.sourceRange.start.offset
+            if prev_end is not None and not _directives_balanced(src[prev_end:s]):
+                if len(current) >= 2:
+                    groups.append(current)
+                current = []
+            current.append(m)
+            prev_end = m.sourceRange.end.offset
+        if len(current) >= 2:
+            groups.append(current)
+        for group in groups:
+            order = list(range(len(group)))
+            rng.shuffle(order)
+            for slot, src_idx in enumerate(order):
+                if slot == src_idx:
+                    continue
+                old = group[slot]
+                new = group[src_idx]
+                edits.append(
+                    (
+                        old.sourceRange.start.offset,
+                        old.sourceRange.end.offset,
+                        src[new.sourceRange.start.offset : new.sourceRange.end.offset],
+                    )
                 )
-            )
-            moved += 1
+                moved += 1
         return pyslang.VisitAction.Advance
 
     tree.root.visit(visit)
