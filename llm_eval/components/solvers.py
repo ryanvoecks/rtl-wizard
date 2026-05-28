@@ -13,6 +13,10 @@ import json
 from dataclasses import dataclass
 
 from inspect_ai.agent import AgentState, agent
+from inspect_ai.log._samples import (
+    set_active_sample_total_cost,
+    set_active_sample_total_tokens,
+)
 from inspect_ai.model import (
     ChatCompletionChoice,
     ChatMessage,
@@ -23,10 +27,23 @@ from inspect_ai.model import (
     ModelOutput,
     ModelUsage,
 )
-from inspect_ai.model._model import active_model
+from inspect_ai.model._model import (
+    active_model,
+    model_usage_context_var,
+    sample_model_usage_context_var,
+    sample_total_cost,
+    sample_total_tokens,
+    set_model_usage,
+)
 from inspect_ai.solver import Generate, Solver, TaskState, solver
 from inspect_ai.tool import ToolCall, ToolCallError
 from inspect_ai.util import LimitExceededError, store
+from inspect_ai.util._limit import (
+    check_cost_limit,
+    check_token_limit,
+    record_model_cost,
+    record_model_usage,
+)
 from mcp.server.fastmcp import FastMCP
 
 from common.config import TargetConfig
@@ -214,6 +231,21 @@ def _build_usage(final: dict) -> ModelUsage:
     )
 
 
+def _record_round_usage(model: str, usage: ModelUsage) -> None:
+    """Plumb CLI-reported usage into Inspect's sample/eval rollups so tokens
+    and cost show in the dashboard."""
+    set_model_usage(model, usage, sample_model_usage_context_var.get(None))
+    set_model_usage(model, usage, model_usage_context_var.get(None))
+    record_model_usage(usage)
+    set_active_sample_total_tokens(sample_total_tokens())
+    check_token_limit()
+
+    if usage.total_cost is not None:
+        record_model_cost(usage.total_cost)
+        set_active_sample_total_cost(sample_total_cost())
+        check_cost_limit()
+
+
 def _sum_usages(usages: list[ModelUsage]) -> ModelUsage | None:
     """Aggregate per-round ModelUsage objects."""
     if not usages:
@@ -344,10 +376,26 @@ def claude_code_oauth(
                 state.messages.extend(_events_to_messages(events))
                 if final is not None:
                     finals.append(final)
+                    _record_round_usage(model, _build_usage(final))
                     store().set("cc_session_id", final.get("session_id"))
                     store().set("cc_num_turns", final.get("num_turns"))
                     store().set("cc_duration_ms", final.get("duration_ms"))
                     store().set("cc_stop_subtype", final.get("subtype"))
+
+                if timed_out:
+                    state.messages.append(
+                        ChatMessageSystem(
+                            content=f"[Round {round_idx + 1}/{rounds} timed out "
+                            f"after {variant.timeout}s]"
+                        )
+                    )
+                elif max_turns_hit:
+                    state.messages.append(
+                        ChatMessageSystem(
+                            content=f"[Round {round_idx + 1}/{rounds} reached max "
+                            f"turns of {variant.max_turns}]"
+                        )
+                    )
 
                 if round_idx < rounds - 1:
                     cur_diff = await asyncio.to_thread(build_diff_from_env, env, design)
@@ -391,24 +439,21 @@ def claude_code_oauth(
 
         store().set("cc_timed_out", timed_out)
 
-        # Surface timeout / max-turns as an Inspect limit and system message
+        # Surface the final round's timeout / max-turns as an Inspect limit.
+        # The per-round system message is appended inside the loop above.
         if timed_out:
-            msg = f"[Timed out after {variant.timeout}s]"
-            state.messages.append(ChatMessageSystem(content=msg))
             raise LimitExceededError(
                 type="time",
                 value=variant.timeout,
                 limit=variant.timeout,
-                message=msg,
+                message=f"[Timed out after {variant.timeout}s]",
             )
         if max_turns_hit:
-            msg = f"[Reached max turns of {variant.max_turns}]"
-            state.messages.append(ChatMessageSystem(content=msg))
             raise LimitExceededError(
                 type="message",
                 value=variant.max_turns,
                 limit=variant.max_turns,
-                message=msg,
+                message=f"[Reached max turns of {variant.max_turns}]",
             )
 
         return state
