@@ -1,7 +1,7 @@
 # Per-design ORFS driver rendered by test_flow_orfs/run.py
 
 # Config
-export FLOW_HOME     = {orfs_home}
+export FLOW_HOME     = {orfs_flow}
 export PLATFORM      = {platform}
 export DESIGN_NAME   = {top_module}
 export DESIGN_DIR    = {design_dir}

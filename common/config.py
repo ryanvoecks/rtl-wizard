@@ -35,16 +35,10 @@ WB_DMA = EXTERNAL / "wb_dma"
 UBERDDR3 = EXTERNAL / "uberddr3"
 
 # EDA tools and PDK
-ORFS_HOME = Path("/") / "OpenROAD-flow-scripts" / "flow"
-YOSYS_BIN = (
-    Path("/")
-    / "OpenROAD-flow-scripts"
-    / "tools"
-    / "install"
-    / "yosys"
-    / "bin"
-    / "yosys"
-)
+ORFS_HOME = Path("/") / "OpenROAD-flow-scripts"
+ORFS_FLOW = ORFS_HOME / "flow"
+YOSYS_BIN = ORFS_HOME / "tools" / "install" / "yosys" / "bin" / "yosys"
+EQY_BIN = ORFS_HOME / "dependencies" / "bin" / "eqy"
 SYNTH_FLOW_TARGETS = ("synth", "synth-report")
 PNR_FLOW_TARGETS = (
     "floorplan",
@@ -56,9 +50,9 @@ PNR_FLOW_TARGETS = (
 ALL_FLOW_TARGETS = SYNTH_FLOW_TARGETS + PNR_FLOW_TARGETS
 
 
-# Raise if ORFS isn't installed at `ORFS_HOME`
-if not (ORFS_HOME / "Makefile").is_file():
-    raise FileNotFoundError(f"ORFS flow not found at {ORFS_HOME}")
+# Raise if ORFS isn't installed at `ORFS_FLOW`
+if not (ORFS_FLOW / "Makefile").is_file():
+    raise FileNotFoundError(f"ORFS flow not found at {ORFS_FLOW}")
 
 
 # Common types

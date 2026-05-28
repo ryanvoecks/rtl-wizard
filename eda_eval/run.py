@@ -19,7 +19,7 @@ from common.config import (
     ALL_FLOW_TARGETS,
     EDA_EVAL,
     EDA_RUNS,
-    ORFS_HOME,
+    ORFS_FLOW,
     RunConfig,
 )
 from common.targets import resolve_target
@@ -77,7 +77,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
             verilog_include_dirs=include_dirs,
             sdc_file=sdc_dst,
             work_home=run.output_dir,
-            orfs_home=ORFS_HOME,
+            orfs_flow=ORFS_FLOW,
             platform=cfg.platform,
             place_density=cfg.place_density,
             die_area=die_area,
