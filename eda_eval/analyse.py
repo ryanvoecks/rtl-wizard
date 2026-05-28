@@ -12,16 +12,30 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
-from common.config import EDA_EVAL, ORFS_FLOW, PNR_FLOW_TARGETS, YOSYS_BIN, RunConfig
+from common.config import (
+    EDA_EVAL,
+    ORFS_FLOW,
+    PNR_FLOW_TARGETS,
+    YOSYS_BIN,
+    DesignConfig,
+    RunConfig,
+)
 from eda_eval.extract_metrics import find_unique, parse_period_ps
 
 # Default config
 TOP_PATHS = 50
 TOP_LOGICAL = 50
-POOL_SIZE = 1000
+POOL_SIZE = 5000
 
-# tcl path
+# tcl paths
 EXTRACT_TCL = EDA_EVAL / "tcl" / "extract_critical_paths.tcl"
+AREA_POWER_TCL = EDA_EVAL / "tcl" / "extract_area_power.tcl"
+
+# Markers emitted by extract_area_power.tcl for extracting area/power totals
+AREA_RE = re.compile(r"ANALYSE_AREA_BEGIN(.*?)ANALYSE_AREA_END", re.DOTALL)
+POWER_RE = re.compile(r"ANALYSE_POWER_BEGIN(.*?)ANALYSE_POWER_END", re.DOTALL)
+AREA_VAL_RE = re.compile(r"Design area\s+([\d.eE+-]+)\s+um\^2", re.MULTILINE)
+POWER_TOTAL_RE = re.compile(r"^Total\s+\S+\s+\S+\s+\S+\s+([\d.eE+-]+)", re.MULTILINE)
 
 # Regexes for lexing
 INDEX_RE = re.compile(r"\[\d+\]")
@@ -60,13 +74,15 @@ def run_openroad_extract(
     libs: list[Path],
     pool: int,
     tsv_out: Path,
-) -> None:
-    """Drive openroad to dump the worst-slack timing pool to tsv_out."""
+) -> str:
+    """Drive openroad to dump the worst-slack timing pool to tsv_out, then
+    report design area + total power. Returns captured stdout."""
     lines = [f"read_liberty {lib}" for lib in libs]
     lines += [f"read_db {odb}", f"read_sdc {sdc}"]
     if spef is not None:
         lines.append(f"read_spef {spef}")
     lines.append(f"source {EXTRACT_TCL}")
+    lines.append(f"source {AREA_POWER_TCL}")
     env = {**os.environ, "ANALYSE_OUT_TSV": str(tsv_out), "ANALYSE_POOL": str(pool)}
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
@@ -78,6 +94,34 @@ def run_openroad_extract(
     if proc.returncode != 0:
         sys.stderr.write(proc.stdout + proc.stderr)
         raise RuntimeError("openroad extraction failed")
+    return proc.stdout
+
+
+def parse_area_power(stdout: str) -> tuple[float, float]:
+    """Return (area_um2, power_mw) scraped from the openroad stdout blocks."""
+    area_block = AREA_RE.search(stdout)
+    power_block = POWER_RE.search(stdout)
+    if not area_block or not power_block:
+        raise RuntimeError("missing ANALYSE_{AREA,POWER} markers in openroad stdout")
+    area_m = AREA_VAL_RE.search(area_block.group(1))
+    total_m = POWER_TOTAL_RE.search(power_block.group(1))
+    if not area_m or not total_m:
+        raise RuntimeError("could not parse area or power from openroad stdout")
+    return float(area_m.group(1)), float(total_m.group(1)) * 1e3
+
+
+def resolve_rtl_inputs(
+    design: DesignConfig, phase_dir: Path
+) -> tuple[list[Path], list[Path]]:
+    """Return (rtl_paths, include_dirs) for the hierarchy dump. Prefers
+    `design.rtl_abs_paths`, falls back to `<phase_dir>/inputs/rtl/<basename>`."""
+    abs_paths = list(design.rtl_abs_paths)
+    rtl_src = design.root / design.rtl_dir
+    include_dirs = [rtl_src / d for d in design.include_dirs]
+    if all(p.is_file() for p in abs_paths) and all(d.is_dir() for d in include_dirs):
+        return abs_paths, include_dirs
+    staged = phase_dir / "inputs" / "rtl"
+    return [staged / Path(rel).name for rel in design.rtl_files], []
 
 
 def dump_hierarchy(
@@ -167,11 +211,15 @@ def write_critical_paths(
     out_path: Path,
     top_m: int,
     stage_label: str,
+    area_um2: float,
+    power_mw: float,
 ) -> int:
     """Write the top_m worst-slack paths as a ranked TSV."""
     rows = records[:top_m]
     with out_path.open("w") as fh:
         fh.write(f"# stage\t{stage_label}\n")
+        fh.write(f"# area_um2\t{area_um2:.2f}\n")
+        fh.write(f"# power_mw\t{power_mw:.4f}\n")
         fh.write("# rank\tslack_ns\tstartpoint\tendpoint\n")
         for rank, (slack, sp, ep, _) in enumerate(rows, 1):
             fh.write(f"{rank}\t{slack:.4f}\t{sp}\t{ep}\n")
@@ -186,6 +234,8 @@ def write_logical_paths(
     hierarchy: dict[str, dict[str, str]],
     clock_period_ns: float,
     stage_label: str,
+    area_um2: float,
+    power_mw: float,
 ) -> int:
     """Group records by (start_stem, end_stem); write the ranked top_n."""
     groups: dict[tuple[str, str], dict] = {}
@@ -212,6 +262,8 @@ def write_logical_paths(
 
     with out_path.open("w") as fh:
         fh.write(f"# stage\t{stage_label}\n")
+        fh.write(f"# area_um2\t{area_um2:.2f}\n")
+        fh.write(f"# power_mw\t{power_mw:.4f}\n")
         fh.write(f"# target_period_ns\t{clock_period_ns:.4f}\n")
         fh.write(f"# pool_size\t{len(records)}\n")
         fh.write(f"# top_module\t{top_module}\n")
@@ -245,8 +297,7 @@ def analyse(
     top_module = design.top_module
     platform = run.synth_target.cfg.platform
     phase_dir = run.output_dir
-    rtl_dir = design.root / design.rtl_dir
-    include_dirs = [rtl_dir / d for d in design.include_dirs]
+    rtl_paths, include_dirs = resolve_rtl_inputs(design, phase_dir)
 
     if set(run.flow_targets) & set(PNR_FLOW_TARGETS):
         stage, stage_label = "6_final", "post-route"
@@ -261,20 +312,21 @@ def analyse(
     # Stage the tsv next to the final report so the rename is same-filesystem.
     raw_tsv = reports_dir / "critical_paths_raw.tsv"
     staging = raw_tsv.with_suffix(".tsv.partial")
-    run_openroad_extract(odb, sdc, spef, libs, pool, staging)
+    openroad_stdout = run_openroad_extract(odb, sdc, spef, libs, pool, staging)
     staging.replace(raw_tsv)
+    area_um2, power_mw = parse_area_power(openroad_stdout)
 
     records = read_pool_tsv(raw_tsv)
     if not records:
         raise RuntimeError("OpenSTA returned zero paths")
 
     hier_json = reports_dir / "hierarchy.json"
-    dump_hierarchy(design.rtl_abs_paths, top_module, hier_json, include_dirs)
+    dump_hierarchy(rtl_paths, top_module, hier_json, include_dirs)
     hierarchy = load_hierarchy(hier_json)
 
     crit_path = reports_dir / "critical_paths.rpt"
     logical_path = reports_dir / "logical_paths.rpt"
-    write_critical_paths(records, crit_path, top_paths, stage_label)
+    write_critical_paths(records, crit_path, top_paths, stage_label, area_um2, power_mw)
     write_logical_paths(
         records,
         logical_path,
@@ -283,6 +335,8 @@ def analyse(
         hierarchy,
         clock_period_ns=parse_period_ps(sdc) / 1000,
         stage_label=stage_label,
+        area_um2=area_um2,
+        power_mw=power_mw,
     )
     return logical_path.read_text()
 
