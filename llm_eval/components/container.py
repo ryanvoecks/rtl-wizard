@@ -1,6 +1,9 @@
 """Single Docker container for the Claude Code agent - one devcontainer for the
-whole eval. Async context manager: `__aenter__` creates+starts the docker
-container AND boots the eval-wide MCPService; `__aexit__` tears both down.
+whole eval. Async context manager: `__aenter__` builds the container only if it
+doesn't already exist (so the OAUTH login persists across runs) and brings up
+the eval-wide MCPService; `__aexit__` stops the MCPService and the container
+but keeps the container record around for next time. Use `teardown()` to fully
+remove the container (forcing a rebuild + re-auth on the next entry).
 `execute` shells into it via `docker compose exec` and is intended to be called
 inside the `async with` block."""
 
@@ -43,8 +46,7 @@ class Container:
         self.mcp = MCPService()
 
     async def __aenter__(self) -> Container:
-        """Build (if needed), create, and start the container; then bring up
-        the shared MCP host."""
+        """Build the container if missing, otherwise just restart the existing one."""
         self._compose("create")
         self._compose("start")
 
@@ -62,25 +64,26 @@ class Container:
         )
         self.execute(["tinyproxy"], user="root")
 
-        # Run interactive Claude OAUTH login once per container
+        # OAUTH login: only the first time.
         self.execute(["mkdir", "-p", OAUTH_HOME], user="root")
-        subprocess.run(
-            [
-                *self._compose_prefix(),
-                "exec",
-                "--user",
-                "root",
-                "--env",
-                f"HOME={OAUTH_HOME}",
-                SERVICE,
-                "claude",
-                "auth",
-                "login",
-            ],
-            check=True,
-        )
+        if not self._oauth_ready():
+            subprocess.run(
+                [
+                    *self._compose_prefix(),
+                    "exec",
+                    "--user",
+                    "root",
+                    "--env",
+                    f"HOME={OAUTH_HOME}",
+                    SERVICE,
+                    "claude",
+                    "auth",
+                    "login",
+                ],
+                check=True,
+            )
 
-        # Make the oauth dir traversable+readable by env users
+        # Make the OAUTH dir traversable+readable by env users
         self.execute(["chmod", "-R", "a+rX", OAUTH_HOME], user="root")
 
         # Bring up the shared MCP host inside the eval's asyncio loop.
@@ -88,9 +91,23 @@ class Container:
         return self
 
     async def __aexit__(self, *_exc: object) -> None:
-        """Tear down the MCP host, then `docker compose down`."""
+        """Tear down the MCP host and stop the container."""
         await self.mcp.__aexit__()
+        self._compose("stop")
+
+    def teardown(self) -> None:
+        """Remove the container entirely. Forces a rebuild."""
         self._compose("down")
+
+    def _oauth_ready(self) -> bool:
+        """True if a prior `claude auth login` left credentials in OAUTH_HOME."""
+        return (
+            self.execute(
+                ["test", "-d", f"{OAUTH_HOME}/.claude"],
+                user="root",
+            ).returncode
+            == 0
+        )
 
     def execute(
         self,

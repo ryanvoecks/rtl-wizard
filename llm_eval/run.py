@@ -1,11 +1,13 @@
 """Run llm_eval's task via the inspect_ai Python API.
 
 Owns the per-run output dir AND the shared sandbox container's lifecycle:
-the container is created/started once for the whole eval and stopped at
-the end, so every sample's ClaudeEnv attaches to the same running
-container (which keeps one OAUTH Claude Code session across samples) and
-mounts onto the same eval-wide MCP host (so `sse_starlette`'s process-global
-shutdown signal never fires between samples).
+the container is built once (first run only -- subsequent runs just restart
+the existing container so the OAUTH login is preserved) and stopped at the
+end. Every sample's ClaudeEnv attaches to the same running container (which
+keeps one OAUTH Claude Code session across samples) and mounts onto the same
+eval-wide MCP host (so `sse_starlette`'s process-global shutdown signal
+never fires between samples). To force a rebuild + fresh OAUTH login, call
+`Container.teardown()` explicitly.
 
     uv run python llm_eval/run.py
 """
