@@ -1,0 +1,60 @@
+diff --git a/src/tb/tb_aes.v b/src/tb/tb_aes.v
+index ca562c4..d95648c 100644
+--- a/src/tb/tb_aes.v
++++ b/src/tb/tb_aes.v
+@@ -377,7 +377,6 @@ module tb_aes();
+ 
+       init_key(key, key_length);
+       write_block(block);
+-      dump_dut_state();
+ 
+       write_word(ADDR_CONFIG, (8'h00 + (key_length << 1)+ encdec));
+       write_word(ADDR_CTRL, 8'h02);
+diff --git a/src/tb/tb_aes_core.v b/src/tb/tb_aes_core.v
+index eb3c73e..468761d 100644
+--- a/src/tb/tb_aes_core.v
++++ b/src/tb/tb_aes_core.v
+@@ -308,8 +308,6 @@ module tb_aes_core();
+      $display("Key expansion done");
+      $display("");
+ 
+-     dump_keys();
+-
+ 
+      // Perform encipher och decipher operation on the block.
+      tb_encdec = encdec;
+diff --git a/src/tb/tb_aes_decipher_block.v b/src/tb/tb_aes_decipher_block.v
+index 577279d..9055276 100644
+--- a/src/tb/tb_aes_decipher_block.v
++++ b/src/tb/tb_aes_decipher_block.v
+@@ -43,7 +43,7 @@ module tb_aes_decipher_block();
+   //----------------------------------------------------------------
+   // Internal constant and parameter definitions.
+   //----------------------------------------------------------------
+-  parameter DEBUG     = 1;
++  parameter DEBUG     = 0;
+   parameter DUMP_WAIT = 0;
+ 
+   parameter CLK_HALF_PERIOD = 1;
+diff --git a/src/tb/tb_aes_key_mem.v b/src/tb/tb_aes_key_mem.v
+index 72a2e2e..c2e8f23 100644
+--- a/src/tb/tb_aes_key_mem.v
++++ b/src/tb/tb_aes_key_mem.v
+@@ -43,7 +43,7 @@ module tb_aes_key_mem();
+   //----------------------------------------------------------------
+   // Internal constant and parameter definitions.
+   //----------------------------------------------------------------
+-  parameter DEBUG = 1;
++  parameter DEBUG = 0;
+   parameter SHOW_SBOX = 0;
+ 
+   parameter CLK_HALF_PERIOD = 1;
+@@ -254,8 +254,6 @@ module tb_aes_key_mem();
+       #(CLK_PERIOD);
+       if (tb_round_key == expected)
+         begin
+-          $display("** key 0x%01x matched expected round key.", key_nr);
+-          $display("** Got:      0x%016x **", tb_round_key);
+         end
+       else
+         begin
