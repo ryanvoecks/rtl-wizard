@@ -196,11 +196,11 @@ def _transform_operand_swap(
     return out, len(swaps)
 
 
-def _directives_balanced(text: str) -> bool:
-    """True iff `text` has well-formed `ifdef/`ifndef/`else/`elsif/`endif nesting."""
-    DIRECTIVE_RE = re.compile(r"`(ifdef|ifndef|else|elsif|endif)\b")
+def _ifdef_balanced(text: str) -> bool:
+    """`ifdef/`ifndef/`else/`elsif/`endif nesting is well-formed."""
+    IFDEF_RE = re.compile(r"`(ifdef|ifndef|else|elsif|endif)\b")
     depth = 0
-    for m in DIRECTIVE_RE.finditer(text):
+    for m in IFDEF_RE.finditer(text):
         kw = m.group(1)
         if kw in ("ifdef", "ifndef"):
             depth += 1
@@ -211,6 +211,27 @@ def _directives_balanced(text: str) -> bool:
         elif depth == 0:  # else/elsif outside any ifdef
             return False
     return depth == 0
+
+
+def _translate_off_balanced(text: str) -> bool:
+    """`// (synopsys|synthesis|pragma) translate_off/on` pairs are balanced."""
+    TRANSLATE_RE = re.compile(
+        r"//\s*(?:synopsys|synthesis|pragma)\s+translate_(off|on)\b", re.IGNORECASE
+    )
+    depth = 0
+    for m in TRANSLATE_RE.finditer(text):
+        if m.group(1).lower() == "off":
+            depth += 1
+        else:
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def _directives_balanced(text: str) -> bool:
+    """True iff `text` is self-contained under every tracked directive family."""
+    return all(check(text) for check in (_ifdef_balanced, _translate_off_balanced))
 
 
 def _transform_decl_reorder(
