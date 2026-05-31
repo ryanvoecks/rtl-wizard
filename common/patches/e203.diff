@@ -1,5 +1,18 @@
+diff --git a/rtl/e203/core/e203_core.v b/rtl/e203/core/e203_core.v
+index 8881722..bf1959d 100644
+--- a/rtl/e203/core/e203_core.v
++++ b/rtl/e203/core/e203_core.v
+@@ -273,7 +273,7 @@ module e203_core(
+ 
+ 
+   `ifdef E203_HAS_NICE//{
+-  input nice_mem_holdup  ,                 //O: nice occupys the memory. for avoid of dead-loop庐
++  input nice_mem_holdup  ,                 //O: nice occupys the memory. for avoid of dead-loop
+   // nice_req interface
+   output nice_req_valid  ,                 //O: handshake flag, cmd is valid
+   input  nice_req_ready  ,                 //I: handshake flag, cmd is accepted.
 diff --git a/rtl/e203/general/sirv_sim_ram.v b/rtl/e203/general/sirv_sim_ram.v
-index ab48e58..0bcf181 100644
+index ab48e58..4ce811d 100644
 --- a/rtl/e203/general/sirv_sim_ram.v
 +++ b/rtl/e203/general/sirv_sim_ram.v
 @@ -41,7 +41,13 @@ module sirv_sim_ram

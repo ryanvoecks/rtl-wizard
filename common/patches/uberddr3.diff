@@ -1,0 +1,64 @@
+diff --git a/rtl/ddr3_controller.v b/rtl/ddr3_controller.v
+index 3922481..02931c0 100644
+--- a/rtl/ddr3_controller.v
++++ b/rtl/ddr3_controller.v
+@@ -752,7 +752,7 @@ module ddr3_controller #(
+              else
+                 read_rom_instruction = {5'b01000 , CMD_NOP , ps_to_cycles(POWER_ON_RESET_HIGH)}; 
+                 //0. RESET# needs to be maintained low for minimum 200us with power-up initialization. CKE is pulled
+-                    //“Low�? anytime before RESET# being de-asserted (min. time 10 ns). .
++                    //"Low" anytime before RESET# being de-asserted (min. time 10 ns). .
+ 
+             5'd1: 
+              if (MICRON_SIM)
+diff --git a/testbench/ddr3_dimm_micron_sim.sv b/testbench/ddr3_dimm_micron_sim.sv
+index 3665126..39be154 100644
+--- a/testbench/ddr3_dimm_micron_sim.sv
++++ b/testbench/ddr3_dimm_micron_sim.sv
+@@ -57,15 +57,32 @@ module ddr3_dimm_micron_sim;
+ `endif
+ 
+ 
++// Test-mode flags, overridable from the iverilog command line via -D.
++`ifndef CFG_ECC_ENABLE
++  `define CFG_ECC_ENABLE 0
++`endif
++`ifndef CFG_DUAL_RANK_DIMM
++  `define CFG_DUAL_RANK_DIMM 0
++`endif
++`ifndef CFG_TEST_SELF_REFRESH
++  `define CFG_TEST_SELF_REFRESH 0
++`endif
++`ifndef CFG_SECOND_WISHBONE
++  `define CFG_SECOND_WISHBONE 0
++`endif
++`ifndef CFG_BIST_MODE
++  `define CFG_BIST_MODE 1
++`endif
++
+  localparam CONTROLLER_CLK_PERIOD = 12_000, //ps, period of clock input to this DDR3 controller module
+             DDR3_CLK_PERIOD = 3_000, //ps, period of clock input to DDR3 RAM device 
+             AUX_WIDTH = 16, // AUX lines
+-            ECC_ENABLE = 0, // ECC enable
++            ECC_ENABLE = `CFG_ECC_ENABLE, // ECC enable
+             SELF_REFRESH = 2'b00,
+-            DUAL_RANK_DIMM = 0,
+-            TEST_SELF_REFRESH = 0,
+-            SECOND_WISHBONE = 0,
+-            BIST_MODE = 1, // 0 = No BIST, 1 = run through all address space ONCE , 2 = run through all address space for every test (burst w/r, random w/r, alternating r/w)
++            DUAL_RANK_DIMM = `CFG_DUAL_RANK_DIMM,
++            TEST_SELF_REFRESH = `CFG_TEST_SELF_REFRESH,
++            SECOND_WISHBONE = `CFG_SECOND_WISHBONE,
++            BIST_MODE = `CFG_BIST_MODE, // 0 = No BIST, 1 = run through all address space ONCE , 2 = run through all address space for every test (burst w/r, random w/r, alternating r/w)
+             DLL_OFF = 0;
+ 
+ localparam  WB_DATA_BITS = 8*BYTE_LANES*4*2,
+@@ -995,7 +1012,7 @@ ddr3_top #(
+     reg[3:0] repeats = 0; 
+     //display commands issued
+     always @(posedge o_ddr3_clk_p[0]) begin
+-        if(!cs_n[0]) begin //command is center-aligned to positive edge of clock, a valid command always has low cs_n
++        if(!cs_n[0] && !(ras_n & cas_n & we_n)) begin //command is center-aligned to positive edge of clock, a valid command always has low cs_n; skip NOPs
+             case({cs_n[0], ras_n, cas_n, we_n})
+                  4'b0000: command_used = "MRS";
+                  4'b0001: command_used = "REF";

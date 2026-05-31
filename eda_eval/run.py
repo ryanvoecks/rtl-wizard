@@ -28,6 +28,12 @@ from eda_eval.cache import lookup, record, replay
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
 
+# ODB files to keep after pruning
+KEEP_ODB = frozenset({"1_synth.odb", "6_final.odb"})
+
+# File suffixes prune deletes for ORFS outputs
+PRUNE_SUFFIXES = frozenset({".odb", ".def", ".guide", ".rtlil", ".v"})
+
 
 def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
     """ORFS DIE_AREA/CORE_AREA strings for a square `side_um` x `side_um`
@@ -93,8 +99,21 @@ def snapshot_inputs(run: RunConfig) -> Path:
     return makefile_dst
 
 
+def prune(run: RunConfig) -> None:
+    """Delete auto-generated ORFS intermediates from results to reduce disk space."""
+    results = run.output_dir / "results"
+    if not results.exists():
+        return
+    for f in results.rglob("*"):
+        if not f.is_file() or f.suffix not in PRUNE_SUFFIXES:
+            continue
+        if f.suffix == ".odb" and f.name in KEEP_ODB:
+            continue
+        f.unlink()
+
+
 def run_job(run: RunConfig) -> int:
-    """Invoke the rendered per-design Makefile."""
+    """Invoke the rendered per-design Makefile, then prune intermediates."""
     run.output_dir.mkdir(parents=True, exist_ok=True)
     run.dump(run.output_dir / RunConfig.FILENAME)
     cached = lookup(run)
@@ -109,6 +128,7 @@ def run_job(run: RunConfig) -> int:
             stdout=log,
             stderr=subprocess.STDOUT,
         ).returncode
+    prune(run)
     record(run)
     return rc
 

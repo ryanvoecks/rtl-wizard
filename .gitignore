@@ -1,5 +1,6 @@
 # Folders
 __pycache__/
+.claude/
 .vscode/
 *_results/
 logs/

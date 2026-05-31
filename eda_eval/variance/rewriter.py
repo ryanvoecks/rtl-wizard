@@ -58,6 +58,15 @@ PERMUTABLE_MEMBER_KINDS = frozenset(
     }
 )
 
+# Scopes to descend into for reorder/rename
+SCOPE_KINDS = frozenset(
+    {
+        pyslang.SyntaxKind.ModuleDeclaration,
+        pyslang.SyntaxKind.GenerateBlock,
+        pyslang.SyntaxKind.GenerateRegion,
+    }
+)
+
 RENAME_PREFIX = "s_"  # prefix on renamed internal signals
 RENAME_DIGEST_BYTES = 6  # 12 hex chars; collision-resistant up to ~16M names
 RENAMABLE_DECL_KINDS = frozenset(
@@ -196,11 +205,11 @@ def _transform_operand_swap(
     return out, len(swaps)
 
 
-def _directives_balanced(text: str) -> bool:
-    """True iff `text` has well-formed `ifdef/`ifndef/`else/`elsif/`endif nesting."""
-    DIRECTIVE_RE = re.compile(r"`(ifdef|ifndef|else|elsif|endif)\b")
+def _ifdef_balanced(text: str) -> bool:
+    """`ifdef/`ifndef/`else/`elsif/`endif nesting is well-formed."""
+    IFDEF_RE = re.compile(r"`(ifdef|ifndef|else|elsif|endif)\b")
     depth = 0
-    for m in DIRECTIVE_RE.finditer(text):
+    for m in IFDEF_RE.finditer(text):
         kw = m.group(1)
         if kw in ("ifdef", "ifndef"):
             depth += 1
@@ -211,6 +220,27 @@ def _directives_balanced(text: str) -> bool:
         elif depth == 0:  # else/elsif outside any ifdef
             return False
     return depth == 0
+
+
+def _translate_off_balanced(text: str) -> bool:
+    """`// (synopsys|synthesis|pragma) translate_off/on` pairs are balanced."""
+    TRANSLATE_RE = re.compile(
+        r"//\s*(?:synopsys|synthesis|pragma)\s+translate_(off|on)\b", re.IGNORECASE
+    )
+    depth = 0
+    for m in TRANSLATE_RE.finditer(text):
+        if m.group(1).lower() == "off":
+            depth += 1
+        else:
+            depth -= 1
+            if depth < 0:
+                return False
+    return depth == 0
+
+
+def _directives_balanced(text: str) -> bool:
+    """True iff `text` is self-contained under every tracked directive family."""
+    return all(check(text) for check in (_ifdef_balanced, _translate_off_balanced))
 
 
 def _transform_decl_reorder(
@@ -232,12 +262,11 @@ def _transform_decl_reorder(
 
     def visit(node: pyslang.SyntaxNode) -> pyslang.VisitAction:
         nonlocal moved
-        if node.kind != pyslang.SyntaxKind.ModuleDeclaration:
+        if node.kind not in SCOPE_KINDS:
             return pyslang.VisitAction.Advance
-        mod = cast(pyslang.ModuleDeclarationSyntax, node)
         # Collect permutable members whose own text has balanced directives.
         candidates: list[pyslang.SyntaxNode] = []
-        for m in mod.members:
+        for m in cast(pyslang.ModuleDeclarationSyntax, node).members:
             if (
                 m.kind in PERMUTABLE_MEMBER_KINDS
                 and m.sourceRange.start.buffer == file_buffer
@@ -359,15 +388,21 @@ def _transform_signal_rename(
                     if isinstance(d, pyslang.DeclaratorSyntax):
                         port_names.add(d.name.valueText)
 
-        # Module-body level variable/net declarations.
-        mod_level: set[str] = set()
-        for m in mod.members:
-            if m.kind in RENAMABLE_DECL_KINDS:
-                for d in m.declarators:
-                    if isinstance(d, pyslang.DeclaratorSyntax):
-                        mod_level.add(d.name.valueText)
+        # Variable/net declarations at any scope depth in the module.
+        decl_names: set[str] = set()
 
-        rename_set = (mod_level & unshadowed) - port_names
+        def decl_visit(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind in RENAMABLE_DECL_KINDS:
+                for d in cast(pyslang.DataDeclarationSyntax, n).declarators:
+                    if isinstance(d, pyslang.DeclaratorSyntax):
+                        decl_names.add(d.name.valueText)
+            return pyslang.VisitAction.Advance
+
+        mod.visit(decl_visit)
+
+        rename_set = (decl_names & unshadowed) - port_names
         if not rename_set:
             return
 
@@ -469,13 +504,9 @@ def rewrite_design(
     for rel in design.rtl_files:
         abs_orig = design.root / design.rtl_dir / rel
         abs_copy = output_dir / design.rtl_dir / rel
-        # Skip files with non-ASCII characters to avoid pyslang offset misalignment.
-        try:
-            src = abs_orig.read_text(encoding="utf-8")
-            assert all(ord(c) < 128 for c in src)
-        except (UnicodeDecodeError, AssertionError):
-            print(f"  {rel}: skipped (non-ASCII source)")
-            continue
+        src = abs_orig.read_text(encoding="utf-8")
+        if not all(ord(c) < 128 for c in src):
+            raise ValueError(f"non-ASCII characters in {abs_orig}")
         rng = _per_file_rng(rel, seed)
         new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
         if new_text != src:

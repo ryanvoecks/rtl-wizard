@@ -1,5 +1,5 @@
 diff --git a/bench/verilog/test_bench_top.v b/bench/verilog/test_bench_top.v
-index 240f293..b6425f5 100644
+index 240f293..9f1feed 100644
 --- a/bench/verilog/test_bench_top.v
 +++ b/bench/verilog/test_bench_top.v
 @@ -76,7 +76,7 @@
@@ -20,6 +20,49 @@ index 240f293..b6425f5 100644
     begin
  $display(" ......................................................");
  $display(" :                                                    :");
+@@ -251,18 +251,30 @@ $display(" ......................................................");
+ $display(" :                                                    :");
+ $display(" :    Short Regression Run ...                        :");
+ $display(" :....................................................:");
+-	pt10_rd;
+-	pt01_wr;
+-	pt01_rd;
+-	pt10_wr;
+-	sw_dma1(2);
+-	sw_dma2(2);
+-	hw_dma1(1);
+-	hw_dma2(2);
+-	hw_dma3(2);
+-	hw_dma4(2);
+-	arb_test1;
+-	sw_ext_desc1(1);
++// One task per parallel sim -- compile once, dispatch via +TASK=<name>
++// and +ARG=<n> runtime plusargs.
++   begin : task_dispatch
++       reg [255:0] tb_task_name;
++       integer     tb_task_arg;
++       if (!$value$plusargs("TASK=%s", tb_task_name))
++           $fatal(1, "missing +TASK=<name> plusarg");
++       if (!$value$plusargs("ARG=%d", tb_task_arg))
++           $fatal(1, "missing +ARG=<n> plusarg");
++       if      (tb_task_name == "sw_dma1")      sw_dma1(tb_task_arg);
++       else if (tb_task_name == "sw_dma2")      sw_dma2(tb_task_arg);
++       else if (tb_task_name == "sw_ext_desc1") sw_ext_desc1(tb_task_arg);
++       else if (tb_task_name == "hw_dma1")      hw_dma1(tb_task_arg);
++       else if (tb_task_name == "hw_dma2")      hw_dma2(tb_task_arg);
++       else if (tb_task_name == "hw_dma3")      hw_dma3(tb_task_arg);
++       else if (tb_task_name == "hw_dma4")      hw_dma4(tb_task_arg);
++       else if (tb_task_name == "arb_test1")    arb_test1;
++       else if (tb_task_name == "pt10_rd")      pt10_rd;
++       else if (tb_task_name == "pt01_rd")      pt01_rd;
++       else if (tb_task_name == "pt10_wr")      pt10_wr;
++       else if (tb_task_name == "pt01_wr")      pt01_wr;
++       else
++           $fatal(1, "unknown +TASK=%0s", tb_task_name);
++   end
+    end
+ else
+    begin
 diff --git a/rtl/verilog/wb_dma_ch_rf.v b/rtl/verilog/wb_dma_ch_rf.v
 index b310139..de8f831 100644
 --- a/rtl/verilog/wb_dma_ch_rf.v
