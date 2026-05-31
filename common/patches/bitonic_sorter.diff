@@ -7,7 +7,7 @@ index 81304ac..b6810a8 100644
  module bitonic_sort #(
  	parameter DATA_WIDTH = 16,	// 
 -	parameter CHAN_NUM = 8,		// 
-+	parameter CHAN_NUM = 32,	// 
++	parameter CHAN_NUM = 32,	//
  	parameter DIR = 0,			// 0 - ascending, 1 - descending
  	parameter SIGNED = 0,		// 0 - unsigned, 1 - signed
  	parameter PIPE_REG = 1		// pipeline bypass, enable each N-th out reg 
