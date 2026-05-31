@@ -11,8 +11,12 @@ aren't shared across containers (TOS: one login per "device").
 import asyncio
 import json
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 
+from inspect_ai._util.working import sample_working_time
 from inspect_ai.agent import AgentState, agent
+from inspect_ai.event import ModelEvent, ToolEvent
+from inspect_ai.log import transcript
 from inspect_ai.log._samples import (
     set_active_sample_total_cost,
     set_active_sample_total_tokens,
@@ -24,6 +28,7 @@ from inspect_ai.model import (
     ChatMessageSystem,
     ChatMessageTool,
     ChatMessageUser,
+    GenerateConfig,
     ModelOutput,
     ModelUsage,
 )
@@ -88,30 +93,36 @@ def _resolve_model() -> str:
 
 
 def _parse_stream_json(
-    stdout: str, *, allow_truncated_tail: bool = False
-) -> list[dict]:
-    """Parse line-delimited JSON events from `claude --output-format stream-json`.
-    Non-JSON lines are silently dropped, and with `allow_truncated_tail`, an incomplete
-    final JSON line is also dropped.
-    """
-    lines = stdout.splitlines(keepends=True)
-    events: list[dict] = []
+    stdout: str,
+    line_elapsed_s: tuple[float, ...],
+    *,
+    allow_truncated_tail: bool = False,
+) -> list[tuple[dict, float]]:
+    """Parse line-delimited JSON events from `claude --output-format stream-json`."""
+    # Split on \n only so line indexes line up with line_elapsed_s.
+    lines = stdout.split("\n")
+    out: list[tuple[dict, float]] = []
+    n = len(lines)
+    final_t = line_elapsed_s[-1] if line_elapsed_s else 0.0
     for lineno, raw in enumerate(lines, 1):
-        is_last = lineno == len(lines)
+        is_last = lineno == n
         line = raw.strip()
         if not line or not line.startswith("{"):
             continue
         try:
-            events.append(json.loads(line))
+            event = json.loads(line)
         except json.JSONDecodeError as e:
             # A killed process may have flushed a partial final JSON line.
-            if allow_truncated_tail and is_last and not raw.endswith("\n"):
+            if allow_truncated_tail and is_last and not stdout.endswith("\n"):
                 break
             raise RuntimeError(
                 f"claude stdout line {lineno} is not valid JSON ({e}). "
                 f"Preview (first 200 chars): {line[:200]!r}"
             ) from e
-    return events
+        idx = lineno - 1
+        t = line_elapsed_s[idx] if idx < len(line_elapsed_s) else final_t
+        out.append((event, t))
+    return out
 
 
 def _tool_result_text(content) -> str:
@@ -201,19 +212,97 @@ def _tool_results_to_messages(msg: dict) -> list[ChatMessageTool]:
     return out
 
 
-def _events_to_messages(events: list[dict]) -> list[ChatMessage]:
-    """Convert stream-json events into Inspect ChatMessage objects."""
+def _events_to_messages(
+    events_with_times: list[tuple[dict, float]],
+    *,
+    model: str,
+    round_start_working: float,
+    round_start_wall: datetime,
+    prior_messages: list[ChatMessage],
+) -> list[ChatMessage]:
+    """Convert stream-json events into Inspect ChatMessage objects. Different behaviour
+    for assistant/user/tool messages."""
     messages: list[ChatMessage] = []
     asst_by_id: dict[str, ChatMessageAssistant] = {}
-    for event in events:
+    asst_event_by_id: dict[str, ModelEvent] = {}
+    asst_start_by_id: dict[str, float] = {}
+    tool_use_time: dict[str, float] = {}
+    tool_use_call: dict[str, ToolCall] = {}
+    prev_time = 0.0
+    for event, t in events_with_times:
         etype = event.get("type")
         msg = event.get("message") or {}
         if etype == "assistant":
+            msg_id = msg.get("id") or ""
             new = _merge_or_make_assistant(msg, asst_by_id)
             if new is not None:
+                start_t = prev_time
+                asst_start_by_id[msg_id] = start_t
+                input_snapshot = list(prior_messages) + list(messages)
                 messages.append(new)
+                mev = ModelEvent(
+                    model=model,
+                    input=input_snapshot,
+                    tools=[],
+                    tool_choice="auto",
+                    config=GenerateConfig(),
+                    output=ModelOutput(
+                        model=model,
+                        choices=[
+                            ChatCompletionChoice(
+                                message=new,
+                                stop_reason=(
+                                    "tool_calls" if new.tool_calls else "stop"
+                                ),
+                            )
+                        ],
+                    ),
+                    working_start=round_start_working + start_t,
+                    working_time=max(0.0, t - start_t),
+                    timestamp=round_start_wall + timedelta(seconds=start_t),
+                    completed=round_start_wall + timedelta(seconds=t),
+                )
+                asst_event_by_id[msg_id] = mev
+                transcript()._event(mev)
+            else:
+                existing = asst_event_by_id.get(msg_id)
+                if existing is not None:
+                    start_t = asst_start_by_id.get(msg_id, prev_time)
+                    existing.working_time = max(0.0, t - start_t)
+                    existing.completed = round_start_wall + timedelta(seconds=t)
+            for block in msg.get("content") or []:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    tu_id = block.get("id", "")
+                    tool_use_time[tu_id] = t
+                    tool_use_call[tu_id] = ToolCall(
+                        id=tu_id,
+                        function=block.get("name", ""),
+                        arguments=block.get("input") or {},
+                    )
+            prev_time = t
         elif etype == "user":
-            messages.extend(_tool_results_to_messages(msg))
+            for tm in _tool_results_to_messages(msg):
+                messages.append(tm)
+                tu_id = tm.tool_call_id or ""
+                use_t = tool_use_time.get(tu_id, prev_time)
+                call = tool_use_call.get(tu_id)
+                transcript()._event(
+                    ToolEvent(
+                        id=tu_id,
+                        function=call.function if call else "",
+                        arguments=call.arguments if call else {},
+                        result=tm.text,
+                        error=tm.error,
+                        working_start=round_start_working + use_t,
+                        working_time=max(0.0, t - use_t),
+                        timestamp=round_start_wall + timedelta(seconds=use_t),
+                        completed=round_start_wall + timedelta(seconds=t),
+                        message_id=tm.id,
+                    )
+                )
+            prev_time = t
+        else:
+            prev_time = t
     return messages
 
 
@@ -229,6 +318,14 @@ def _build_usage(final: dict) -> ModelUsage:
         input_tokens_cache_read=usage.get("cache_read_input_tokens"),
         total_cost=final.get("total_cost_usd"),
     )
+
+
+def _accumulate(key: str, value: int | float | None) -> None:
+    """Sum `value` into `store()[key]` across rounds."""
+    if value is None:
+        return
+    prev = store().get(key) or 0
+    store().set(key, prev + value)
 
 
 def _record_round_usage(model: str, usage: ModelUsage) -> None:
@@ -342,6 +439,10 @@ def claude_code_oauth(
                     state.messages.append(ChatMessageUser(content=prompt))
 
                 sid = store().get("cc_session_id")
+                # Anchor for back-dating per-event timing into the transcript.
+                round_start_working = sample_working_time()
+                round_start_wall = datetime.now(timezone.utc)
+                prior_messages = list(state.messages)
                 result = await asyncio.to_thread(
                     env.run_claude,
                     prompt,
@@ -356,13 +457,16 @@ def claude_code_oauth(
 
                 timed_out = result.returncode == TIMEOUT_RC
                 events = _parse_stream_json(
-                    result.stdout, allow_truncated_tail=timed_out
+                    result.stdout,
+                    result.line_elapsed_s,
+                    allow_truncated_tail=timed_out,
                 )
                 if not events and not timed_out:
                     raise RuntimeError(f"claude failed (rc={result.returncode})")
 
                 final = next(
-                    (e for e in reversed(events) if e.get("type") == "result"), None
+                    (e for e, _ in reversed(events) if e.get("type") == "result"),
+                    None,
                 )
                 if final is None and not timed_out:
                     raise RuntimeError("claude transcript contained no `result` event")
@@ -373,27 +477,37 @@ def claude_code_oauth(
                 if final is not None and final.get("is_error") and not max_turns_hit:
                     raise RuntimeError(f"claude reported error: {final.get('result')}")
 
-                state.messages.extend(_events_to_messages(events))
+                state.messages.extend(
+                    _events_to_messages(
+                        events,
+                        model=model,
+                        round_start_working=round_start_working,
+                        round_start_wall=round_start_wall,
+                        prior_messages=prior_messages,
+                    )
+                )
                 if final is not None:
                     finals.append(final)
                     _record_round_usage(model, _build_usage(final))
                     store().set("cc_session_id", final.get("session_id"))
-                    store().set("cc_num_turns", final.get("num_turns"))
-                    store().set("cc_duration_ms", final.get("duration_ms"))
+                    _accumulate("cc_num_turns", final.get("num_turns"))
+                    _accumulate("cc_duration_ms", final.get("duration_ms"))
+                    _accumulate("cc_duration_api_ms", final.get("duration_api_ms"))
                     store().set("cc_stop_subtype", final.get("subtype"))
+                    store().set("cc_total_cost_usd", sample_total_cost())
 
                 if timed_out:
                     state.messages.append(
                         ChatMessageSystem(
                             content=f"[Round {round_idx + 1}/{rounds} timed out "
-                            f"after {variant.timeout}s]"
+                            f"after {variant.timeout}s]\n"
                         )
                     )
                 elif max_turns_hit:
                     state.messages.append(
                         ChatMessageSystem(
                             content=f"[Round {round_idx + 1}/{rounds} reached max "
-                            f"turns of {variant.max_turns}]"
+                            f"turns of {variant.max_turns}]\n"
                         )
                     )
 

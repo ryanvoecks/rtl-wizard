@@ -25,6 +25,52 @@ from .container import OAUTH_TOKEN_ENV, Container, ExecResult
 SANDBOX_RTL_ROOT = "rtl"
 
 
+@dataclass(frozen=True)
+class ClaudeResult:
+    """`run_claude` output. `line_elapsed_s[i]` is the cumulative wall seconds
+    at the end of line `i` of `stdout`."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+    line_elapsed_s: tuple[float, ...]
+
+
+def _parse_script_timing(typescript: str, timing: str) -> tuple[float, ...]:
+    """Cumulative elapsed seconds at the end of each `\\n` in `typescript`."""
+    body = typescript
+    times: list[float] = []
+    if body.startswith("Script started on"):
+        nl = body.find("\n")
+        if nl >= 0:
+            times.append(0.0)
+            body = body[nl + 1 :]
+
+    body_bytes = body.encode("utf-8", errors="replace")
+    cum = 0.0
+    pos = 0
+    for raw in timing.splitlines():
+        parts = raw.split(None, 1)
+        if len(parts) < 2:
+            continue
+        try:
+            delay = float(parts[0])
+            nbytes = int(parts[1])
+        except ValueError:
+            continue
+        cum += delay
+        end = min(pos + nbytes, len(body_bytes))
+        i = pos
+        while True:
+            j = body_bytes.find(b"\n", i, end)
+            if j == -1:
+                break
+            times.append(cum)
+            i = j + 1
+        pos = end
+    return tuple(times)
+
+
 @dataclass
 class ClaudeEnv:
     """Scoped unix user + home dir inside the shared container, optionally
@@ -119,7 +165,7 @@ class ClaudeEnv:
         max_turns: int = 8,
         resume_session: str | None = None,
         timeout: float = 1800.0,
-    ) -> ExecResult:
+    ) -> ClaudeResult:
         """Run `claude -p` as the env's user."""
         claude_args = [
             "claude",
@@ -148,11 +194,13 @@ class ClaudeEnv:
 
         # `script` wraps claude in a PTY so Node line-flushes stdout, and
         # writes the typescript to a file inside the container so timeouts
-        # don't lose events to the SIGKILLed host docker-exec pipe.
+        # don't lose events. `-T` adds timing logs.
         log_rel = "claude.log"
+        timing_rel = "claude.timing"
         log_abs = f"{self.workdir}/{log_rel}"
+        timing_abs = f"{self.workdir}/{timing_rel}"
         shell_cmd = " ".join(shlex.quote(a) for a in claude_args)
-        cmd = ["script", "-q", "-f", "-c", shell_cmd, log_abs]
+        cmd = ["script", "-q", "-f", "-T", timing_abs, "-c", shell_cmd, log_abs]
 
         raw = self.container.execute(
             cmd,
@@ -169,10 +217,13 @@ class ClaudeEnv:
             timeout=timeout,
         )
 
-        return ExecResult(
+        stdout = self.read_file(log_rel)
+        timing = self.read_file(timing_rel)
+        return ClaudeResult(
             returncode=raw.returncode,
-            stdout=self.read_file(log_rel),
+            stdout=stdout,
             stderr=raw.stderr,
+            line_elapsed_s=_parse_script_timing(stdout, timing),
         )
 
     @staticmethod
