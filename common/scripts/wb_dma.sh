@@ -6,6 +6,7 @@ set -eo pipefail
 
 # task:arg pairs, ordered longest solo time first.
 TASKS=(
+    'hw_dma3:2'         # ~55s
     'hw_dma2:2'         # ~53s
     'sw_ext_desc1:1'    # ~33s
     'sw_dma2:2'         # ~23s
