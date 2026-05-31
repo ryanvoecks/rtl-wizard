@@ -469,13 +469,9 @@ def rewrite_design(
     for rel in design.rtl_files:
         abs_orig = design.root / design.rtl_dir / rel
         abs_copy = output_dir / design.rtl_dir / rel
-        # Skip files with non-ASCII characters to avoid pyslang offset misalignment.
-        try:
-            src = abs_orig.read_text(encoding="utf-8")
-            assert all(ord(c) < 128 for c in src)
-        except (UnicodeDecodeError, AssertionError):
-            print(f"  {rel}: skipped (non-ASCII source)")
-            continue
+        src = abs_orig.read_text(encoding="utf-8")
+        if not all(ord(c) < 128 for c in src):
+            raise ValueError(f"non-ASCII characters in {abs_orig}")
         rng = _per_file_rng(rel, seed)
         new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
         if new_text != src:
