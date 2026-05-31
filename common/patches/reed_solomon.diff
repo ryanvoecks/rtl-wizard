@@ -1,5 +1,27 @@
+diff --git a/example/rtl/RsDecodeDpRam.v b/example/rtl/RsDecodeDpRam.v
+index c81f413..a1b8fde 100644
+--- a/example/rtl/RsDecodeDpRam.v
++++ b/example/rtl/RsDecodeDpRam.v
+@@ -60,7 +60,7 @@ module RsDecodeDpRam (/*AUTOARG*/
+ 
+     //------------------------------------------------------------------
+     // + rRdEn
+-    //  - リードイネーブ?
++    //  - Read Enable
+     //------------------------------------------------------------------
+     reg  rRdEn;
+     always@(posedge clock) begin
+@@ -71,7 +71,7 @@ module RsDecodeDpRam (/*AUTOARG*/
+ 
+     //------------------------------------------------------------------
+     // + q
+-    //  - リード処理
++    //  - Read process
+     //------------------------------------------------------------------
+     reg [8:0] q;
+     always@(posedge clock) begin
 diff --git a/example/sim/simReedSolomon.v b/example/sim/simReedSolomon.v
-index f2bc83890..52a6b704b 100644
+index f2bc838..52a6b70 100644
 --- a/example/sim/simReedSolomon.v
 +++ b/example/sim/simReedSolomon.v
 @@ -773,5 +773,6 @@ module simReedSolomon;
