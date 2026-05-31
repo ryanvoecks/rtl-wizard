@@ -266,7 +266,7 @@ def _transform_decl_reorder(
             return pyslang.VisitAction.Advance
         # Collect permutable members whose own text has balanced directives.
         candidates: list[pyslang.SyntaxNode] = []
-        for m in node.members:
+        for m in cast(pyslang.ModuleDeclarationSyntax, node).members:
             if (
                 m.kind in PERMUTABLE_MEMBER_KINDS
                 and m.sourceRange.start.buffer == file_buffer
@@ -395,7 +395,7 @@ def _transform_signal_rename(
             if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
                 return pyslang.VisitAction.Skip
             if n.kind in RENAMABLE_DECL_KINDS:
-                for d in n.declarators:
+                for d in cast(pyslang.DataDeclarationSyntax, n).declarators:
                     if isinstance(d, pyslang.DeclaratorSyntax):
                         decl_names.add(d.name.valueText)
             return pyslang.VisitAction.Advance
