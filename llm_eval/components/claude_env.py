@@ -19,7 +19,7 @@ from mcp.server.fastmcp import FastMCP
 
 from common.config import DesignConfig
 
-from .container import OAUTH_HOME, Container, ExecResult
+from .container import OAUTH_TOKEN_ENV, Container, ExecResult
 
 # RTL is staged under this prefix inside each env's workdir
 SANDBOX_RTL_ROOT = "rtl"
@@ -69,24 +69,11 @@ class ClaudeEnv:
                 user=self.user,
             ),
         )
-        # Mirror the container's shared claude oauth credentials
-        self._check(
-            self.container.execute(
-                ["cp", "-r", f"{OAUTH_HOME}/.claude", f"{self.workdir}/.claude"],
-                user="root",
-            ),
-        )
-        self._check(
-            self.container.execute(
-                ["chown", "-R", f"{self.user}:{self.user}", f"{self.workdir}/.claude"],
-                user="root",
-            ),
-        )
         if self.mcp_factory is not None:
             self.url = self.container.mcp.mount(self.user, self.mcp_factory(self))
         return self
 
-    def __exit__(self, *_exc: object) -> None:
+    def __exit__(self, *_: object) -> None:
         # Unmount this env's FastMCP from the eval-wide MCP host
         if self.url:
             self.container.mcp.unmount(self.user)
@@ -169,12 +156,13 @@ class ClaudeEnv:
 
         raw = self.container.execute(
             cmd,
-            # Isolated sandbox environment
+            # Isolated sandbox. Forward OAUTH token generated inside container.
             env={
                 "IS_SANDBOX": "1",
                 "TMPDIR": self.tmpdir,
                 "HTTPS_PROXY": "http://127.0.0.1:8888",
                 "HTTP_PROXY": "http://127.0.0.1:8888",
+                OAUTH_TOKEN_ENV: self.container.oauth_token,
             },
             user=self.user,
             workdir=self.workdir,
