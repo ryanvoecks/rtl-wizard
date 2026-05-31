@@ -58,6 +58,15 @@ PERMUTABLE_MEMBER_KINDS = frozenset(
     }
 )
 
+# Scopes to descend into for reorder/rename
+SCOPE_KINDS = frozenset(
+    {
+        pyslang.SyntaxKind.ModuleDeclaration,
+        pyslang.SyntaxKind.GenerateBlock,
+        pyslang.SyntaxKind.GenerateRegion,
+    }
+)
+
 RENAME_PREFIX = "s_"  # prefix on renamed internal signals
 RENAME_DIGEST_BYTES = 6  # 12 hex chars; collision-resistant up to ~16M names
 RENAMABLE_DECL_KINDS = frozenset(
@@ -253,12 +262,11 @@ def _transform_decl_reorder(
 
     def visit(node: pyslang.SyntaxNode) -> pyslang.VisitAction:
         nonlocal moved
-        if node.kind != pyslang.SyntaxKind.ModuleDeclaration:
+        if node.kind not in SCOPE_KINDS:
             return pyslang.VisitAction.Advance
-        mod = cast(pyslang.ModuleDeclarationSyntax, node)
         # Collect permutable members whose own text has balanced directives.
         candidates: list[pyslang.SyntaxNode] = []
-        for m in mod.members:
+        for m in node.members:
             if (
                 m.kind in PERMUTABLE_MEMBER_KINDS
                 and m.sourceRange.start.buffer == file_buffer
@@ -380,15 +388,21 @@ def _transform_signal_rename(
                     if isinstance(d, pyslang.DeclaratorSyntax):
                         port_names.add(d.name.valueText)
 
-        # Module-body level variable/net declarations.
-        mod_level: set[str] = set()
-        for m in mod.members:
-            if m.kind in RENAMABLE_DECL_KINDS:
-                for d in m.declarators:
-                    if isinstance(d, pyslang.DeclaratorSyntax):
-                        mod_level.add(d.name.valueText)
+        # Variable/net declarations at any scope depth in the module.
+        decl_names: set[str] = set()
 
-        rename_set = (mod_level & unshadowed) - port_names
+        def decl_visit(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind in RENAMABLE_DECL_KINDS:
+                for d in n.declarators:
+                    if isinstance(d, pyslang.DeclaratorSyntax):
+                        decl_names.add(d.name.valueText)
+            return pyslang.VisitAction.Advance
+
+        mod.visit(decl_visit)
+
+        rename_set = (decl_names & unshadowed) - port_names
         if not rename_set:
             return
 
