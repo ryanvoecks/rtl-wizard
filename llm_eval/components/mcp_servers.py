@@ -26,7 +26,7 @@ from .scorers import _create_copy, evaluate_testbench
 OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
 
 
-def _synth_and_report(synth_target: TargetConfig, diff: str) -> str:
+def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
     """Apply `diff` to a copy of the design root, drive the ORFS synth flow
     into a fresh tempdir, then run analyse and return its logical-paths
     report."""

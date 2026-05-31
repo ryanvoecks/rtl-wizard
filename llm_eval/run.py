@@ -13,21 +13,27 @@ never fires between samples). To force a rebuild + fresh OAUTH login, call
 """
 
 import asyncio
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from components.container import Container
+from components.solvers import claude_code_agentic_solver
 from components.tasks import optimize_timing
 from inspect_ai import Task, eval_async, eval_retry_async
 from inspect_ai.log import read_eval_log
 
 from common.config import LLM_RESULTS
 
+# Inspect requires an API key (working or not) in environment, so set a fake one
+os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
+
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
 MODEL = "anthropic/claude-sonnet-4-5"
 EPOCHS = 3
+SOLVER = claude_code_agentic_solver
 
 
 async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
@@ -53,10 +59,11 @@ async def main_async() -> None:
     async with Container() as container:
         await run(
             run_dir,
-            optimize_timing(run_dir, container),
+            optimize_timing(run_dir, SOLVER(container)),
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,
+            sample_id="double_fpu",
         )
 
 

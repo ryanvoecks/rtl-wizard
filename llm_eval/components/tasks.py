@@ -10,68 +10,62 @@ from pathlib import Path
 
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
+from inspect_ai.solver import Solver
 
 from common.config import TargetConfig
 from common.targets import all_targets
 
 from .claude_env import SANDBOX_RTL_ROOT
-from .container import Container
 from .scorers import synthesis, testbench
-from .solvers import claude_code_solver
+
+
+def _design_prompt(target: TargetConfig) -> str:
+    """Task-side prompt: describes design, file layout, and goal. Solver-specific
+    instructions are appended before sending to Claude."""
+    design = target.design
+    top_file = next(
+        (p for p in design.rtl_files if p.stem == design.top_module),
+        design.rtl_files[0],
+    )
+    top_sandbox = f"{SANDBOX_RTL_ROOT}/{top_file}"
+    return (
+        f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
+        f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
+        "increase the maximum clock frequency of the design by as much "
+        "as possible.\n\n"
+        "Constraints:\n"
+        "- Preserve functional behaviour.\n"
+        "- The design must remain synthesisable by yosys.\n"
+        "- The area/power of the design should not increase by more than "
+        "10%.\n"
+        f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place. Do not "
+        "rename them."
+    )
 
 
 def _build_sample(target: TargetConfig) -> Sample:
     design = target.design
-    rel_files = list(design.rtl_files)
-    if not rel_files:
-        raise FileNotFoundError(
-            f"design {design.benchmark}/{design.name}/{design.variant} has no "
-            "RTL files - run `git submodule update --init` if the upstream "
-            "repo is a submodule"
-        )
-    top_file = next((p for p in rel_files if p.stem == design.top_module), rel_files[0])
-    top_sandbox = f"{SANDBOX_RTL_ROOT}/{top_file}"
+    if not design.rtl_files:
+        raise FileNotFoundError(f"design {design.name} has no files - run setup.sh")
     return Sample(
-        id=f"{design.benchmark}/{design.name}/{design.variant}",
-        input=(
-            f"There is an RTL design in `{SANDBOX_RTL_ROOT}/` (top module: "
-            f"`{design.top_module}`, in `{top_sandbox}`). Your job is to "
-            "increase the maximum clock frequency of the design by as much "
-            " as possible.\n\n"
-            "Constraints:\n"
-            "- Preserve functional behaviour. You cannot read the "
-            "testbench, but you can call the `run_testbench` MCP tool to "
-            "run it against your current RTL - it returns the testbench's "
-            "exit code and stdout so you can validate edits.\n"
-            "- The design must remain synthesisable by yosys.\n"
-            "- The area/power of the design should not increase by more than "
-            "10%."
-            f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place; do not "
-            "rename them.\n\n"
-            "To measure your progress, call the `synth_report` MCP "
-            "tool: it synthesises your current RTL through ORFS and returns "
-            "a post-synth logical-paths report - the worst register-to-"
-            "register groups ranked by slack. Use it to find which paths to "
-            "focus on. It will also give you an update on the area/power of "
-            "the design."
-        ),
+        id=design.name,
+        input=_design_prompt(target),
         target="",
         metadata={"synth_target": target},
     )
 
 
 @task
-def optimize_timing(output_dir: Path, container: Container) -> Task:
+def optimize_timing(output_dir: Path, solver: Solver) -> Task:
     # Dataset is all valid synthesis targets
     dataset = [_build_sample(t) for t in all_targets]
 
     # 2 requirements for progress: synthesisable and functionally correct
     scorers = [synthesis(output_dir), testbench(output_dir)]
 
-    # Each solver runs in an isolated ClaudeEnv within a shared container
     return Task(
         dataset=dataset,
-        solver=claude_code_solver(container),
+        solver=solver,
         scorer=scorers,
         tags=["claude-code"],
     )

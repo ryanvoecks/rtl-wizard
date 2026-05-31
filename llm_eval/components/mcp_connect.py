@@ -13,11 +13,12 @@ import threading
 
 import uvicorn
 from mcp.server.fastmcp import FastMCP
+from sse_starlette.sse import AppStatus
 from starlette.applications import Starlette
 from starlette.routing import Mount
 
-# How long to wait for uvicorn to bind the listener before giving up.
-STARTUP_TIMEOUT = 5.0
+STARTUP_TIMEOUT = 5.0  # How long to wait for uvicorn to bind the listener
+SHUTDOWN_TIMEOUT = 5.0  # How long to wait for in-flight SSE streams to drain
 
 
 class SuppressAbortResponse:
@@ -32,17 +33,23 @@ class SuppressAbortResponse:
             await self.app(scope, receive, send)
             return
         started = False
+        completed = False
         broken = False
 
         async def wrapped_send(message):
-            nonlocal started, broken
+            nonlocal started, completed, broken
             if broken:
                 return
-            if message["type"] == "http.response.start":
+            msg_type = message["type"]
+            if msg_type == "http.response.start":
                 if started:
                     broken = True
                     return
                 started = True
+            elif msg_type == "http.response.body" and not message.get(
+                "more_body", False
+            ):
+                completed = True
             await send(message)
 
         try:
@@ -50,6 +57,18 @@ class SuppressAbortResponse:
         except Exception:
             if not started:
                 raise
+        finally:
+            if started and not completed and not broken:
+                try:
+                    await send(
+                        {
+                            "type": "http.response.body",
+                            "body": b"",
+                            "more_body": False,
+                        }
+                    )
+                except Exception:
+                    pass
 
 
 @functools.cache
@@ -127,9 +146,10 @@ class MCPService:
 
     async def __aexit__(self, *_exc: object) -> None:
         assert self._server is not None and self._task is not None
+        AppStatus.should_exit = True
         self._server.should_exit = True
         try:
-            await asyncio.wait_for(self._task, timeout=5.0)
+            await asyncio.wait_for(self._task, timeout=SHUTDOWN_TIMEOUT)
         except asyncio.TimeoutError:
             self._server.force_exit = True
             await self._task
