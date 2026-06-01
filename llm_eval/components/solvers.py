@@ -52,16 +52,15 @@ from inspect_ai.util._limit import (
 from mcp.server.fastmcp import FastMCP
 
 from common.config import TargetConfig
-
-from .claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
-from .container import TIMEOUT_RC, Container
-from .mcp_servers import OUTPUT_LIMIT, _synth_and_report, make_server
-from .scorers import evaluate_testbench
+from components.claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
+from components.container import TIMEOUT_RC, current_container
+from components.mcp_servers import OUTPUT_LIMIT, _synth_and_report, make_server
+from components.scorers import evaluate_testbench
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
-AGENT_TURNS = 60
-AGENT_TIMEOUT = 3600
+AGENT_TURNS = 3
+AGENT_TIMEOUT = 30
 ONE_ROUND_TURNS = 20
 ONE_ROUND_TIMEOUT = 1200
 ITERATIVE_ROUNDS = 3
@@ -402,7 +401,6 @@ def _build_feedback(synth_target: TargetConfig, diff: str) -> str:
 @agent
 def claude_code_oauth(
     synth_target: TargetConfig,
-    container: Container,
     variant: SolverVariant,
 ):
     async def execute(state: AgentState) -> AgentState:
@@ -422,7 +420,7 @@ def claude_code_oauth(
         max_turns_hit = False
 
         # Per-sample environment in a shared container
-        with ClaudeEnv(container, mcp_factory) as env:
+        with ClaudeEnv(current_container(), mcp_factory) as env:
             # Stage RTL. Each sample gets a clean copy
             for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
                 env.write_file(
@@ -454,6 +452,7 @@ def claude_code_oauth(
                     timeout=variant.timeout,
                 )
                 store().set("cc_stderr_tail", result.stderr[-4000:])
+                store().set("cc_stdout_tail", result.stdout[-4000:])
 
                 timed_out = result.returncode == TIMEOUT_RC
                 events = _parse_stream_json(
@@ -462,7 +461,11 @@ def claude_code_oauth(
                     allow_truncated_tail=timed_out,
                 )
                 if not events and not timed_out:
-                    raise RuntimeError(f"claude failed (rc={result.returncode})")
+                    raise RuntimeError(
+                        f"claude failed (rc={result.returncode}); "
+                        f"stdout tail: {result.stdout[-2000:]!r}; "
+                        f"stderr tail: {result.stderr[-2000:]!r}"
+                    )
 
                 final = next(
                     (e for e, _ in reversed(events) if e.get("type") == "result"),
@@ -575,7 +578,7 @@ def claude_code_oauth(
     return execute
 
 
-def _make_solver(container: Container, variant: SolverVariant) -> Solver:
+def _make_solver(variant: SolverVariant) -> Solver:
     """Shared solver body parameterised by variant."""
 
     async def solve(state: TaskState, generate: Generate) -> TaskState:
@@ -598,7 +601,6 @@ def _make_solver(container: Container, variant: SolverVariant) -> Solver:
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(
             synth_target=synth_target,
-            container=container,
             variant=variant,
         )
         try:
@@ -615,7 +617,7 @@ def _make_solver(container: Container, variant: SolverVariant) -> Solver:
 
 
 @solver
-def claude_code_agentic_solver(container: Container) -> Solver:
+def claude_code_agentic_solver() -> Solver:
     """Full agentic mode with functional and synthesis MCP tools."""
 
     instructions = (
@@ -637,11 +639,11 @@ def claude_code_agentic_solver(container: Container) -> Solver:
         instructions=instructions,
     )
 
-    return _make_solver(container, agent_config)
+    return _make_solver(agent_config)
 
 
 @solver
-def claude_code_no_feedback_solver(container: Container) -> Solver:
+def claude_code_no_feedback_solver() -> Solver:
     """No feedback baseline. No tools and no PPA info in prompt."""
 
     instructions = (
@@ -658,11 +660,11 @@ def claude_code_no_feedback_solver(container: Container) -> Solver:
         instructions=instructions,
     )
 
-    return _make_solver(container, no_feedback_config)
+    return _make_solver(no_feedback_config)
 
 
 @solver
-def claude_code_single_feedback_solver(container: Container) -> Solver:
+def claude_code_single_feedback_solver() -> Solver:
     """One-shot baseline. No tools, but a post-synth PPA report is included
     in the initial prompt."""
 
@@ -681,11 +683,11 @@ def claude_code_single_feedback_solver(container: Container) -> Solver:
         include_initial_report=True,
     )
 
-    return _make_solver(container, single_feedback_config)
+    return _make_solver(single_feedback_config)
 
 
 @solver
-def claude_code_iterative_solver(container: Container) -> Solver:
+def claude_code_iterative_solver() -> Solver:
     """Iterative mode with a fixed number of feedback rounds. After each round the
     testbench and synth are run against the current RTL and results are fed back."""
 
@@ -706,4 +708,4 @@ def claude_code_iterative_solver(container: Container) -> Solver:
         include_initial_report=True,
     )
 
-    return _make_solver(container, iterative_config)
+    return _make_solver(iterative_config)

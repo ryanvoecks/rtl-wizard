@@ -14,9 +14,8 @@ from inspect_ai.solver import Solver
 
 from common.config import TargetConfig
 from common.targets import all_targets
-
-from .claude_env import SANDBOX_RTL_ROOT
-from .scorers import synthesis, testbench
+from components.claude_env import SANDBOX_RTL_ROOT
+from components.scorers import synthesis, testbench
 
 
 def _design_prompt(target: TargetConfig) -> str:
