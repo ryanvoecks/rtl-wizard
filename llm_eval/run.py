@@ -30,7 +30,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
-MODEL = "anthropic/claude-sonnet-4-5"
+MODEL = "anthropic/claude-sonnet-4-6"
 EPOCHS = 1
 SOLVER = claude_code_agentic_solver
 
@@ -58,7 +58,7 @@ async def main_async() -> None:
     async with Container():
         await run(
             run_dir,
-            optimize_timing(run_dir, SOLVER()),
+            optimize_timing(str(run_dir), SOLVER()),
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,

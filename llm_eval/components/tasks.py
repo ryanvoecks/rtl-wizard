@@ -6,8 +6,6 @@ ClaudeEnv (fresh unix user + workdir inside the shared container) and
 stages RTL into it, so samples are fully independent.
 """
 
-from pathlib import Path
-
 from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 from inspect_ai.solver import Solver
@@ -55,7 +53,7 @@ def _build_sample(target: TargetConfig) -> Sample:
 
 
 @task
-def optimize_timing(output_dir: Path, solver: Solver) -> Task:
+def optimize_timing(output_dir: str, solver: Solver) -> Task:
     # Dataset is all valid synthesis targets
     dataset = [_build_sample(t) for t in all_targets]
 

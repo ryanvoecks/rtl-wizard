@@ -99,8 +99,8 @@ def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
         return str(e), 1
 
 
-def _sample_dir(output_dir: Path, state: TaskState) -> Path:
-    p = output_dir / str(state.sample_id) / f"epoch_{state.epoch}"
+def _sample_dir(output_dir: str, state: TaskState) -> Path:
+    p = Path(output_dir) / str(state.sample_id) / f"epoch_{state.epoch}"
     p.mkdir(parents=True, exist_ok=True)
     return p
 
@@ -111,7 +111,7 @@ def _stored_diff() -> str:
 
 
 @scorer(metrics=[accuracy()])
-def synthesis(output_dir: Path) -> Scorer:
+def synthesis(output_dir: str) -> Scorer:
     """Cheap synthesisability check for an arbitrary RTL design."""
 
     async def score(state: TaskState, target: Target) -> Score:
@@ -139,7 +139,7 @@ def synthesis(output_dir: Path) -> Scorer:
 
 
 @scorer(metrics=[accuracy()])
-def testbench(output_dir: Path) -> Scorer:
+def testbench(output_dir: str) -> Scorer:
     """Run the design's upstream testbench against the agent's RTL."""
 
     async def score(state: TaskState, target: Target) -> Score:
