@@ -59,8 +59,8 @@ from components.scorers import evaluate_testbench
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
-AGENT_TURNS = 3
-AGENT_TIMEOUT = 30
+AGENT_TURNS = 60
+AGENT_TIMEOUT = 3600
 ONE_ROUND_TURNS = 20
 ONE_ROUND_TIMEOUT = 1200
 ITERATIVE_ROUNDS = 3
