@@ -20,3 +20,5 @@ for n in "${TCASES[@]}"; do
     diff -wq "case${n}_tv_data_out.txt" "testvectors/case${n}_tv/output.txt"
 done
 diff -wq case1_pathmetric_out.txt testvectors/case1_tv/path_metric.txt
+echo "viterbi: ${#TCASES[@]}/${#TCASES[@]} testcase decode outputs match goldens" \
+     "(case1 also matches path-metric golden)"
