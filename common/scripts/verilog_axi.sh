@@ -38,11 +38,18 @@ for pid in "${PIDS[@]}"; do
     if ! wait "$pid"; then fail=1; fi
 done
 
+total_tests=0
 for g in 0 1 2 3 4; do
     if ! grep -q 'FAIL=0 SKIP=0' "axi_sim_g${g}.log"; then
         echo "verilog_axi: group $g had failures or skips:" >&2
         tail -20 "axi_sim_g${g}.log" >&2
         exit 1
     fi
+    line=$(grep -E 'TESTS=[0-9]+ PASS=[0-9]+ FAIL=0 SKIP=0' "axi_sim_g${g}.log" \
+           | tail -1)
+    n=$(echo "$line" | sed -nE 's/.*TESTS=([0-9]+).*/\1/p')
+    total_tests=$(( total_tests + ${n:-0} ))
+    echo "verilog_axi g${g}: ${line#* ** }"
 done
+echo "verilog_axi: ${total_tests}/${total_tests} cocotb cases PASS across 5 groups"
 [ "$fail" -eq 0 ] || exit 1
