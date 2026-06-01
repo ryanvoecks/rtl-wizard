@@ -17,11 +17,10 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
+from components.claude_env import ClaudeEnv, build_diff_from_env
+from components.scorers import _create_copy, evaluate_testbench
 from eda_eval.analyse import analyse
 from eda_eval.run import run_job
-
-from .claude_env import ClaudeEnv, build_diff_from_env
-from .scorers import _create_copy, evaluate_testbench
 
 OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
 

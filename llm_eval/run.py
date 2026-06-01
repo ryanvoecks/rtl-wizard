@@ -14,7 +14,6 @@ never fires between samples). To force a rebuild + fresh OAUTH login, call
 
 import asyncio
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -24,15 +23,15 @@ from components.tasks import optimize_timing
 from inspect_ai import Task, eval_async, eval_retry_async
 from inspect_ai.log import read_eval_log
 
-from common.config import LLM_RESULTS
+from common.config import ARTIFACTS
 
 # Inspect requires an API key (working or not) in environment, so set a fake one
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
-MODEL = "anthropic/claude-sonnet-4-5"
-EPOCHS = 3
+MODEL = "anthropic/claude-sonnet-4-6"
+EPOCHS = 1
 SOLVER = claude_code_agentic_solver
 
 
@@ -52,14 +51,14 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
-    run_dir = LLM_RESULTS / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    run_dir = ARTIFACTS / "llm" / "synth_feedback_agent"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 
-    async with Container() as container:
+    async with Container():
         await run(
             run_dir,
-            optimize_timing(run_dir, SOLVER(container)),
+            optimize_timing(str(run_dir), SOLVER()),
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,

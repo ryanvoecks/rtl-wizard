@@ -19,6 +19,7 @@ EDA_RUNS = REPO_ROOT / "eda_results"
 LLM_EVAL = REPO_ROOT / "llm_eval"
 LLM_RESULTS = REPO_ROOT / "llm_results"
 EXTERNAL = REPO_ROOT / "external"
+ARTIFACTS = REPO_ROOT / "artifacts"
 
 # Submodules
 AES = EXTERNAL / "aes"

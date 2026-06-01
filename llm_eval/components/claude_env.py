@@ -18,8 +18,7 @@ from pathlib import PurePosixPath
 from mcp.server.fastmcp import FastMCP
 
 from common.config import DesignConfig
-
-from .container import OAUTH_TOKEN_ENV, Container, ExecResult
+from components.container import OAUTH_TOKEN_ENV, Container, ExecResult
 
 # RTL is staged under this prefix inside each env's workdir
 SANDBOX_RTL_ROOT = "rtl"

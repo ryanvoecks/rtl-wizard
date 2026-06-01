@@ -10,12 +10,12 @@ inside the `async with` block."""
 from __future__ import annotations
 
 import subprocess
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from common.config import LLM_EVAL
-
-from .mcp_connect import MCPService, discover_host_ip
+from components.mcp_connect import MCPService, discover_host_ip
 
 # Setup config
 SANDBOX_DIR = LLM_EVAL / "sandbox"
@@ -27,6 +27,19 @@ OAUTH_TOKEN_ENV = "CLAUDE_CODE_OAUTH_TOKEN"
 
 # Conventional GNU `timeout` exit code
 TIMEOUT_RC = 124
+
+
+_current_container: ContextVar[Container | None] = ContextVar(
+    "current_container", default=None
+)
+
+
+def current_container() -> Container:
+    """Return the live `Container` set by the active `async with Container()`."""
+    c = _current_container.get()
+    if c is None:
+        raise RuntimeError("no active Container")
+    return c
 
 
 @dataclass
@@ -47,9 +60,11 @@ class Container:
     def __init__(self) -> None:
         self.mcp = MCPService()
         self.oauth_token: str = ""  # populated by __aenter__
+        self._token: Token[Container | None] | None = None  # contextvar reset token
 
     async def __aenter__(self) -> Container:
         """Build the container if missing, otherwise just restart the existing one."""
+        self._token = _current_container.set(self)
         self._compose("create")
         self._compose("start")
 
@@ -78,6 +93,9 @@ class Container:
         """Tear down the MCP host and stop the container."""
         await self.mcp.__aexit__()
         self._compose("stop")
+        if self._token is not None:
+            _current_container.reset(self._token)
+            self._token = None
 
     def teardown(self) -> None:
         """Remove the container entirely. Forces a rebuild + re-`setup-token`."""
