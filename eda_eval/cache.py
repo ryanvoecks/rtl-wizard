@@ -1,16 +1,15 @@
 """Content-addressed cache for ORFS synth runs.
 
-Hashes the cache-relevant subset of a `RunConfig` (study knobs, period,
-side, top module, clock port, RTL contents, flow targets) and indexes
-prior outputs by that hash in a single `eda_results/.cache.json` file so
-re-runs with identical inputs can skip the flow and copy the cached
-output directory.
+Indexes flow outputs by a hash of the cache-relevant `RunConfig` fields
+(study knobs, period, side, top module, clock port, RTL contents, flow
+targets), so re-runs with identical inputs share a single materialised
+directory under `eda_results/_cache/<hash>/`. RTL hashing is comment-
+and whitespace-insensitive; preprocessor directives are preserved.
 
-RTL hashing normalises whitespace and strips comments so cosmetic edits
-do not bust the cache. Preprocessor directives are preserved.
-
-Concurrent writers are serialised via `fcntl.flock` on a sibling
-`.cache.json.lock` file.
+`lookup` returns the cache entry for a run if present. `publish`
+inserts a freshly completed run, deduplicating against concurrent
+writers. `link` points an arbitrary destination at a cache entry so
+artifacts are reachable from both locations without copying.
 """
 
 from __future__ import annotations
@@ -20,7 +19,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import shutil
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
@@ -28,7 +27,7 @@ from pathlib import Path
 
 from common.config import EDA_RUNS, DesignConfig, RunConfig
 
-CACHE_INDEX = EDA_RUNS / ".cache.json"
+EDA_CACHE = EDA_RUNS / "_cache"
 RTL_SUFFIXES = {".v", ".sv", ".vh", ".svh"}
 
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -90,29 +89,16 @@ def compute_run_hash(run: RunConfig) -> str:
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
 
-def load_index() -> dict[str, str]:
-    if not CACHE_INDEX.is_file():
-        return {}
-    try:
-        data = json.loads(CACHE_INDEX.read_text())
-    except (json.JSONDecodeError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
-
-
-def save_index(index: dict[str, str]) -> None:
-    CACHE_INDEX.parent.mkdir(parents=True, exist_ok=True)
-    tmp = CACHE_INDEX.with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(index, sort_keys=True, indent=2))
-    os.replace(tmp, CACHE_INDEX)
+def cache_path(run: RunConfig) -> Path:
+    """Canonical cache directory for `run` (may not yet exist)."""
+    return EDA_CACHE / compute_run_hash(run)
 
 
 @contextmanager
 def _locked() -> Iterator[None]:
-    """Hold an exclusive flock on `.cache.json.lock` for the duration of
-    a read-modify-write on the cache index."""
-    CACHE_INDEX.parent.mkdir(parents=True, exist_ok=True)
-    lock_path = CACHE_INDEX.with_suffix(".json.lock")
+    """Hold an exclusive lock on `_cache/.lock` so publishing it atomic."""
+    EDA_CACHE.mkdir(parents=True, exist_ok=True)
+    lock_path = EDA_CACHE / ".lock"
     with lock_path.open("w") as lock_fp:
         fcntl.flock(lock_fp.fileno(), fcntl.LOCK_EX)
         try:
@@ -122,40 +108,34 @@ def _locked() -> Iterator[None]:
 
 
 def lookup(run: RunConfig) -> Path | None:
-    """Return the cached output dir for `run`, or None on miss.
-    Prunes stale entries (target dir or run_config.json missing)."""
-    h = compute_run_hash(run)
+    """Return the cached directory for a completed `run`, or None on miss."""
+    target = cache_path(run)
+    if target.is_dir() and (target / RunConfig.FILENAME).is_file():
+        return target
+    return None
+
+
+def publish(work_dir: Path, run: RunConfig) -> Path:
+    """Promote `work_dir` to its canonical cache slot."""
+    target = cache_path(run)
     with _locked():
-        index = load_index()
-        rel = index.get(h)
-        if rel is None:
-            return None
-        cached = EDA_RUNS / rel
-        if cached.is_dir() and (cached / RunConfig.FILENAME).is_file():
-            return cached
-        del index[h]
-        save_index(index)
-        return None
+        if target.is_dir() and (target / RunConfig.FILENAME).is_file():
+            shutil.rmtree(work_dir, ignore_errors=True)
+            return target
+        if target.exists():
+            shutil.rmtree(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.rename(work_dir, target)
+        return target
 
 
-def record(run: RunConfig) -> None:
-    """Insert `run.output_dir` into the cache index under `run`'s hash.
-    No-op when output_dir is outside EDA_RUNS, since those aren't persistent."""
-    try:
-        rel = run.output_dir.resolve().relative_to(EDA_RUNS.resolve()).as_posix()
-    except ValueError:
+def link(dst: Path, src: Path) -> None:
+    """Symlink `dst` -> `src`."""
+    if dst.resolve() == src.resolve():
         return
-    h = compute_run_hash(run)
-    with _locked():
-        index = load_index()
-        index[h] = rel
-        save_index(index)
-
-
-def replay(src: Path, dst: Path) -> None:
-    """Populate `dst` from cached `src` via `cp -R --reflink=auto`."""
-    dst.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        ["cp", "-R", "--reflink=auto", f"{src}/.", str(dst)],
-        check=True,
-    )
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    if dst.is_symlink() or dst.is_file():
+        dst.unlink()
+    elif dst.is_dir():
+        shutil.rmtree(dst)
+    dst.symlink_to(src)
