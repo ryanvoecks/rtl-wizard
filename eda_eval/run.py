@@ -9,9 +9,11 @@ calibration step is needed. Artifacts land under
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import os
 import shutil
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 
@@ -23,7 +25,7 @@ from common.config import (
     RunConfig,
 )
 from common.targets import resolve_target
-from eda_eval.cache import lookup, record, replay
+from eda_eval.cache import EDA_CACHE, link, lookup, publish
 
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
@@ -113,23 +115,29 @@ def prune(run: RunConfig) -> None:
 
 
 def run_job(run: RunConfig) -> int:
-    """Invoke the rendered per-design Makefile, then prune intermediates."""
-    run.output_dir.mkdir(parents=True, exist_ok=True)
-    run.dump(run.output_dir / RunConfig.FILENAME)
+    """Run the ORFS flow into the content-addressed cache, symlinking the
+    requested `output_dir` at the resulting cache entry. On a cache hit
+    no flow work is done; the destination is just relinked."""
     cached = lookup(run)
     if cached is not None:
-        replay(cached, run.output_dir)
+        link(run.output_dir, cached)
         return 0
-    makefile = snapshot_inputs(run)
-    log_path = run.output_dir / "flow.log"
+
+    EDA_CACHE.mkdir(parents=True, exist_ok=True)
+    work_dir = Path(tempfile.mkdtemp(dir=EDA_CACHE, prefix=".work-"))
+    work_run = dataclasses.replace(run, output_dir=work_dir)
+    work_run.dump(work_dir / RunConfig.FILENAME)
+    makefile = snapshot_inputs(work_run)
+    log_path = work_dir / "flow.log"
     with log_path.open("w") as log:
         rc = subprocess.run(
             ["make", "-C", str(makefile.parent)],
             stdout=log,
             stderr=subprocess.STDOUT,
         ).returncode
-    prune(run)
-    record(run)
+    prune(work_run)
+    final = publish(work_dir, run)
+    link(run.output_dir, final)
     return rc
 
 
