@@ -10,7 +10,7 @@ inside the `async with` block."""
 from __future__ import annotations
 
 import subprocess
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -60,7 +60,7 @@ class Container:
     def __init__(self) -> None:
         self.mcp = MCPService()
         self.oauth_token: str = ""  # populated by __aenter__
-        self._token: object | None = None  # contextvar reset token
+        self._token: Token[Container | None] | None = None  # contextvar reset token
 
     async def __aenter__(self) -> Container:
         """Build the container if missing, otherwise just restart the existing one."""
