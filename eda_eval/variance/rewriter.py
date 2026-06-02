@@ -99,9 +99,6 @@ def _resolve_include_dirs(design: DesignConfig) -> list[str]:
     return out
 
 
-
-
-
 def _collect_hierarchical_refs(design: DesignConfig) -> frozenset[str]:
     """Find all hierarchically referenced identifiers."""
 
