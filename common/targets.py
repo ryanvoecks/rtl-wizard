@@ -92,10 +92,10 @@ viterbi_target = TargetConfig(
     cfg=StudyConfig(),
 )
 
-# realised_pressure=1.28.
+# realised_pressure=1.26. fmax loosened by 10% to avoid CTS crashes.
 e203_target = TargetConfig(
     design=e203_reference,
-    period_ns=3.5049,
+    period_ns=3.8943,
     side_um=644.7,
     cfg=StudyConfig(),
 )
