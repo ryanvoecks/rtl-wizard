@@ -49,7 +49,8 @@ def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
         log = log_path.read_text() if log_path.is_file() else ""
         raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
 
-    return analyse(run)
+    df = analyse(run)
+    return df.to_string(index=False)
 
 
 class Tools:

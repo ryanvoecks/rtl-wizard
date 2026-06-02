@@ -477,9 +477,7 @@ def claude_code_oauth(
                 max_turns_hit = (
                     final is not None and final.get("subtype") == "error_max_turns"
                 )
-                if final is not None and final.get("is_error") and not max_turns_hit:
-                    raise RuntimeError(f"claude reported error: {final.get('result')}")
-
+                # Convert the streamed events into messages BEFORE any error raise.
                 state.messages.extend(
                     _events_to_messages(
                         events,
@@ -489,6 +487,13 @@ def claude_code_oauth(
                         prior_messages=prior_messages,
                     )
                 )
+                if final is not None and final.get("is_error") and not max_turns_hit:
+                    # Preserve the full raw stream-json: the per-sample claude.log is
+                    # wiped at env teardown, so this store entry is the only durable
+                    # record of a runaway (e.g. 32k output-token) turn.
+                    store().set("cc_error_stdout", result.stdout[-500_000:])
+                    raise RuntimeError(f"claude reported error: {final.get('result')}")
+
                 if final is not None:
                     finals.append(final)
                     _record_round_usage(model, _build_usage(final))
