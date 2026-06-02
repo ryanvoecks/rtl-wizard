@@ -281,24 +281,34 @@ def _transform_decl_reorder(
         nonlocal moved
         if node.kind not in SCOPE_KINDS:
             return pyslang.VisitAction.Advance
-        # Collect permutable members whose own text has balanced directives.
+        # Collect permutable members whose own text has balanced directives,
+        # and sibling wire/reg declarations that act as reorder barriers.
         candidates: list[pyslang.SyntaxNode] = []
+        barrier_starts: list[int] = []
         for m in cast(pyslang.ModuleDeclarationSyntax, node).members:
-            if (
+            if m.sourceRange.start.buffer != file_buffer:
+                continue
+            if m.kind in RENAMABLE_DECL_KINDS:
+                barrier_starts.append(m.sourceRange.start.offset)
+            elif (
                 m.kind in PERMUTABLE_MEMBER_KINDS
-                and m.sourceRange.start.buffer == file_buffer
                 and m.sourceRange.end.buffer == file_buffer
             ):
                 s, e = m.sourceRange.start.offset, m.sourceRange.end.offset
                 if _directives_balanced(src[s:e]):
                     candidates.append(m)
-        # Split into groups based on `ifdef/`endif to avoid swaps across this boundary.
+        # Split into groups based on `ifdef/`endif and declaration barriers.
         groups: list[list[pyslang.SyntaxNode]] = []
         current: list[pyslang.SyntaxNode] = []
         prev_end: int | None = None
         for m in candidates:
             s = m.sourceRange.start.offset
-            if prev_end is not None and not _directives_balanced(src[prev_end:s]):
+            crosses_barrier = prev_end is not None and any(
+                prev_end <= bs < s for bs in barrier_starts
+            )
+            if prev_end is not None and (
+                not _directives_balanced(src[prev_end:s]) or crosses_barrier
+            ):
                 if len(current) >= 2:
                     groups.append(current)
                 current = []
@@ -421,6 +431,42 @@ def _transform_signal_rename(
         mod.visit(decl_visit)
 
         rename_set = (decl_names & unshadowed) - port_names - hier_refs
+        if not rename_set:
+            return
+
+        # Drop any rename candidate whose lexical occurrence count in the
+        # module source disagrees with the AST occurrence count.
+        comment_re = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+        string_re = re.compile(r'"(?:[^"\\]|\\.)*"')
+        mod_src = src[mod.sourceRange.start.offset : mod.sourceRange.end.offset]
+        mod_src_clean = string_re.sub(" ", comment_re.sub(" ", mod_src))
+
+        ast_counts: Counter = Counter()
+
+        def count_idents(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind == pyslang.SyntaxKind.Declarator:
+                ast_counts[cast(pyslang.DeclaratorSyntax, n).name.valueText] += 1
+            elif n.kind == pyslang.SyntaxKind.IdentifierName:
+                ast_counts[
+                    cast(pyslang.IdentifierNameSyntax, n).identifier.valueText
+                ] += 1
+            elif n.kind == pyslang.SyntaxKind.IdentifierSelectName:
+                ast_counts[
+                    cast(pyslang.IdentifierSelectNameSyntax, n).identifier.valueText
+                ] += 1
+            return pyslang.VisitAction.Advance
+
+        mod.visit(count_idents)
+
+        word_re = re.compile(
+            r"\b(" + "|".join(re.escape(n) for n in rename_set) + r")\b"
+        )
+        lex_counts: Counter = Counter()
+        for m in word_re.finditer(mod_src_clean):
+            lex_counts[m.group(1)] += 1
+        rename_set = {n for n in rename_set if lex_counts[n] == ast_counts[n]}
         if not rename_set:
             return
 
