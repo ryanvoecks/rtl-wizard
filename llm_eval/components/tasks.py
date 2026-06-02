@@ -33,8 +33,6 @@ def _design_prompt(target: TargetConfig) -> str:
         "Constraints:\n"
         "- Preserve functional behaviour.\n"
         "- The design must remain synthesisable by yosys.\n"
-        "- The area/power of the design should not increase by more than "
-        "10%.\n"
         f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place. Do not "
         "rename them."
     )
