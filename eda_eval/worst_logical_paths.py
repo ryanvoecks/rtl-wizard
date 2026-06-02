@@ -16,11 +16,21 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.config import EDA_EVAL, PNR_FLOW_TARGETS, RunConfig
+from common.config import EDA_EVAL, RunConfig
 from eda_eval.analyse import liberty_files, locate_results
 
 # Default config
 TOP_N = 50
+
+# ORFS flow target -> the db stage it produces, in order.
+STAGE_DBS = {
+    "synth": "1_synth",
+    "floorplan": "2_floorplan",
+    "place": "3_place",
+    "cts": "4_cts",
+    "route": "5_route",
+    "do-finish": "6_final",
+}
 
 # tcl paths
 WLP_TCL = EDA_EVAL / "tcl" / "worst_logical_paths.tcl"
@@ -40,7 +50,7 @@ def run_openroad(
     spef: Path | None,
     libs: list[Path],
     top_n: int,
-    stage_label: str,
+    stage: str,
     top_module: str,
     out_path: Path,
 ) -> None:
@@ -55,7 +65,7 @@ def run_openroad(
     lines.append(
         "find_worst_logical_paths "
         f"{_tcl_braces(str(out_path))} {top_n} "
-        f"{_tcl_braces(stage_label)} {_tcl_braces(top_module)}"
+        f"{_tcl_braces(stage)} {_tcl_braces(top_module)}"
     )
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
@@ -80,27 +90,31 @@ def _read_report(path: Path) -> pd.DataFrame:
     )
 
 
-def worst_logical_paths(run: RunConfig, *, top_n: int = TOP_N) -> pd.DataFrame:
+def worst_logical_paths(
+    run: RunConfig, *, top_n: int = TOP_N, stage: str | None = None
+) -> pd.DataFrame:
     """Run STA on the phase dir, write the worst-logical-paths report, and
-    return it as a DataFrame. Determines stage (synth/route) from RunConfig."""
+    return it as a DataFrame. `stage` (a db name in STAGE_DBS) overrides the
+    stage; when None it is the latest stage produced by RunConfig.flow_targets."""
     design = run.synth_target.design
     top_module = design.top_module
     platform = run.synth_target.cfg.platform
     phase_dir = run.output_dir
 
-    if set(run.flow_targets) & set(PNR_FLOW_TARGETS):
-        stage, stage_label = "6_final", "post-route"
-    else:
-        stage, stage_label = "1_synth", "post-synth"
+    if stage is None:
+        produced = [db for tgt, db in STAGE_DBS.items() if tgt in run.flow_targets]
+        if not produced:
+            raise ValueError(f"run produced no analysable stage: {run.flow_targets}")
+        stage = produced[-1]
 
     odb, sdc, spef = locate_results(phase_dir, top_module, platform, stage)
     libs = liberty_files(platform)
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    out_path = reports_dir / "worst_logical_paths.rpt"
+    out_path = reports_dir / f"worst_logical_paths.{stage}.rpt"
     staging = out_path.with_suffix(".rpt.partial")
-    run_openroad(odb, sdc, spef, libs, top_n, stage_label, top_module, staging)
+    run_openroad(odb, sdc, spef, libs, top_n, stage, top_module, staging)
     staging.replace(out_path)
     return _read_report(out_path)
 
@@ -109,11 +123,17 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase_dir", type=Path)
     parser.add_argument("--top-n", type=int, default=TOP_N, metavar="N")
+    parser.add_argument(
+        "--stage",
+        choices=list(STAGE_DBS.values()),
+        default=None,
+        help="database stage to analyse; defaults to latest",
+    )
     args = parser.parse_args()
 
     phase_dir = args.phase_dir.resolve()
     run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
-    df = worst_logical_paths(run, top_n=args.top_n)
+    df = worst_logical_paths(run, top_n=args.top_n, stage=args.stage)
     # Long hierarchical names would otherwise be truncated to 50 chars.
     with pd.option_context(
         "display.max_rows", None, "display.max_colwidth", None, "display.width", None
