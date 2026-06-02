@@ -9,7 +9,6 @@ has exactly one entry per (source-bus, dest-bus) pair, ranked worst-slack first.
 from __future__ import annotations
 
 import argparse
-import os
 import subprocess
 import sys
 from dataclasses import replace
@@ -23,6 +22,14 @@ TOP_N = 50
 
 # tcl paths
 WLP_TCL = EDA_EVAL / "tcl" / "worst_logical_paths.tcl"
+
+
+def _tcl_braces(value: str) -> str:
+    """Wrap a string as a literal Tcl word. Filesystem paths and identifiers
+    here never contain braces, so brace-quoting is safe and unambiguous."""
+    if "{" in value or "}" in value:
+        raise ValueError(f"cannot safely brace-quote for Tcl: {value!r}")
+    return "{" + value + "}"
 
 
 def run_openroad(
@@ -41,17 +48,16 @@ def run_openroad(
     if spef is not None:
         lines.append(f"read_spef {spef}")
     lines.append(f"source {WLP_TCL}")
-    env = {
-        **os.environ,
-        "WLP_OUT": str(out_path),
-        "WLP_TOP_N": str(top_n),
-        "WLP_STAGE": stage_label,
-        "WLP_TOP_MODULE": top_module,
-    }
+    # The TCL exposes find_worst_logical_paths as a proc; pass its inputs as
+    # arguments rather than smuggling them through the environment.
+    lines.append(
+        "find_worst_logical_paths "
+        f"{_tcl_braces(str(out_path))} {top_n} "
+        f"{_tcl_braces(stage_label)} {_tcl_braces(top_module)}"
+    )
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
         input="\n".join(lines),
-        env=env,
         text=True,
         capture_output=True,
     )
