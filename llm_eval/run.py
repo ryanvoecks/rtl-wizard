@@ -31,7 +31,7 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
 MODEL = "anthropic/claude-sonnet-4-6"
-EPOCHS = 10
+EPOCHS = 5
 SOLVER = claude_code_agentic_solver
 
 
@@ -39,14 +39,14 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
     """Start, retry, or skip based on any existing .eval log in `run_dir`."""
     existing = sorted(run_dir.glob("*.eval"))
     if not existing:
-        await eval_async(task, log_dir=str(run_dir), **kwargs)
+        await eval_async(task, log_dir=str(run_dir), fail_on_error=False, **kwargs)
         return
     log = read_eval_log(str(existing[-1]), header_only=True)
     if log.status == "success":
         print(f"Skipping (success): {existing[-1]}")
         return
     print(f"Retrying ({log.status}): {existing[-1]}")
-    await eval_retry_async(log)
+    await eval_retry_async(log, fail_on_error=False)
 
 
 async def main_async() -> None:

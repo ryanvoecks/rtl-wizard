@@ -32,6 +32,10 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
+import re
+import subprocess
+import sys
 import time
 import traceback
 from dataclasses import dataclass
@@ -40,18 +44,138 @@ from typing import Any
 
 from common.config import (
     ALL_FLOW_TARGETS,
+    EDA_EVAL,
     EDA_RUNS,
+    YOSYS_BIN,
     DesignConfig,
     RunConfig,
     StudyConfig,
     TargetConfig,
 )
 from common.designs import resolve_design
-from eda_eval import analyse
+from eda_eval.analyse import liberty_files, locate_results
 from eda_eval.extract_metrics import extract
 from eda_eval.run import run_job
 
 ITER_SCOPE_DIR = "__iter_scope__"
+
+# tcl paths
+EXTRACT_TCL = EDA_EVAL / "tcl" / "extract_critical_paths.tcl"
+
+# Regexes for lexing the path pool / hierarchy names
+INDEX_RE = re.compile(r"\[\d+\]")
+HIER_SEP_RE = re.compile(r"[/.]")
+
+
+# --------------------------------------------------------------------------- #
+# Path-pool extraction + hierarchy mapping                                    #
+# --------------------------------------------------------------------------- #
+
+
+def run_openroad_extract(
+    odb: Path,
+    sdc: Path,
+    spef: Path | None,
+    libs: list[Path],
+    pool: int,
+    tsv_out: Path,
+) -> None:
+    """Drive openroad to dump the worst-slack timing pool to tsv_out."""
+    lines = [f"read_liberty {lib}" for lib in libs]
+    lines += [f"read_db {odb}", f"read_sdc {sdc}"]
+    if spef is not None:
+        lines.append(f"read_spef {spef}")
+    lines.append(f"source {EXTRACT_TCL}")
+    env = {**os.environ, "ANALYSE_OUT_TSV": str(tsv_out), "ANALYSE_POOL": str(pool)}
+    proc = subprocess.run(
+        ["openroad", "-no_init", "-exit"],
+        input="\n".join(lines),
+        env=env,
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise RuntimeError("openroad extraction failed")
+
+
+def read_pool_tsv(tsv: Path) -> list[tuple[float, str, str, list[str]]]:
+    """Parse the timing-pool TSV into (slack_ns, sp, ep, cells) records."""
+    records = []
+    for line in tsv.read_text().splitlines():
+        if not line or line.startswith("#"):
+            continue
+        slack, sp, ep, cells = line.split("\t")
+        records.append((float(slack), sp, ep, cells.split("|") if cells else []))
+    return records
+
+
+def dump_hierarchy(
+    rtl_files: list[Path],
+    top_module: str,
+    json_out: Path,
+    include_dirs: list[Path] | None = None,
+) -> None:
+    """Have yosys elaborate the module hierarchy and dump it as JSON."""
+    inc_args = "".join(f" -I {d}" for d in (include_dirs or []))
+    rtl_args = " ".join(str(f) for f in rtl_files)
+    script = (
+        f"read_verilog -sv{inc_args} {rtl_args}\n"
+        f"hierarchy -top {top_module}\n"
+        "proc\n"
+        f"write_json {json_out}\n"
+    )
+    proc = subprocess.run(
+        [YOSYS_BIN, "-q", "-p", script],
+        text=True,
+        capture_output=True,
+    )
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stdout + proc.stderr)
+        raise RuntimeError("yosys hierarchy dump failed")
+
+
+def _clean_instance(name: str) -> str:
+    """Strip yosys escape syntax, `[N]` indices, and trailing `$_CELLTYPE_`."""
+    name = name.lstrip("\\").rstrip().split("$", 1)[0]
+    return INDEX_RE.sub("", name)
+
+
+def load_hierarchy(json_path: Path) -> dict[str, dict[str, str]]:
+    """Module -> {clean_inst_name: child_module} from yosys write_json output."""
+    modules_raw = json.loads(json_path.read_text()).get("modules", {})
+    valid = set(modules_raw)
+    return {
+        name: {
+            _clean_instance(inst): cell["type"]
+            for inst, cell in info.get("cells", {}).items()
+            if cell.get("type") in valid
+        }
+        for name, info in modules_raw.items()
+    }
+
+
+def cell_modules(
+    inst_path: str,
+    top_module: str,
+    hierarchy: dict[str, dict[str, str]],
+) -> tuple[set[str], bool]:
+    """Walk an instance path; return (modules touched, walk truncated early)."""
+    mods = {top_module}
+    current = top_module
+    parts = HIER_SEP_RE.split(inst_path)
+    for inst in parts[:-1]:
+        child = hierarchy.get(current, {}).get(_clean_instance(inst))
+        if child is None:
+            return mods, True
+        current = child
+        mods.add(current)
+    return mods, False
+
+
+def logical_stem(full_name: str) -> str:
+    """Pin name -> register-array stem (drop /<pin>, $-tag, and [N] indices)."""
+    return INDEX_RE.sub("", full_name.rsplit("/", 1)[0].split("$", 1)[0])
 
 
 # --------------------------------------------------------------------------- #
@@ -122,14 +246,12 @@ def measure_fix_scope(
     the count fields set to None -- the caller treats this as fix_ok=False
     but does not abort the whole scope run."""
     try:
-        odb, sdc, spef = analyse.locate_results(
-            phase_dir, top_module, platform, "6_final"
-        )
+        odb, sdc, spef = locate_results(phase_dir, top_module, platform, "6_final")
         reports_dir = phase_dir / "reports" / platform / top_module / "base"
         reports_dir.mkdir(parents=True, exist_ok=True)
         raw_tsv = reports_dir / "critical_paths_raw.tsv"
-        analyse.run_openroad_extract(odb, sdc, spef, libs, pool, raw_tsv)
-        records = analyse.read_pool_tsv(raw_tsv)
+        run_openroad_extract(odb, sdc, spef, libs, pool, raw_tsv)
+        records = read_pool_tsv(raw_tsv)
     except Exception as exc:
         return {
             "n_failing": None,
@@ -140,11 +262,11 @@ def measure_fix_scope(
         }
 
     failing = [r for r in records if r[0] < 0]
-    starts = {analyse.logical_stem(sp) for _, sp, _, _ in failing}
+    starts = {logical_stem(sp) for _, sp, _, _ in failing}
     mods: set[str] = set()
     for _, _, _, cells in failing:
         for cell in cells:
-            cell_mods, _ = analyse.cell_modules(cell, top_module, hier)
+            cell_mods, _ = cell_modules(cell, top_module, hier)
             mods |= cell_mods
     return {
         "n_failing": len(failing),
@@ -516,19 +638,19 @@ def main() -> None:
     # each iter's inputs/), so this is design-invariant across all iters.
     hier_json = scope_root / "hierarchy.json"
     include_dirs = [design.root / design.rtl_dir / d for d in design.include_dirs]
-    analyse.dump_hierarchy(
+    dump_hierarchy(
         design.rtl_abs_paths,
         design.top_module,
         hier_json,
         include_dirs,
     )
-    hier = analyse.load_hierarchy(hier_json)
+    hier = load_hierarchy(hier_json)
     if design.top_module not in hier:
         raise RuntimeError(
             f"top module {design.top_module!r} not found in yosys hierarchy: "
             f"{sorted(hier)}"
         )
-    libs = analyse.liberty_files(cfg.platform)
+    libs = liberty_files(cfg.platform)
     budgets = Budgets(
         max_modules=args.max_modules,
         max_starts=args.max_start_stems,
