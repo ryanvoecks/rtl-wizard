@@ -14,6 +14,8 @@ import sys
 from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
+
 from common.config import EDA_EVAL, PNR_FLOW_TARGETS, RunConfig
 from eda_eval.analyse import liberty_files, locate_results
 
@@ -66,9 +68,21 @@ def run_openroad(
         raise RuntimeError("openroad logical-path extraction failed")
 
 
-def worst_logical_paths(run: RunConfig, *, top_n: int = TOP_N) -> str:
-    """Run STA on the phase dir and write the worst-logical-paths report.
-    Determines stage (synth/route) based on RunConfig."""
+def _read_report(path: Path) -> pd.DataFrame:
+    """Parse the TCL-written report (tab-separated, `#`-prefixed headers) into a
+    DataFrame with columns rank / worst_slack_ns / start / end."""
+    return pd.read_csv(
+        path,
+        sep="\t",
+        comment="#",
+        header=None,
+        names=["rank", "worst_slack_ns", "start", "end"],
+    )
+
+
+def worst_logical_paths(run: RunConfig, *, top_n: int = TOP_N) -> pd.DataFrame:
+    """Run STA on the phase dir, write the worst-logical-paths report, and
+    return it as a DataFrame. Determines stage (synth/route) from RunConfig."""
     design = run.synth_target.design
     top_module = design.top_module
     platform = run.synth_target.cfg.platform
@@ -88,7 +102,7 @@ def worst_logical_paths(run: RunConfig, *, top_n: int = TOP_N) -> str:
     staging = out_path.with_suffix(".rpt.partial")
     run_openroad(odb, sdc, spef, libs, top_n, stage_label, top_module, staging)
     staging.replace(out_path)
-    return out_path.read_text()
+    return _read_report(out_path)
 
 
 def main() -> None:
@@ -99,7 +113,12 @@ def main() -> None:
 
     phase_dir = args.phase_dir.resolve()
     run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
-    print(worst_logical_paths(run, top_n=args.top_n))
+    df = worst_logical_paths(run, top_n=args.top_n)
+    # Long hierarchical names would otherwise be truncated to 50 chars.
+    with pd.option_context(
+        "display.max_rows", None, "display.max_colwidth", None, "display.width", None
+    ):
+        print(df.to_string(index=False))
 
 
 if __name__ == "__main__":
