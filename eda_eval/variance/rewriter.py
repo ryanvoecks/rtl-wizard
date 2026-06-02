@@ -99,6 +99,26 @@ def _resolve_include_dirs(design: DesignConfig) -> list[str]:
     return out
 
 
+
+
+
+def _collect_hierarchical_refs(design: DesignConfig) -> frozenset[str]:
+    """Find all hierarchically referenced identifiers."""
+
+    # Strip comments / strings before scanning for hierarchical references.
+    COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+    STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+    HIER_REF_RE = re.compile(r"\.\s*([A-Za-z_]\w*)\b(?!\s*\()")
+
+    names: set[str] = set()
+    for rel in design.rtl_files:
+        src = (design.root / design.rtl_dir / rel).read_text(encoding="utf-8")
+        stripped = STRING_RE.sub(" ", COMMENT_RE.sub(" ", src))
+        for m in HIER_REF_RE.finditer(stripped):
+            names.add(m.group(1))
+    return frozenset(names)
+
+
 def _make_source_manager(include_dirs: list[str]) -> pyslang.SourceManager:
     """Fresh SourceManager with the given include directories."""
     sm = pyslang.SourceManager()
@@ -343,9 +363,10 @@ def _transform_signal_rename(
     abs_path: Path,
     include_dirs: list[str],
     rng: random.Random,
+    hier_refs: frozenset[str] = frozenset(),
 ) -> tuple[str, int]:
     """Rename module-internal signals to a hash-based scheme. Skips names that
-    are shadowed inside generate/function/task scopes."""
+    are shadowed by local scopes, and any name accessed via hierarchical reference."""
     sm = _make_source_manager(include_dirs)
     tree = pyslang.SyntaxTree.fromFileInMemory(src, sm, path=str(abs_path))
     orig_errors = _error_signature(tree.diagnostics)
@@ -402,7 +423,7 @@ def _transform_signal_rename(
 
         mod.visit(decl_visit)
 
-        rename_set = (decl_names & unshadowed) - port_names
+        rename_set = (decl_names & unshadowed) - port_names - hier_refs
         if not rename_set:
             return
 
@@ -478,13 +499,19 @@ def _rewrite_text(
     abs_path: Path,
     include_dirs: list[str],
     rng: random.Random,
+    hier_refs: frozenset[str],
 ) -> tuple[str, dict[str, int]]:
     """Apply every transform in TRANSFORMS in sequence. Returns the final
     text and per-transform change counts."""
     counts: dict[str, int] = {}
     cur = src
     for name, transform in TRANSFORMS:
-        cur, n = transform(cur, abs_path, include_dirs, rng)
+        if transform is _transform_signal_rename:
+            cur, n = _transform_signal_rename(
+                cur, abs_path, include_dirs, rng, hier_refs
+            )
+        else:
+            cur, n = transform(cur, abs_path, include_dirs, rng)
         counts[name] = n
     return cur, counts
 
@@ -500,6 +527,7 @@ def rewrite_design(
         raise FileExistsError(output_dir)
     _reflink_copy(design.root, output_dir)
     include_dirs = _resolve_include_dirs(design)
+    hier_refs = _collect_hierarchical_refs(design)
 
     for rel in design.rtl_files:
         abs_orig = design.root / design.rtl_dir / rel
@@ -508,7 +536,7 @@ def rewrite_design(
         if not all(ord(c) < 128 for c in src):
             raise ValueError(f"non-ASCII characters in {abs_orig}")
         rng = _per_file_rng(rel, seed)
-        new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
+        new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng, hier_refs)
         if new_text != src:
             abs_copy.write_text(new_text, encoding="utf-8")
 
