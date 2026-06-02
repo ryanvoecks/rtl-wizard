@@ -99,6 +99,23 @@ def _resolve_include_dirs(design: DesignConfig) -> list[str]:
     return out
 
 
+def _collect_hierarchical_refs(design: DesignConfig) -> frozenset[str]:
+    """Find all hierarchically referenced identifiers."""
+
+    # Strip comments / strings before scanning for hierarchical references.
+    COMMENT_RE = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+    STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"')
+    HIER_REF_RE = re.compile(r"\.\s*([A-Za-z_]\w*)\b(?!\s*\()")
+
+    names: set[str] = set()
+    for rel in design.rtl_files:
+        src = (design.root / design.rtl_dir / rel).read_text(encoding="utf-8")
+        stripped = STRING_RE.sub(" ", COMMENT_RE.sub(" ", src))
+        for m in HIER_REF_RE.finditer(stripped):
+            names.add(m.group(1))
+    return frozenset(names)
+
+
 def _make_source_manager(include_dirs: list[str]) -> pyslang.SourceManager:
     """Fresh SourceManager with the given include directories."""
     sm = pyslang.SourceManager()
@@ -264,24 +281,34 @@ def _transform_decl_reorder(
         nonlocal moved
         if node.kind not in SCOPE_KINDS:
             return pyslang.VisitAction.Advance
-        # Collect permutable members whose own text has balanced directives.
+        # Collect permutable members whose own text has balanced directives,
+        # and sibling wire/reg declarations that act as reorder barriers.
         candidates: list[pyslang.SyntaxNode] = []
+        barrier_starts: list[int] = []
         for m in cast(pyslang.ModuleDeclarationSyntax, node).members:
-            if (
+            if m.sourceRange.start.buffer != file_buffer:
+                continue
+            if m.kind in RENAMABLE_DECL_KINDS:
+                barrier_starts.append(m.sourceRange.start.offset)
+            elif (
                 m.kind in PERMUTABLE_MEMBER_KINDS
-                and m.sourceRange.start.buffer == file_buffer
                 and m.sourceRange.end.buffer == file_buffer
             ):
                 s, e = m.sourceRange.start.offset, m.sourceRange.end.offset
                 if _directives_balanced(src[s:e]):
                     candidates.append(m)
-        # Split into groups based on `ifdef/`endif to avoid swaps across this boundary.
+        # Split into groups based on `ifdef/`endif and declaration barriers.
         groups: list[list[pyslang.SyntaxNode]] = []
         current: list[pyslang.SyntaxNode] = []
         prev_end: int | None = None
         for m in candidates:
             s = m.sourceRange.start.offset
-            if prev_end is not None and not _directives_balanced(src[prev_end:s]):
+            crosses_barrier = prev_end is not None and any(
+                prev_end <= bs < s for bs in barrier_starts
+            )
+            if prev_end is not None and (
+                not _directives_balanced(src[prev_end:s]) or crosses_barrier
+            ):
                 if len(current) >= 2:
                     groups.append(current)
                 current = []
@@ -343,9 +370,10 @@ def _transform_signal_rename(
     abs_path: Path,
     include_dirs: list[str],
     rng: random.Random,
+    hier_refs: frozenset[str] = frozenset(),
 ) -> tuple[str, int]:
     """Rename module-internal signals to a hash-based scheme. Skips names that
-    are shadowed inside generate/function/task scopes."""
+    are shadowed by local scopes, and any name accessed via hierarchical reference."""
     sm = _make_source_manager(include_dirs)
     tree = pyslang.SyntaxTree.fromFileInMemory(src, sm, path=str(abs_path))
     orig_errors = _error_signature(tree.diagnostics)
@@ -402,7 +430,43 @@ def _transform_signal_rename(
 
         mod.visit(decl_visit)
 
-        rename_set = (decl_names & unshadowed) - port_names
+        rename_set = (decl_names & unshadowed) - port_names - hier_refs
+        if not rename_set:
+            return
+
+        # Drop any rename candidate whose lexical occurrence count in the
+        # module source disagrees with the AST occurrence count.
+        comment_re = re.compile(r"//[^\n]*|/\*.*?\*/", re.DOTALL)
+        string_re = re.compile(r'"(?:[^"\\]|\\.)*"')
+        mod_src = src[mod.sourceRange.start.offset : mod.sourceRange.end.offset]
+        mod_src_clean = string_re.sub(" ", comment_re.sub(" ", mod_src))
+
+        ast_counts: Counter = Counter()
+
+        def count_idents(n: pyslang.SyntaxNode) -> pyslang.VisitAction:
+            if n is not mod and n.kind == pyslang.SyntaxKind.ModuleDeclaration:
+                return pyslang.VisitAction.Skip
+            if n.kind == pyslang.SyntaxKind.Declarator:
+                ast_counts[cast(pyslang.DeclaratorSyntax, n).name.valueText] += 1
+            elif n.kind == pyslang.SyntaxKind.IdentifierName:
+                ast_counts[
+                    cast(pyslang.IdentifierNameSyntax, n).identifier.valueText
+                ] += 1
+            elif n.kind == pyslang.SyntaxKind.IdentifierSelectName:
+                ast_counts[
+                    cast(pyslang.IdentifierSelectNameSyntax, n).identifier.valueText
+                ] += 1
+            return pyslang.VisitAction.Advance
+
+        mod.visit(count_idents)
+
+        word_re = re.compile(
+            r"\b(" + "|".join(re.escape(n) for n in rename_set) + r")\b"
+        )
+        lex_counts: Counter = Counter()
+        for m in word_re.finditer(mod_src_clean):
+            lex_counts[m.group(1)] += 1
+        rename_set = {n for n in rename_set if lex_counts[n] == ast_counts[n]}
         if not rename_set:
             return
 
@@ -478,13 +542,19 @@ def _rewrite_text(
     abs_path: Path,
     include_dirs: list[str],
     rng: random.Random,
+    hier_refs: frozenset[str],
 ) -> tuple[str, dict[str, int]]:
     """Apply every transform in TRANSFORMS in sequence. Returns the final
     text and per-transform change counts."""
     counts: dict[str, int] = {}
     cur = src
     for name, transform in TRANSFORMS:
-        cur, n = transform(cur, abs_path, include_dirs, rng)
+        if transform is _transform_signal_rename:
+            cur, n = _transform_signal_rename(
+                cur, abs_path, include_dirs, rng, hier_refs
+            )
+        else:
+            cur, n = transform(cur, abs_path, include_dirs, rng)
         counts[name] = n
     return cur, counts
 
@@ -500,6 +570,7 @@ def rewrite_design(
         raise FileExistsError(output_dir)
     _reflink_copy(design.root, output_dir)
     include_dirs = _resolve_include_dirs(design)
+    hier_refs = _collect_hierarchical_refs(design)
 
     for rel in design.rtl_files:
         abs_orig = design.root / design.rtl_dir / rel
@@ -508,7 +579,7 @@ def rewrite_design(
         if not all(ord(c) < 128 for c in src):
             raise ValueError(f"non-ASCII characters in {abs_orig}")
         rng = _per_file_rng(rel, seed)
-        new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng)
+        new_text, counts = _rewrite_text(src, abs_orig, include_dirs, rng, hier_refs)
         if new_text != src:
             abs_copy.write_text(new_text, encoding="utf-8")
 
