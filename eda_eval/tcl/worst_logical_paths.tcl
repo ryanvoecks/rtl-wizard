@@ -7,9 +7,30 @@
 # iteration surfaces a new distinct pair. Masking by the pair (not by the
 # destination alone) keeps a second source into the same dest bus visible.
 #
-# Source this file into an openroad session that already has the database
+# Source this file into an openroad session that already has the db/sdc/liberty
 # loaded, then call:
-#   find_worst_logical_paths <out_path> <top_n> <stage> <top_module>
+#   find_worst_logical_paths <out_path> <top_n> <stage> <spef> <set_rc> <top_module>
+# It establishes the interconnect parasitics for the stage (the .odb carries
+# none) before searching.
+
+
+# Install the interconnect parasitics appropriate to the flow `stage`.
+proc setup_parasitics {stage spef set_rc} {
+    switch -- $stage {
+        6_final {
+            read_spef $spef
+        }
+        5_route {
+            source $set_rc
+            estimate_parasitics -global_routing
+        }
+        3_place -
+        4_cts {
+            source $set_rc
+            estimate_parasitics -placement
+        }
+    }
+}
 
 # name -> the same name with every numeric index "[N]" rewritten to a
 # positional placeholder "[I]", "[J]", "[K]".
@@ -55,7 +76,9 @@ proc path_selector {full} {
 }
 
 # Emit the top `top_n` distinct worst logical paths to `out_path`.
-proc find_worst_logical_paths {out_path top_n stage top_module} {
+proc find_worst_logical_paths {out_path top_n stage spef set_rc top_module} {
+    setup_parasitics $stage $spef $set_rc
+
     set fh [open $out_path w]
     puts $fh "# stage\t$stage"
     puts $fh "# top_module\t$top_module"

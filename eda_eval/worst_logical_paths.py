@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Dump the top-N worst logical paths (n-bit reg/IO bus to bus) for a phase dir.
 
-Thin wrapper around tcl/worst_logical_paths.tcl: it loads the routed (or
-post-synth) database into openroad and lets the TCL do the dedup, so the report
-has exactly one entry per (source-bus, dest-bus) pair, ranked worst-slack first.
+Thin wrapper around tcl/worst_logical_paths.tcl: it loads a stage database into
+openroad and lets the TCL pick the right interconnect parasitics for that stage
+(the .odb persists none) and do the dedup, so the report has one entry per
+(source-bus, dest-bus) pair, ranked worst-slack first.
 """
 
 from __future__ import annotations
@@ -16,13 +17,13 @@ from pathlib import Path
 
 import pandas as pd
 
-from common.config import EDA_EVAL, RunConfig
+from common.config import EDA_EVAL, ORFS_FLOW, RunConfig
 from eda_eval.analyse import liberty_files, locate_results
 
 # Default config
 TOP_N = 50
 
-# ORFS flow target -> the db stage it produces, in order.
+# ORFS flow target -> the db stage it produces, in dependency order.
 STAGE_DBS = {
     "synth": "1_synth",
     "floorplan": "2_floorplan",
@@ -48,24 +49,27 @@ def run_openroad(
     odb: Path,
     sdc: Path,
     spef: Path | None,
+    set_rc: Path,
     libs: list[Path],
     top_n: int,
     stage: str,
     top_module: str,
     out_path: Path,
 ) -> None:
-    """Drive openroad to dump the worst logical-path report to out_path."""
+    """Drive openroad to dump the worst logical-path report to out_path.
+
+    `spef` (the stage .spef, if any) and `set_rc` (the platform wire-RC config)
+    are handed to the TCL, which selects the parasitics model for the stage.
+    """
     lines = [f"read_liberty {lib}" for lib in libs]
-    lines += [f"read_db {odb}", f"read_sdc {sdc}"]
-    if spef is not None:
-        lines.append(f"read_spef {spef}")
-    lines.append(f"source {WLP_TCL}")
+    lines += [f"read_db {odb}", f"read_sdc {sdc}", f"source {WLP_TCL}"]
     # The TCL exposes find_worst_logical_paths as a proc; pass its inputs as
     # arguments rather than smuggling them through the environment.
+    spef_arg = _tcl_braces(str(spef)) if spef is not None else "{}"
     lines.append(
         "find_worst_logical_paths "
-        f"{_tcl_braces(str(out_path))} {top_n} "
-        f"{_tcl_braces(stage)} {_tcl_braces(top_module)}"
+        f"{_tcl_braces(str(out_path))} {top_n} {_tcl_braces(stage)} "
+        f"{spef_arg} {_tcl_braces(str(set_rc))} {_tcl_braces(top_module)}"
     )
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
@@ -108,13 +112,14 @@ def worst_logical_paths(
         stage = produced[-1]
 
     odb, sdc, spef = locate_results(phase_dir, top_module, platform, stage)
+    set_rc = ORFS_FLOW / "platforms" / platform / "setRC.tcl"
     libs = liberty_files(platform)
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = reports_dir / f"worst_logical_paths.{stage}.rpt"
     staging = out_path.with_suffix(".rpt.partial")
-    run_openroad(odb, sdc, spef, libs, top_n, stage, top_module, staging)
+    run_openroad(odb, sdc, spef, set_rc, libs, top_n, stage, top_module, staging)
     staging.replace(out_path)
     return _read_report(out_path)
 
