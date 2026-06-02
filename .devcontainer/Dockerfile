@@ -6,6 +6,7 @@ FROM ubuntu:22.04
 
 ARG CLAUDE_CODE_VERSION=latest
 ARG USERNAME=wizard
+ARG ORFS_COMMIT=bd2a6b695156e957a332e644e2c1587a74fd705f
 
 # Create the non-root user. `tzdata` ships /usr/share/zoneinfo so that the
 # host's /etc/localtime bind-mount (see docker-compose.yml) resolves to a real
@@ -76,10 +77,13 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
     zlib1g-dev \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN git clone --recursive --depth 1 \
-      https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts \
-      /OpenROAD-flow-scripts \
+# Build pinned ORFS commit for reproducibility
+RUN git init /OpenROAD-flow-scripts \
     && cd /OpenROAD-flow-scripts \
+    && git remote add origin https://github.com/The-OpenROAD-Project/OpenROAD-flow-scripts \
+    && git fetch --depth 1 origin ${ORFS_COMMIT} \
+    && git checkout FETCH_HEAD \
+    && git submodule update --init --recursive --depth 1 \
     && sed -i 's/^    numThreads=\$(nproc)$/    numThreads=2/' etc/DependencyInstaller.sh \
     && SUDO_USER=root ./setup.sh \
     && ./build_openroad.sh --local --threads 2 \
