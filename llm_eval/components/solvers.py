@@ -61,9 +61,9 @@ from components.scorers import evaluate_testbench
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 AGENT_TURNS = 60
 AGENT_TIMEOUT = 3600
-ONE_ROUND_TURNS = 20
+ONE_ROUND_TURNS = 30
 ONE_ROUND_TIMEOUT = 1200
-ITERATIVE_ROUNDS = 3
+ITERATIVE_ROUNDS = 1
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -591,9 +591,9 @@ def _make_solver(variant: SolverVariant) -> Solver:
         synth_target = state.metadata["synth_target"]
         assert isinstance(synth_target, TargetConfig)
 
-        # Append solver's instructions to task prompt
+        # Task prompt, then the initial report (if any), then solver instructions
         task_prompt = state.messages[-1].text
-        prompt = f"{task_prompt}\n\n{variant.instructions}"
+        prompt = task_prompt
         if variant.include_initial_report:
             report = await asyncio.to_thread(_synth_and_report, synth_target)
             prompt += (
@@ -602,6 +602,7 @@ def _make_solver(variant: SolverVariant) -> Solver:
                 "by slack and includes the area/power totals.\n\n"
                 f"```\n{report}\n```"
             )
+        prompt += f"\n\n{variant.instructions}"
         state.messages = [ChatMessageUser(content=prompt)]
         agent_state = AgentState(messages=state.messages)
         agent_fn = claude_code_oauth(
@@ -627,9 +628,8 @@ def claude_code_agentic_solver() -> Solver:
 
     instructions = (
         "You have two MCP tools to verify your work as you go:\n"
-        "- `run_testbench`: runs the hidden testbench against your current "
-        "RTL and returns its exit code plus stdout. Use it to confirm "
-        "functional correctness after each edit.\n"
+        "- `run_testbench`: checks your current RTL for functional correctness "
+        "and synthesisability. Use it to confirm an edit is safe after each change.\n"
         "- `synth_report`: synthesises your current RTL through ORFS and "
         "returns a post-synth logical-paths report - the worst register-to-"
         "register groups ranked by slack - plus an area/power summary. Use "
@@ -697,15 +697,22 @@ def claude_code_iterative_solver() -> Solver:
     testbench and synth are run against the current RTL and results are fed back."""
 
     instructions = (
-        "You have no tools to call yourself. After each of your responses, "
-        "your current RTL will be automatically checked against the hidden "
-        "testbench and synthesised through ORFS, and the results returned to "
-        "you for the next round. Use each round to make targeted edits."
+        "# IMPORTANT INSTRUCTIONS\n"
+        "You are an iterative RTL optimiser. You should make **exactly one** targeted "
+        "improvement per round which you think will most positively benefit the "
+        "timings of the design. You will be given multiple rounds, so there is **no "
+        "benefit to making multiple improvements per round**. As soon as you have made "
+        "and verified your edit, submit your response with a brief summary of the "
+        "edit. After you submit your response, your current RTL is automatically "
+        "synthesised, and the timing report is passed to you for the next round.\n\n"
+        "You have an MCP tool to verify your edits as you go:\n"
+        "- `run_testbench`: checks your current RTL for functional correctness and "
+        "synthesisability. Use it to confirm edits are safe.\n\n"
     )
 
     iterative_config = SolverVariant(
         name="iterative",
-        mcp_tools=(),
+        mcp_tools=("run_testbench",),
         max_turns=ONE_ROUND_TURNS,
         timeout=ONE_ROUND_TIMEOUT,
         instructions=instructions,

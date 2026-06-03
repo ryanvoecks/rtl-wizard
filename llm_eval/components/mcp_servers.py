@@ -18,11 +18,22 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
 from components.claude_env import ClaudeEnv, build_diff_from_env
-from components.scorers import _create_copy, evaluate_testbench
+from components.scorers import _create_copy, evaluate_synthesis, evaluate_testbench
 from eda_eval.analyse import analyse
 from eda_eval.run import run_job
 
 OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
+CHECK_TAIL_LINES = 15  # run_testbench: keep only the last N lines of each check's log
+
+
+def _format_check(label: str, rc: int, log: str) -> str:
+    """Render one check's exit code + (tail-truncated) log as a labelled block."""
+    header = f"[{label} rc={rc}]\n"
+    lines = log.splitlines()
+    if len(lines) > CHECK_TAIL_LINES:
+        log = "\n".join(lines[-CHECK_TAIL_LINES:])
+        header += f"[{label} output truncated to last {CHECK_TAIL_LINES} lines]\n"
+    return header + log
 
 
 def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
@@ -59,20 +70,23 @@ class Tools:
         self.env = env
 
     async def run_testbench(self) -> str:
-        """Run the design's hidden testbench against your current RTL. A return
-        code of 0 means the testbench passed."""
+        """Check your current RTL for functional correctness and synthesisability.
+        A return code of 0 on both means your edits are valid."""
         design = self.synth_target.design
         try:
             diff = await asyncio.to_thread(build_diff_from_env, self.env, design)
-            log, rc = await asyncio.to_thread(evaluate_testbench, design, diff)
+            synth_log, synth_rc = await asyncio.to_thread(
+                evaluate_synthesis, design, diff
+            )
+            tb_log, tb_rc = await asyncio.to_thread(evaluate_testbench, design, diff)
         except Exception as e:
             return f"[tool error] {type(e).__name__}: {e}"
 
-        header = f"[rc={rc}]\n"
-        if len(log) > OUTPUT_LIMIT:
-            log = log[-OUTPUT_LIMIT:]
-            header += f"[output truncated to last {OUTPUT_LIMIT} chars]\n"
-        return header + log
+        return (
+            _format_check("synthesis", synth_rc, synth_log)
+            + "\n"
+            + _format_check("testbench", tb_rc, tb_log)
+        )
 
     async def synth_report(self) -> str:
         """Synthesize your current RTL and return a post-synth logical-paths
