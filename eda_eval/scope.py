@@ -199,7 +199,6 @@ def run_one(
     batch_dir: Path,
     i: int,
     period_ns: float,
-    side_um: float,
     cfg: StudyConfig,
 ) -> tuple[RunConfig, float]:
     """One ORFS pass at `period_ns`. Returns the RunConfig and the
@@ -208,7 +207,6 @@ def run_one(
         synth_target=TargetConfig(
             design=design,
             period_ns=period_ns,
-            side_um=side_um,
             cfg=cfg,
         ),
         output_dir=iter_output_dir(design, batch_dir, i),
@@ -335,7 +333,7 @@ def phase_a(
     ws = 0.0
     for _ in range(args.baseline_iters):
         i = len(history)
-        run, ws = run_one(design, batch_dir, i, t, args.die_side_um, cfg)
+        run, ws = run_one(design, batch_dir, i, t, cfg)
         t_next = t - ws
         converged = abs(t_next - t) < args.eps
         history.append(
@@ -412,7 +410,7 @@ def phase_b(
             abort_reason = "period_floor_reached"
             break
         i = len(history)
-        run, ws = run_one(design, batch_dir, i, t, args.die_side_um, cfg)
+        run, ws = run_one(design, batch_dir, i, t, cfg)
         scope_m = measure_fix_scope(
             run.output_dir,
             design.top_module,
@@ -479,7 +477,7 @@ def phase_c(
     for _ in range(args.bisect_iters):
         mid = (lo + hi) / 2
         i = len(history)
-        run, ws = run_one(design, batch_dir, i, mid, args.die_side_um, cfg)
+        run, ws = run_one(design, batch_dir, i, mid, cfg)
         scope_m = measure_fix_scope(
             run.output_dir,
             design.top_module,
@@ -587,7 +585,6 @@ def main() -> None:
         help="Name of the design to scope.",
     )
     parser.add_argument("--initial-period-ns", type=float, default=0.5)
-    parser.add_argument("--die-side-um", type=float, default=1000.0)
     parser.add_argument("--baseline-iters", type=int, default=3)
     parser.add_argument("--scope-iters", type=int, default=5)
     parser.add_argument("--bisect-iters", type=int, default=2)

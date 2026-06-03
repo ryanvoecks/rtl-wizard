@@ -37,15 +37,6 @@ KEEP_ODB = frozenset({"1_synth.odb", "6_final.odb"})
 PRUNE_SUFFIXES = frozenset({".odb", ".def", ".guide", ".rtlil", ".v"})
 
 
-def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
-    """ORFS DIE_AREA/CORE_AREA strings for a square `side_um` x `side_um`
-    die with a `core_margin_um` boundary on each edge."""
-    inner = side_um - core_margin_um
-    die_area = f"0 0 {side_um:.3f} {side_um:.3f}"
-    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} {inner:.3f} {inner:.3f}"
-    return die_area, core_area
-
-
 def snapshot_inputs(run: RunConfig) -> Path:
     """Copy RTL, generate Makefile, generate constraints. Returns the path to
     the rendered Makefile."""
@@ -73,8 +64,10 @@ def snapshot_inputs(run: RunConfig) -> Path:
         )
     )
 
-    # Generate Makefile with design config
-    die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
+    # Generate Makefile with design config. ORFS auto-sizes the die from
+    # CORE_UTILIZATION + CORE_ASPECT_RATIO + CORE_MARGIN, growing the die
+    # until both the cell-area-at-utilization and IO-perimeter constraints
+    # are satisfied.
     rtl_src = design.root / design.rtl_dir
     include_dirs = " ".join(str(rtl_src / d) for d in design.include_dirs)
     makefile_dst = inputs / "Makefile"
@@ -89,8 +82,9 @@ def snapshot_inputs(run: RunConfig) -> Path:
             orfs_flow=ORFS_FLOW,
             platform=cfg.platform,
             place_density=cfg.place_density,
-            die_area=die_area,
-            core_area=core_area,
+            core_utilization=cfg.target_utilization,
+            core_aspect_ratio=cfg.core_aspect_ratio,
+            core_margin=cfg.core_margin_um,
             seed=cfg.seed,
             flow_targets=" ".join(run.flow_targets),
             place_pins_args=cfg.place_pins_args,
