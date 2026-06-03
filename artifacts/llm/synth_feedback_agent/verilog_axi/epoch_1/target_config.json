@@ -1,0 +1,41 @@
+{
+  "design": {
+    "benchmark": "forencich",
+    "name": "verilog_axi",
+    "variant": "reference",
+    "root": "/workspace/external/verilog_axi",
+    "rtl_dir": ".",
+    "rtl_files": [
+      "rtl/arbiter.v",
+      "rtl/priority_encoder.v",
+      "rtl/axi_register_rd.v",
+      "rtl/axi_register_wr.v",
+      "rtl/axi_crossbar_addr.v",
+      "rtl/axi_crossbar_rd.v",
+      "rtl/axi_crossbar_wr.v",
+      "rtl/axi_crossbar.v",
+      "tb/axi_crossbar/axi_crossbar_wrap_8x8.v"
+    ],
+    "top_module": "axi_crossbar_wrap_8x8",
+    "test_script": "/workspace/common/scripts/verilog_axi.sh",
+    "tb_timeout_s": 300,
+    "clock_port": "clk",
+    "include_dirs": []
+  },
+  "period_ns": 1.83,
+  "side_um": 2615.0,
+  "cfg": {
+    "platform": "nangate45",
+    "calibration_period_ns": 0.5,
+    "calibration_side_um": 1000.0,
+    "target_utilization": 0.6,
+    "minimum_side_um": 50.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "effective_pin_width": 2.667,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  }
+}

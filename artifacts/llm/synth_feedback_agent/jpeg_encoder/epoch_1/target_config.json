@@ -1,0 +1,47 @@
+{
+  "design": {
+    "benchmark": "opencores",
+    "name": "jpeg_encoder",
+    "variant": "reference",
+    "root": "/workspace/external/jpeg_encoder",
+    "rtl_dir": "common",
+    "rtl_files": [
+      "jpeg/rtl/verilog/jpeg_encoder.v",
+      "dct/rtl/verilog/fdct.v",
+      "dct/rtl/verilog/dct.v",
+      "dct/rtl/verilog/dct_mac.v",
+      "dct/rtl/verilog/dctu.v",
+      "dct/rtl/verilog/dctub.v",
+      "dct/rtl/verilog/zigzag.v",
+      "qnr/rtl/verilog/jpeg_qnr.v",
+      "qnr/rtl/verilog/div_uu.v",
+      "qnr/rtl/verilog/div_su.v",
+      "run_length_coding/rtl/verilog/jpeg_rle.v",
+      "run_length_coding/rtl/verilog/jpeg_rzs.v",
+      "run_length_coding/rtl/verilog/jpeg_rle1.v"
+    ],
+    "top_module": "jpeg_encoder",
+    "test_script": "/workspace/common/scripts/jpeg_encoder.sh",
+    "tb_timeout_s": 600,
+    "clock_port": "clk",
+    "include_dirs": [
+      "dct/rtl/verilog"
+    ]
+  },
+  "period_ns": 0.7979,
+  "side_um": 385.6,
+  "cfg": {
+    "platform": "nangate45",
+    "calibration_period_ns": 0.5,
+    "calibration_side_um": 1000.0,
+    "target_utilization": 0.6,
+    "minimum_side_um": 50.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "effective_pin_width": 2.667,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  }
+}
