@@ -23,14 +23,22 @@ from components.tasks import optimize_timing
 from inspect_ai import Task, eval_async, eval_retry_async
 from inspect_ai.log import read_eval_log
 
+<<<<<<< HEAD
 from common.config import LLM_RESULTS
+=======
+from common.config import ARTIFACTS, LLM_RESULTS
+>>>>>>> 68b87ee (Add new cheap solver)
 
 # Inspect requires an API key (working or not) in environment, so set a fake one
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
+<<<<<<< HEAD
 MODEL = "anthropic/claude-sonnet-4-6"
+=======
+MODEL = "anthropic/claude-haiku-4-5"
+>>>>>>> 68b87ee (Add new cheap solver)
 EPOCHS = 1
 SOLVER = claude_code_iterative_solver
 
