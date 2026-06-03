@@ -70,8 +70,9 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
         root = _create_copy(design, diff)
         rtl_path = root / design.rtl_dir
         rel_paths = [str(f) for f in design.rtl_files]
+        inc_args = "".join(f" -I {d}" for d in design.include_dirs)
         script = (
-            f"read_verilog -sv {' '.join(rel_paths)}; "
+            f"read_verilog -sv{inc_args} {' '.join(rel_paths)}; "
             f"hierarchy -check -top {design.top_module}; proc; opt; clean"
         )
         proc = subprocess.run(

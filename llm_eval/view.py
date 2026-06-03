@@ -11,9 +11,12 @@ from inspect_ai import view
 
 from common.config import LLM_RESULTS
 
+# Fix for broken VSCode port forwarding
+VIEW_PORT = 7676
+
 
 def main() -> None:
-    view(log_dir=str(LLM_RESULTS), recursive=True)
+    view(log_dir=str(LLM_RESULTS), recursive=True, port=VIEW_PORT)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ import tempfile
 from dataclasses import replace
 from pathlib import Path
 
+import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
@@ -36,10 +37,10 @@ def _format_check(label: str, rc: int, log: str) -> str:
     return header + log
 
 
-def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
+def _synth_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame:
     """Apply `diff` to a copy of the design root, drive the ORFS synth flow
     into a fresh tempdir, then run analyse and return its logical-paths
-    report."""
+    report as a DataFrame (ranked worst-slack first)."""
 
     # Create a modified target for the agent's RTL
     patched_root = _create_copy(synth_target.design, diff)
@@ -60,8 +61,20 @@ def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
         log = log_path.read_text() if log_path.is_file() else ""
         raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
 
-    df = analyse(run)
-    return df.to_string(index=False)
+    return analyse(run)
+
+
+def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
+    """Post-synth logical-paths report rendered as a printable table."""
+    return _synth_report_df(synth_target, diff).to_string(index=False)
+
+
+def wns_path_from_df(df: pd.DataFrame) -> tuple[float, str] | None:
+    """The worst-negative-slack path the logical-paths report ranks first."""
+    if df.empty:
+        return None
+    row = df.iloc[0]
+    return float(row["worst_slack_ns"]), f"{row['start']} -> {row['end']}"
 
 
 class Tools:
