@@ -1,0 +1,36 @@
+{
+  "design": {
+    "benchmark": "mcjtag",
+    "name": "bitonic_sorter",
+    "variant": "reference",
+    "root": "/workspace/external/bitonic_sorter",
+    "rtl_dir": "hdl/basic",
+    "rtl_files": [
+      "bitonic_comp.v",
+      "bitonic_node.v",
+      "bitonic_block.v",
+      "bitonic_sort.v"
+    ],
+    "top_module": "bitonic_sort",
+    "test_script": "/workspace/common/scripts/bitonic_sorter.sh",
+    "tb_timeout_s": 60,
+    "clock_port": "clk",
+    "include_dirs": []
+  },
+  "period_ns": 0.4554,
+  "side_um": 683.4,
+  "cfg": {
+    "platform": "nangate45",
+    "calibration_period_ns": 0.5,
+    "calibration_side_um": 1000.0,
+    "target_utilization": 0.6,
+    "minimum_side_um": 50.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "effective_pin_width": 2.667,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  }
+}

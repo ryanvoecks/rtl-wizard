@@ -1,0 +1,2 @@
+Warning: Replacing memory \block_reg with list of registers. See sha512.v:191
+Warning: Replacing memory \w_mem with list of registers. See sha512_w_mem.v:111

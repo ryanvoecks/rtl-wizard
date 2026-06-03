@@ -1,0 +1,408 @@
+--- a/aes.v
++++ b/aes.v
+@@ -79,6 +79,8 @@
+   localparam ADDR_BLOCK3      = 8'h23;
+ 
+   localparam ADDR_RESULT0     = 8'h30;
++  localparam ADDR_RESULT1     = 8'h31;
++  localparam ADDR_RESULT2     = 8'h32;
+   localparam ADDR_RESULT3     = 8'h33;
+ 
+   localparam CORE_NAME0       = 32'h61657320; // "aes "
+@@ -225,7 +227,20 @@
+       config_we     = 1'b0;
+       key_we        = 1'b0;
+       block_we      = 1'b0;
+-      tmp_read_data = 32'h0;
++
++      // Decode read data unconditionally to keep cs/we off the critical path.
++      case (address)
++        ADDR_NAME0:   tmp_read_data = CORE_NAME0;
++        ADDR_NAME1:   tmp_read_data = CORE_NAME1;
++        ADDR_VERSION: tmp_read_data = CORE_VERSION;
++        ADDR_CTRL:    tmp_read_data = {28'h0, keylen_reg, encdec_reg, next_reg, init_reg};
++        ADDR_STATUS:  tmp_read_data = {30'h0, valid_reg, ready_reg};
++        ADDR_RESULT0: tmp_read_data = result_reg[127 : 096];
++        ADDR_RESULT1: tmp_read_data = result_reg[095 : 064];
++        ADDR_RESULT2: tmp_read_data = result_reg[063 : 032];
++        ADDR_RESULT3: tmp_read_data = result_reg[031 : 000];
++        default:      tmp_read_data = 32'h0;
++      endcase
+ 
+       if (cs)
+         begin
+@@ -246,24 +261,6 @@
+               if ((address >= ADDR_BLOCK0) && (address <= ADDR_BLOCK3))
+                 block_we = 1'b1;
+             end // if (we)
+-
+-          else
+-            begin
+-              case (address)
+-                ADDR_NAME0:   tmp_read_data = CORE_NAME0;
+-                ADDR_NAME1:   tmp_read_data = CORE_NAME1;
+-                ADDR_VERSION: tmp_read_data = CORE_VERSION;
+-                ADDR_CTRL:    tmp_read_data = {28'h0, keylen_reg, encdec_reg, next_reg, init_reg};
+-                ADDR_STATUS:  tmp_read_data = {30'h0, valid_reg, ready_reg};
+-
+-                default:
+-                  begin
+-                  end
+-              endcase // case (address)
+-
+-              if ((address >= ADDR_RESULT0) && (address <= ADDR_RESULT3))
+-                tmp_read_data = result_reg[(3 - (address - ADDR_RESULT0)) * 32 +: 32];
+-            end
+         end
+     end // addr_decoder
+ endmodule // aes
+--- a/aes_core.v
++++ b/aes_core.v
+@@ -86,8 +86,6 @@
+   //----------------------------------------------------------------
+   // Wires.
+   //----------------------------------------------------------------
+-  reg            init_state;
+-
+   wire [127 : 0] round_key;
+   wire           key_ready;
+ 
+@@ -96,6 +94,7 @@
+   wire [127 : 0] enc_new_block;
+   wire           enc_ready;
+   wire [31 : 0]  enc_sboxw;
++  wire [31 : 0]  enc_new_sboxw;
+ 
+   reg            dec_next;
+   wire [3 : 0]   dec_round_nr;
+@@ -107,11 +106,7 @@
+   reg            muxed_ready;
+ 
+   wire [31 : 0]  keymem_sboxw;
+-
+-/* verilator lint_off UNOPTFLAT */
+-  reg [31 : 0]   muxed_sboxw;
+-  wire [31 : 0]  new_sboxw;
+-/* verilator lint_on UNOPTFLAT */
++  wire [31 : 0]  keymem_new_sboxw;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -128,13 +123,17 @@
+                                .round_key(round_key),
+ 
+                                .sboxw(enc_sboxw),
+-                               .new_sboxw(new_sboxw),
++                               .new_sboxw(enc_new_sboxw),
+ 
+                                .block(block),
+                                .new_block(enc_new_block),
+                                .ready(enc_ready)
+                               );
+ 
++  // enc_block has internal parallel sboxes; enc_sboxw output is for
++  // observability only and does not drive any timing-critical logic.
++  aes_sbox enc_sbox_ext(.sboxw(enc_sboxw), .new_sboxw(enc_new_sboxw));
++
+ 
+   aes_decipher_block dec_block(
+                                .clk(clk),
+@@ -165,11 +164,12 @@
+                      .ready(key_ready),
+ 
+                      .sboxw(keymem_sboxw),
+-                     .new_sboxw(new_sboxw)
++                     .new_sboxw(keymem_new_sboxw)
+                     );
+ 
+-
+-  aes_sbox sbox_inst(.sboxw(muxed_sboxw), .new_sboxw(new_sboxw));
++  // Sbox for keymem port compatibility. Keymem internally uses its own
++  // private sbox; this external instance satisfies the port interface.
++  aes_sbox keymem_sbox_ext(.sboxw(keymem_sboxw), .new_sboxw(keymem_new_sboxw));
+ 
+ 
+   //----------------------------------------------------------------
+@@ -207,25 +207,6 @@
+             aes_core_ctrl_reg <= aes_core_ctrl_new;
+         end
+     end // reg_update
+-
+-
+-  //----------------------------------------------------------------
+-  // sbox_mux
+-  //
+-  // Controls which of the encipher datapath or the key memory
+-  // that gets access to the sbox.
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : sbox_mux
+-      if (init_state)
+-        begin
+-          muxed_sboxw = keymem_sboxw;
+-        end
+-      else
+-        begin
+-          muxed_sboxw = enc_sboxw;
+-        end
+-    end // sbox_mux
+ 
+ 
+   //----------------------------------------------------------------
+@@ -267,7 +248,6 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : aes_core_ctrl
+-      init_state        = 1'b0;
+       ready_new         = 1'b0;
+       ready_we          = 1'b0;
+       result_valid_new  = 1'b0;
+@@ -280,7 +260,6 @@
+           begin
+             if (init)
+               begin
+-                init_state        = 1'b1;
+                 ready_new         = 1'b0;
+                 ready_we          = 1'b1;
+                 result_valid_new  = 1'b0;
+@@ -290,7 +269,6 @@
+               end
+             else if (next)
+               begin
+-                init_state        = 1'b0;
+                 ready_new         = 1'b0;
+                 ready_we          = 1'b1;
+                 result_valid_new  = 1'b0;
+@@ -302,8 +280,6 @@
+ 
+         CTRL_INIT:
+           begin
+-            init_state = 1'b1;
+-
+             if (key_ready)
+               begin
+                 ready_new         = 1'b1;
+@@ -315,8 +291,6 @@
+ 
+         CTRL_NEXT:
+           begin
+-            init_state = 1'b0;
+-
+             if (muxed_ready)
+               begin
+                 ready_new         = 1'b1;
+--- a/aes_decipher_block.v
++++ b/aes_decipher_block.v
+@@ -86,12 +86,6 @@
+     end
+   endfunction // gm2
+ 
+-  function automatic [7 : 0] gm3(input [7 : 0] op);
+-    begin
+-      gm3 = gm2(op) ^ op;
+-    end
+-  endfunction // gm3
+-
+   function automatic [7 : 0] gm4(input [7 : 0] op);
+     begin
+       gm4 = gm2(gm2(op));
+@@ -144,7 +138,7 @@
+ 
+       inv_mixw = {mb0, mb1, mb2, mb3};
+     end
+-  endfunction // mixw
++  endfunction // inv_mixw
+ 
+   function automatic [127 : 0] inv_mixcolumns(input [127 : 0] data);
+     reg [31 : 0] w0, w1, w2, w3;
+@@ -226,15 +220,31 @@
+   //----------------------------------------------------------------
+   // Wires.
+   //----------------------------------------------------------------
+-  reg [31 : 0]  tmp_sboxw;
+-  wire [31 : 0] new_sboxw;
++  reg [31 : 0]  tmp_sboxw;   // retained for testbench observability
++  wire [31 : 0] new_sboxw;   // retained for testbench observability
+   reg [2 : 0]   update_type;
+ 
+-
+-  //----------------------------------------------------------------
+-  // Instantiations.
+-  //----------------------------------------------------------------
+-  aes_inv_sbox inv_sbox_inst(.sboxw(tmp_sboxw), .new_sboxw(new_sboxw));
++  // Four private inv_sbox instances: each block word processed independently,
++  // removing the sword_ctr -> mux -> inv_sbox path from the data critical loop.
++  wire [31 : 0] inv_sbox_w0;
++  wire [31 : 0] inv_sbox_w1;
++  wire [31 : 0] inv_sbox_w2;
++  wire [31 : 0] inv_sbox_w3;
++
++
++  //----------------------------------------------------------------
++  // Four parallel inv_sbox instances fed directly from block registers.
++  //----------------------------------------------------------------
++  aes_inv_sbox inv_sbox0(.sboxw(block_w0_reg), .new_sboxw(inv_sbox_w0));
++  aes_inv_sbox inv_sbox1(.sboxw(block_w1_reg), .new_sboxw(inv_sbox_w1));
++  aes_inv_sbox inv_sbox2(.sboxw(block_w2_reg), .new_sboxw(inv_sbox_w2));
++  aes_inv_sbox inv_sbox3(.sboxw(block_w3_reg), .new_sboxw(inv_sbox_w3));
++
++  // new_sboxw: muxed inv_sbox output for testbench observability.
++  // Not used in any timing-critical data path.
++  assign new_sboxw = (sword_ctr_reg == 2'h0) ? inv_sbox_w0 :
++                     (sword_ctr_reg == 2'h1) ? inv_sbox_w1 :
++                     (sword_ctr_reg == 2'h2) ? inv_sbox_w2 : inv_sbox_w3;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -333,33 +343,38 @@
+ 
+         SBOX_UPDATE:
+           begin
+-            block_new = {new_sboxw, new_sboxw, new_sboxw, new_sboxw};
+-
++            // Data path: block_w*_reg -> parallel inv_sbox -> block_w*_reg.
++            // tmp_sboxw maintained for testbench observability only.
++            // sword_ctr selects write-enable (control path) not sbox input (data path).
+             case (sword_ctr_reg)
+               2'h0:
+                 begin
+                   tmp_sboxw   = block_w0_reg;
++                  block_new   = {inv_sbox_w0, inv_sbox_w0, inv_sbox_w0, inv_sbox_w0};
+                   block_w0_we = 1'b1;
+                 end
+ 
+               2'h1:
+                 begin
+                   tmp_sboxw   = block_w1_reg;
++                  block_new   = {inv_sbox_w1, inv_sbox_w1, inv_sbox_w1, inv_sbox_w1};
+                   block_w1_we = 1'b1;
+                 end
+ 
+               2'h2:
+                 begin
+                   tmp_sboxw   = block_w2_reg;
++                  block_new   = {inv_sbox_w2, inv_sbox_w2, inv_sbox_w2, inv_sbox_w2};
+                   block_w2_we = 1'b1;
+                 end
+ 
+               2'h3:
+                 begin
+                   tmp_sboxw   = block_w3_reg;
++                  block_new   = {inv_sbox_w3, inv_sbox_w3, inv_sbox_w3, inv_sbox_w3};
+                   block_w3_we = 1'b1;
+                 end
+-            endcase // case (sbox_mux_ctrl_reg)
++            endcase // case (sword_ctr_reg)
+           end
+ 
+         MAIN_UPDATE:
+--- a/aes_encipher_block.v
++++ b/aes_encipher_block.v
+@@ -196,6 +196,24 @@
+   reg [2 : 0]  update_type;
+   reg [31 : 0] muxed_sboxw;
+ 
++  // Four private sbox instances: each word is processed independently,
++  // breaking the cross-module sbox path from the critical timing loop.
++  wire [31 : 0] sbox_w0_out;
++  wire [31 : 0] sbox_w1_out;
++  wire [31 : 0] sbox_w2_out;
++  wire [31 : 0] sbox_w3_out;
++
++
++  //----------------------------------------------------------------
++  // Four parallel sbox instances fed directly from block registers.
++  // This eliminates the muxed_sboxw -> port -> external sbox ->
++  // new_sboxw port chain from the timing-critical data path.
++  //----------------------------------------------------------------
++  aes_sbox sbox0(.sboxw(block_w0_reg), .new_sboxw(sbox_w0_out));
++  aes_sbox sbox1(.sboxw(block_w1_reg), .new_sboxw(sbox_w1_out));
++  aes_sbox sbox2(.sboxw(block_w2_reg), .new_sboxw(sbox_w2_out));
++  aes_sbox sbox3(.sboxw(block_w3_reg), .new_sboxw(sbox_w3_out));
++
+ 
+   //----------------------------------------------------------------
+   // Concurrent connectivity for ports etc.
+@@ -291,33 +309,39 @@
+ 
+         SBOX_UPDATE:
+           begin
+-            block_new = {new_sboxw, new_sboxw, new_sboxw, new_sboxw};
+-
++            // Data path uses private sbox instances (block_w*_reg -> sbox -> result).
++            // muxed_sboxw is maintained for the external sboxw port (observability).
++            // new_sboxw port input is intentionally not used: this removes the
++            // sword_ctr -> mux -> port -> external sbox -> port path from timing.
+             case (sword_ctr_reg)
+               2'h0:
+                 begin
+                   muxed_sboxw = block_w0_reg;
++                  block_new   = {sbox_w0_out, sbox_w0_out, sbox_w0_out, sbox_w0_out};
+                   block_w0_we = 1'b1;
+                 end
+ 
+               2'h1:
+                 begin
+                   muxed_sboxw = block_w1_reg;
++                  block_new   = {sbox_w1_out, sbox_w1_out, sbox_w1_out, sbox_w1_out};
+                   block_w1_we = 1'b1;
+                 end
+ 
+               2'h2:
+                 begin
+                   muxed_sboxw = block_w2_reg;
++                  block_new   = {sbox_w2_out, sbox_w2_out, sbox_w2_out, sbox_w2_out};
+                   block_w2_we = 1'b1;
+                 end
+ 
+               2'h3:
+                 begin
+                   muxed_sboxw = block_w3_reg;
++                  block_new   = {sbox_w3_out, sbox_w3_out, sbox_w3_out, sbox_w3_out};
+                   block_w3_we = 1'b1;
+                 end
+-            endcase // case (sbox_mux_ctrl_reg)
++            endcase // case (sword_ctr_reg)
+           end
+ 
+         MAIN_UPDATE:
+--- a/aes_key_mem.v
++++ b/aes_key_mem.v
+@@ -50,7 +50,6 @@
+                    output wire [127 : 0] round_key,
+                    output wire           ready,
+ 
+-
+                    output wire [31 : 0]  sboxw,
+                    input wire  [31 : 0]  new_sboxw
+                   );
+@@ -111,8 +110,17 @@
+   // Wires.
+   //----------------------------------------------------------------
+   reg [31 : 0]  tmp_sboxw;
++  wire [31 : 0] new_sboxw_int;  // private sbox output used for key expansion
+   reg           round_key_update;
+   reg [127 : 0] tmp_round_key;
++
++
++  //----------------------------------------------------------------
++  // Private sbox instance for key expansion.
++  // new_sboxw (port) is kept for testbench compatibility but not used
++  // internally - key expansion logic uses new_sboxw_int exclusively.
++  //----------------------------------------------------------------
++  aes_sbox keymem_sbox(.sboxw(tmp_sboxw), .new_sboxw(new_sboxw_int));
+ 
+ 
+   //----------------------------------------------------------------
+@@ -224,9 +232,9 @@
+ 
+       rconw = {rcon_reg, 24'h0};
+       tmp_sboxw = w7;
+-      rotstw = {new_sboxw[23 : 00], new_sboxw[31 : 24]};
++      rotstw = {new_sboxw_int[23 : 00], new_sboxw_int[31 : 24]};
+       trw = rotstw ^ rconw;
+-      tw = new_sboxw;
++      tw = new_sboxw_int;
+ 
+       // Generate the specific round keys.
+       if (round_key_update)

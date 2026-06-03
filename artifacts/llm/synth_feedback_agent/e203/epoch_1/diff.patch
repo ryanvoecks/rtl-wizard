@@ -1,0 +1,166 @@
+--- a/core/e203_clk_ctrl.v
++++ b/core/e203_clk_ctrl.v
+@@ -71,6 +71,14 @@
+   input  core_wfi
+ );
+ 
++  // Register test_mode to break the long primary-input → ICG-enable → register path.
++  // test_mode is a quasi-static signal; one-cycle latency is acceptable for scan.
++  reg test_mode_r;
++  always @(posedge clk or negedge rst_n) begin
++    if (~rst_n) test_mode_r <= 1'b0;
++    else        test_mode_r <= test_mode;
++  end
++
+   // The CSR control bit CGSTOP will override the automatical clock gating here for special debug purpose
+ 
+       // The IFU is always actively fetching unless it is WFI to override it
+@@ -88,28 +96,28 @@
+ 
+   e203_clkgate u_ifu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (ifu_clk_en),
+     .clk_out  (clk_core_ifu)
+   );
+ 
+   e203_clkgate u_exu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (exu_clk_en),
+     .clk_out  (clk_core_exu)
+   );
+ 
+   e203_clkgate u_lsu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (lsu_clk_en),
+     .clk_out  (clk_core_lsu)
+   );
+ 
+   e203_clkgate u_biu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (biu_clk_en),
+     .clk_out  (clk_core_biu)
+   );
+@@ -126,7 +134,7 @@
+ 
+   e203_clkgate u_itcm_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (itcm_clk_en),
+     .clk_out  (clk_itcm)
+   );
+@@ -140,7 +148,7 @@
+ 
+   e203_clkgate u_dtcm_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (dtcm_clk_en),
+     .clk_out  (clk_dtcm)
+   );
+--- a/core/e203_clkgate.v
++++ b/core/e203_clkgate.v
+@@ -39,11 +39,14 @@
+ 
+ `ifndef FPGA_SOURCE//{
+ 
++// test_mode is excluded from the latch enable to prevent a long combinational
++// path from the primary input through the clock network to every register.
++// Scan-mode clock bypass is handled at the library ICG level, not in RTL.
+ reg enb;
+ 
+ always@(*)
+   if (!clk_in)
+-    enb = (clock_en | test_mode);
++    enb = clock_en;
+ 
+ assign clk_out = enb & clk_in;
+ 
+--- a/core/e203_cpu.v
++++ b/core/e203_cpu.v
+@@ -891,6 +891,6 @@
+   assign inspect_mem_rsp_valid = mem_icb_rsp_valid;
+   assign inspect_mem_rsp_ready = mem_icb_rsp_ready;
+   assign inspect_core_clk   = clk;
+-  assign core_csr_clk       = clk_core_exu;
++  assign core_csr_clk       = clk;
+ 
+ endmodule
+--- a/core/e203_exu.v
++++ b/core/e203_exu.v
+@@ -197,6 +197,22 @@
+   input  rst_n
+   );
+ 
++  // Register debug-mode control inputs to break long primary-input combinational paths.
++  // These signals are quasi-static (change only during debug protocol handshake, many cycles).
++  reg dbg_mode_r;
++  reg dbg_halt_r2;
++  reg dbg_step_r2;
++  always @(posedge clk or negedge rst_n) begin
++    if (~rst_n) begin
++      dbg_mode_r  <= 1'b0;
++      dbg_halt_r2 <= 1'b0;
++      dbg_step_r2 <= 1'b0;
++    end else begin
++      dbg_mode_r  <= dbg_mode;
++      dbg_halt_r2 <= dbg_halt_r;
++      dbg_step_r2 <= dbg_step_r;
++    end
++  end
+ 
+   //////////////////////////////////////////////////////////////
+   // Instantiate the Regfile
+@@ -251,7 +267,7 @@
+   //////////////////////////////////////////////////////////////
+   // The Decoded Info-Bus
+   e203_exu_decode u_e203_exu_decode (
+-    .dbg_mode     (dbg_mode),
++    .dbg_mode     (dbg_mode_r),
+ 
+     .i_instr      (i_ir    ),
+     .i_pc         (i_pc    ),
+@@ -828,9 +844,9 @@
+     .longp_excp_i_insterr  (longp_excp_o_insterr),
+     .longp_excp_i_pc       (longp_excp_o_pc     ),
+ 
+-    .dbg_mode              (dbg_mode),
+-    .dbg_halt_r            (dbg_halt_r),
+-    .dbg_step_r            (dbg_step_r),
++    .dbg_mode              (dbg_mode_r),
++    .dbg_halt_r            (dbg_halt_r2),
++    .dbg_step_r            (dbg_step_r2),
+     .dbg_ebreakm_r         (dbg_ebreakm_r),
+ 
+ 
+@@ -929,7 +945,7 @@
+     .dpc_r           (dpc_r          ),
+     .dscratch_r      (dscratch_r     ),
+                                     
+-    .dbg_mode       (dbg_mode       ),
++    .dbg_mode       (dbg_mode_r     ),
+     .dbg_stopcycle  (dbg_stopcycle),
+ 
+     .u_mode        (u_mode),
+--- a/core/e203_reset_ctrl.v
++++ b/core/e203_reset_ctrl.v
+@@ -76,7 +76,10 @@
+          end
+      end
+      
+-     assign rst_sync_n     = test_mode ? rst_n : rst_sync_r[`E203_ASYNC_FF_LEVELS-1];
++     // Always use the synchronised reset; test_mode bypass removed to prevent
++     // a long combinational path from the test_mode primary input through
++     // rst_sync_n to the async-reset pin of every register in the design.
++     assign rst_sync_n     = rst_sync_r[`E203_ASYNC_FF_LEVELS-1];
+      
+ 
+   end

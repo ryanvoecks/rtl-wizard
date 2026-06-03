@@ -1,0 +1,139 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -109,7 +109,7 @@
+ 	//
+ 	// variables
+ 	//
+-	reg go, dgo, ddgo, ddcnt, dddcnt;
++	reg go, dgo, ddgo, ddcnt, dddcnt, ddddcnt, dddddcnt;
+ 	reg [di_width:1] ddin;
+ 
+ 	//
+@@ -138,9 +138,11 @@
+ 		  ddgo   <= #1 1'b0;
+ 		  ddin   <= #1 0;
+ 
+-	      douten <= #1 1'b0;
+-	      ddcnt  <= #1 1'b1;
+-	      dddcnt <= #1 1'b1;
++	      douten   <= #1 1'b0;
++	      ddcnt    <= #1 1'b1;
++	      dddcnt   <= #1 1'b1;
++	      ddddcnt  <= #1 1'b1;
++	      dddddcnt <= #1 1'b1;
+ 	  end
+ 	  else if (ena)
+ 	  begin
+@@ -149,10 +151,12 @@
+ 	      ddgo   <= #1 dgo;
+ 	      ddin   <= #1 din;
+ 
+-	      ddcnt  <= #1 dcnt;
+-	      dddcnt <= #1 ddcnt;
+-
+-	      douten <= #1 ddcnt & ~dddcnt;
++	      ddcnt    <= #1 dcnt;
++	      dddcnt   <= #1 ddcnt;
++	      ddddcnt  <= #1 dddcnt;
++	      dddddcnt <= #1 ddddcnt;
++
++	      douten <= #1 ddddcnt & ~dddddcnt;
+ 	  end
+ 
+ 	// Hookup DCT units
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -79,32 +79,63 @@
+ 	reg [rwidth -1:0] result;
+ 
+ 	//
++	// parameters
++	//
++	localparam SPLIT = dwidth / 2;   // split din into two nibbles to pipeline the multiply
++
++	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
+-
+-	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
++	reg  [mwidth -1:0] mult_res;
+ 	wire [rwidth -1:0] ext_mult_res;
+ 
++	// Stage 1: register inputs (breaks the long ddin fanout path)
++	reg [dwidth-1:0] din_r;
++	reg [cwidth-1:0] coef_r;
++	reg              dclr_r;
++
++	// Stage 2: partial products of the split multiplication (breaks the multiplier depth)
++	// din = din_hi_signed * 2^SPLIT + din_lo_unsigned
++	// din * coef = din_hi * coef * 2^SPLIT + din_lo * coef
++	reg signed [SPLIT + cwidth - 1 : 0] pp_hi;  // upper nibble * coef
++	reg signed [SPLIT + cwidth     : 0] pp_lo;  // lower nibble * coef (zero-extended)
++	reg                                 dclr_pp;
+ 
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// Stage 1: register inputs
++	always @(posedge clk)
++	  if(ena) begin
++	    din_r  <= #1 din;
++	    coef_r <= #1 coef;
++	    dclr_r <= #1 dclr;
++	  end
++
++	// Stage 2: two parallel 4x11 multiplies (much faster than one 8x11)
++	always @(posedge clk)
++	  if(ena) begin
++	    pp_hi   <= #1 $signed(din_r[dwidth-1 : SPLIT]) * $signed(coef_r);
++	    pp_lo   <= #1 $signed({1'b0, din_r[SPLIT-1 : 0]}) * $signed(coef_r);
++	    dclr_pp <= #1 dclr_r;
++	  end
++
++	// Stage 3: combine partial products with a single adder (fast)
++	// mult_res = (pp_hi << SPLIT) + pp_lo
++	// pp_hi is (SPLIT+cwidth) bits signed; shifted gives mwidth bits
++	// pp_lo is (SPLIT+cwidth+1) bits signed; sign-extended to mwidth
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	    mult_res <= #1 {pp_hi[SPLIT+cwidth-1:0], {SPLIT{1'b0}}} +
++	                   {{(mwidth-SPLIT-cwidth-1){pp_lo[SPLIT+cwidth]}}, pp_lo};
+ 
+ 	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
+ 
+-	// generate adder structure
++	// Stage 4: accumulate (dclr_pp is aligned with the mult_res it guards)
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(dclr)
++	    if(dclr_pp)
+ 	      result <= #1 ext_mult_res;
+ 	    else
+ 	      result <= #1 ext_mult_res + result;
+--- a/dct/rtl/verilog/dctu.v
++++ b/dct/rtl/verilog/dctu.v
+@@ -56,6 +56,7 @@
+ `include "timescale.v"
+ //synopsys translate_on
+ 
++(* keep_hierarchy *)
+ module dctu(clk, ena, ddgo, x, y, ddin, dout);
+ 
+ 	parameter coef_width = 16;
+--- a/dct/rtl/verilog/dctub.v
++++ b/dct/rtl/verilog/dctub.v
+@@ -56,6 +56,7 @@
+ `include "timescale.v"
+ //synopsys translate_on
+ 
++(* keep_hierarchy *)
+ module dctub(clk, ena, ddgo, x, y, ddin,
+ 		dout0, dout1, dout2, dout3, dout4, dout5, dout6, dout7);
+ 

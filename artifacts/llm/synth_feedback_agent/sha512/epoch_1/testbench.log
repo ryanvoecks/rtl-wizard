@@ -1,0 +1,283 @@
+iverilog -Wall -o top.sim ../src/tb/tb_sha512.v ../src/rtl/sha512.v ../src/rtl/sha512_core.v ../src/rtl/sha512_h_constants.v ../src/rtl/sha512_k_constants.v ../src/rtl/sha512_w_mem.v
+iverilog -Wall -o core.sim ../src/rtl/sha512_core.v ../src/rtl/sha512_h_constants.v ../src/rtl/sha512_k_constants.v ../src/rtl/sha512_w_mem.v ../src/tb/tb_sha512_core.v
+   -- Testbench for sha512 started --
+*** Toggle reset.
+DUT name: sha2-512
+DUT version: 0.80
+State of DUT
+------------
+Inputs and outputs:
+cs = 0x0, we = 0x0
+address = 0x02
+write_data = 0x00000000, read_data = 0x302e3830
+tmp_read_data = 0x302e3830
+
+Control and status:
+ctrl = 0x00, status = 0x01
+
+Message block:
+block0  = 0x00000000, block1  = 0x00000000, block2  = 0x00000000,  block3  = 0x00000000
+block4  = 0x00000000, block5  = 0x00000000, block6  = 0x00000000,  block7  = 0x00000000
+block8  = 0x00000000, block9  = 0x00000000, block10 = 0x00000000,  block11 = 0x00000000
+block12 = 0x00000000, block13 = 0x00000000, block14 = 0x00000000,  block15 = 0x00000000
+block16 = 0x00000000, block17 = 0x00000000, block18 = 0x00000000,  block19 = 0x00000000
+block20 = 0x00000000, block21 = 0x00000000, block22 = 0x00000000,  block23 = 0x00000000
+block24 = 0x00000000, block25 = 0x00000000, block26 = 0x00000000,  block27 = 0x00000000
+block28 = 0x00000000, block29 = 0x00000000, block30 = 0x00000000,  block31 = 0x00000000
+
+Digest:
+digest = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+
+*** TC0 - Single block test started.
+TC0: OK.
+*** TC0 - Single block test done.
+*** TC1 - Single block test started.
+TC1: OK.
+*** TC1 - Single block test done.
+*** TC2 - Single block test started.
+TC2: OK.
+*** TC2 - Single block test done.
+*** TC3 - Single block test started.
+TC3: OK.
+*** TC3 - Single block test done.
+*** TC4 - Double block test started.
+TC4 first block: OK.
+TC4 final block: OK.
+*** TC4 - Double block test done.
+*** TC5 - Double block test started.
+TC5 first block: OK.
+TC5 final block: OK.
+*** TC5 - Double block test done.
+*** TC6 - Double block test started.
+TC6 first block: OK.
+TC6 final block: OK.
+*** TC6 - Double block test done.
+*** TC7 - Double block test started.
+TC7 first block: OK.
+TC7 final block: OK.
+*** TC7 - Double block test done.
+*** TC8 - Work factor test started.
+*** TC8 - Work factor test done.
+State of DUT
+------------
+Inputs and outputs:
+cs = 0x0, we = 0x0
+address = 0x4f
+write_data = 0x0000008d, read_data = 0xbd668bee
+tmp_read_data = 0xbd668bee
+
+Control and status:
+ctrl = 0x00, status = 0x03
+
+Message block:
+block0  = 0x00000000, block1  = 0x00000000, block2  = 0x00000000,  block3  = 0x00000000
+block4  = 0x00000000, block5  = 0x00000000, block6  = 0x00000000,  block7  = 0x00000000
+block8  = 0x00000000, block9  = 0x00000000, block10 = 0x00000000,  block11 = 0x00000000
+block12 = 0x00000000, block13 = 0x00000000, block14 = 0x00000000,  block15 = 0x00000000
+block16 = 0x00000000, block17 = 0x00000000, block18 = 0x00000000,  block19 = 0x00000000
+block20 = 0x00000000, block21 = 0x00000000, block22 = 0x00000000,  block23 = 0x00000000
+block24 = 0x00000000, block25 = 0x00000000, block26 = 0x00000000,  block27 = 0x00000000
+block28 = 0x00000000, block29 = 0x00000000, block30 = 0x00000000,  block31 = 0x00000000
+
+Digest:
+digest = 0xcf7881d5774acbe8533362e0fbc780700267639d87460eda3086cb40e85931b0717dc95288a023a396bab2c14ce0b5e06fc4fe04eae33e0b91f4d80cbd668bee
+
+*** All 09 test cases completed successfully.
+   -- Testbench for sha512 done. --
+   -- Testbench for sha512 core started --
+State of DUT
+------------
+Inputs and outputs:
+init   = 0x0, next  = 0x0. mode = 0x0
+block  = 0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ready  = 0xx, valid = 0xx
+digest = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+H0_reg = 0xxxxxxxxxxxxxxxxx, H1_reg = 0xxxxxxxxxxxxxxxxx, H2_reg = 0xxxxxxxxxxxxxxxxx, H3_reg = 0xxxxxxxxxxxxxxxxx
+H4_reg = 0xxxxxxxxxxxxxxxxx, H5_reg = 0xxxxxxxxxxxxxxxxx, H6_reg = 0xxxxxxxxxxxxxxxxx, H7_reg = 0xxxxxxxxxxxxxxxxx
+
+Control signals and counter:
+sha512_ctrl_reg = 0x0x
+digest_init     = 0xx, digest_update = 0xx
+state_init      = 0xx, state_update  = 0xx
+first_block     = 0xx, ready_reg    = 0xx, w_init    = 0xx
+round_ctr_inc       = 0xx, round_ctr_rst     = 0xx, round_ctr_reg = 0xxx
+
+State registers:
+a_reg = 0xxxxxxxxxxxxxxxxx, b_reg = 0xxxxxxxxxxxxxxxxx, c_reg = 0xxxxxxxxxxxxxxxxx, d_reg = 0xxxxxxxxxxxxxxxxx
+e_reg = 0xxxxxxxxxxxxxxxxx, f_reg = 0xxxxxxxxxxxxxxxxx, g_reg = 0xxxxxxxxxxxxxxxxx, h_reg = 0xxxxxxxxxxxxxxxxx
+
+a_new = 0xxxxxxxxxxxxxxxxx, b_new = 0xxxxxxxxxxxxxxxxx, c_new = 0xxxxxxxxxxxxxxxxx, d_new = 0xxxxxxxxxxxxxxxxx
+e_new = 0xxxxxxxxxxxxxxxxx, f_new = 0xxxxxxxxxxxxxxxxx, g_new = 0xxxxxxxxxxxxxxxxx, h_new = 0xxxxxxxxxxxxxxxxx
+
+State update values:
+w  = 0xxxxxxxxxxxxxxxxx, k  = 0xxxxxxxxxxxxxxxxx
+t1 = 0xxxxxxxxxxxxxxxxx, t2 = 0xxxxxxxxxxxxxxxxx
+
+*** Toggle reset.
+State of DUT
+------------
+Inputs and outputs:
+init   = 0x0, next  = 0x0. mode = 0x0
+block  = 0x0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+ready  = 0x1, valid = 0x0
+digest = 0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000
+H0_reg = 0x0000000000000000, H1_reg = 0x0000000000000000, H2_reg = 0x0000000000000000, H3_reg = 0x0000000000000000
+H4_reg = 0x0000000000000000, H5_reg = 0x0000000000000000, H6_reg = 0x0000000000000000, H7_reg = 0x0000000000000000
+
+Control signals and counter:
+sha512_ctrl_reg = 0x00
+digest_init     = 0x0, digest_update = 0x0
+state_init      = 0x0, state_update  = 0x0
+first_block     = 0x0, ready_reg    = 0x1, w_init    = 0x0
+round_ctr_inc       = 0x0, round_ctr_rst     = 0x0, round_ctr_reg = 0x00
+
+State registers:
+a_reg = 0x0000000000000000, b_reg = 0x0000000000000000, c_reg = 0x0000000000000000, d_reg = 0x0000000000000000
+e_reg = 0x0000000000000000, f_reg = 0x0000000000000000, g_reg = 0x0000000000000000, h_reg = 0x0000000000000000
+
+a_new = 0x0000000000000000, b_new = 0x0000000000000000, c_new = 0x0000000000000000, d_new = 0x0000000000000000
+e_new = 0x0000000000000000, f_new = 0x0000000000000000, g_new = 0x0000000000000000, h_new = 0x0000000000000000
+
+State update values:
+w  = 0x0000000000000000, k  = 0x428a2f98d728ae22
+t1 = 0x0000000000000000, t2 = 0x0000000000000000
+
+*** TC 1 single block test case started.
+*** TC 1 successful.
+
+*** TC 2 single block test case started.
+*** TC 2 successful.
+
+*** TC 3 single block test case started.
+*** TC 3 successful.
+
+*** TC 4 single block test case started.
+*** TC 4 successful.
+
+*** TC 5 double block test case started.
+*** TC 5 first block started.
+*** TC 5 first block done.
+*** TC 5 second block started.
+*** TC 5 second block done.
+*** TC 5 first block successful
+
+*** TC 5 second block successful
+
+*** TC 6 double block test case started.
+*** TC 6 first block started.
+*** TC 6 first block done.
+*** TC 6 second block started.
+*** TC 6 second block done.
+*** TC 6 first block successful
+
+*** TC 6 second block successful
+
+*** TC 7 double block test case started.
+*** TC 7 first block started.
+*** TC 7 first block done.
+*** TC 7 second block started.
+*** TC 7 second block done.
+*** TC 7 first block successful
+
+*** TC 7 second block successful
+
+*** TC 8 double block test case started.
+*** TC 8 first block started.
+*** TC 8 first block done.
+*** TC 8 second block started.
+*** TC 8 second block done.
+*** TC 8 first block successful
+
+*** TC 8 second block successful
+
+*** All 08 test cases completed successfully
+*** Simulation done.
+../src/rtl/sha512_w_mem.v:160: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:160: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:161: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:161: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:162: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:165: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:165: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:166: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:166: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:167: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:170: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:170: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:171: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:171: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:172: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:175: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:175: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:176: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:176: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:177: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:181: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:184: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:184: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:188: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:188: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:243: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:244: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:245: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:246: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:281: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:282: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:283: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:284: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:285: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:286: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:287: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:288: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:289: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:290: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:291: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:292: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:293: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:294: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:295: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512.v:284: warning: @* is sensitive to all 32 words in array 'block_reg'.
+../src/rtl/sha512_w_mem.v:160: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:160: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:161: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:161: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:162: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:165: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:165: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:166: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:166: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:167: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:170: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:170: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:171: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:171: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:172: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:175: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:175: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:176: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:176: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:177: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:181: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:184: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:184: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:188: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:188: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:243: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:244: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:245: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:246: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:281: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:282: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:283: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:284: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:285: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:286: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:287: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:288: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:289: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:290: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:291: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:292: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:293: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:294: warning: @* is sensitive to all 16 words in array 'w_mem'.
+../src/rtl/sha512_w_mem.v:295: warning: @* is sensitive to all 16 words in array 'w_mem'.

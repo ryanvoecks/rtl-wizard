@@ -1,0 +1,270 @@
+--- a/aes.v
++++ b/aes.v
+@@ -79,6 +79,8 @@
+   localparam ADDR_BLOCK3      = 8'h23;
+ 
+   localparam ADDR_RESULT0     = 8'h30;
++  localparam ADDR_RESULT1     = 8'h31;
++  localparam ADDR_RESULT2     = 8'h32;
+   localparam ADDR_RESULT3     = 8'h33;
+ 
+   localparam CORE_NAME0       = 32'h61657320; // "aes "
+@@ -240,10 +242,10 @@
+               if (address == ADDR_CONFIG)
+                 config_we = 1'b1;
+ 
+-              if ((address >= ADDR_KEY0) && (address <= ADDR_KEY7))
++              if (address[7:3] == 5'h02)
+                 key_we = 1'b1;
+ 
+-              if ((address >= ADDR_BLOCK0) && (address <= ADDR_BLOCK3))
++              if (address[7:2] == 6'h08)
+                 block_we = 1'b1;
+             end // if (we)
+ 
+@@ -261,8 +263,13 @@
+                   end
+               endcase // case (address)
+ 
+-              if ((address >= ADDR_RESULT0) && (address <= ADDR_RESULT3))
+-                tmp_read_data = result_reg[(3 - (address - ADDR_RESULT0)) * 32 +: 32];
++              if (address[7:2] == 6'h0c)
++                case (address[1:0])
++                  2'h0: tmp_read_data = result_reg[127:96];
++                  2'h1: tmp_read_data = result_reg[95:64];
++                  2'h2: tmp_read_data = result_reg[63:32];
++                  2'h3: tmp_read_data = result_reg[31:0];
++                endcase
+             end
+         end
+     end // addr_decoder
+--- a/aes_core.v
++++ b/aes_core.v
+@@ -86,32 +86,28 @@
+   //----------------------------------------------------------------
+   // Wires.
+   //----------------------------------------------------------------
+-  reg            init_state;
+-
+-  wire [127 : 0] round_key;
+   wire           key_ready;
+ 
+   reg            enc_next;
+   wire [3 : 0]   enc_round_nr;
++  wire [127 : 0] enc_round_key;
+   wire [127 : 0] enc_new_block;
+   wire           enc_ready;
+-  wire [31 : 0]  enc_sboxw;
+ 
+   reg            dec_next;
+   wire [3 : 0]   dec_round_nr;
++  wire [127 : 0] dec_round_key;
+   wire [127 : 0] dec_new_block;
+   wire           dec_ready;
+ 
+   reg [127 : 0]  muxed_new_block;
+-  reg [3 : 0]    muxed_round_nr;
+   reg            muxed_ready;
+ 
+   wire [31 : 0]  keymem_sboxw;
+-
+-/* verilator lint_off UNOPTFLAT */
+-  reg [31 : 0]   muxed_sboxw;
+-  wire [31 : 0]  new_sboxw;
+-/* verilator lint_on UNOPTFLAT */
++  wire [31 : 0]  keymem_new_sboxw;
++
++  wire [31 : 0]  enc_sboxw;
++  wire [31 : 0]  enc_new_sboxw;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -125,16 +121,18 @@
+ 
+                                .keylen(keylen),
+                                .round(enc_round_nr),
+-                               .round_key(round_key),
++                               .round_key(enc_round_key),
+ 
+                                .sboxw(enc_sboxw),
+-                               .new_sboxw(new_sboxw),
++                               .new_sboxw(enc_new_sboxw),
+ 
+                                .block(block),
+                                .new_block(enc_new_block),
+                                .ready(enc_ready)
+                               );
+ 
++  aes_sbox enc_sbox(.sboxw(enc_sboxw), .new_sboxw(enc_new_sboxw));
++
+ 
+   aes_decipher_block dec_block(
+                                .clk(clk),
+@@ -144,7 +142,7 @@
+ 
+                                .keylen(keylen),
+                                .round(dec_round_nr),
+-                               .round_key(round_key),
++                               .round_key(dec_round_key),
+ 
+                                .block(block),
+                                .new_block(dec_new_block),
+@@ -160,16 +158,17 @@
+                      .keylen(keylen),
+                      .init(init),
+ 
+-                     .round(muxed_round_nr),
+-                     .round_key(round_key),
++                     .round(enc_round_nr),
++                     .round_key(enc_round_key),
++                     .round2(dec_round_nr),
++                     .round_key2(dec_round_key),
+                      .ready(key_ready),
+ 
+                      .sboxw(keymem_sboxw),
+-                     .new_sboxw(new_sboxw)
++                     .new_sboxw(keymem_new_sboxw)
+                     );
+ 
+-
+-  aes_sbox sbox_inst(.sboxw(muxed_sboxw), .new_sboxw(new_sboxw));
++  aes_sbox keymem_sbox(.sboxw(keymem_sboxw), .new_sboxw(keymem_new_sboxw));
+ 
+ 
+   //----------------------------------------------------------------
+@@ -210,25 +209,6 @@
+ 
+ 
+   //----------------------------------------------------------------
+-  // sbox_mux
+-  //
+-  // Controls which of the encipher datapath or the key memory
+-  // that gets access to the sbox.
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : sbox_mux
+-      if (init_state)
+-        begin
+-          muxed_sboxw = keymem_sboxw;
+-        end
+-      else
+-        begin
+-          muxed_sboxw = enc_sboxw;
+-        end
+-    end // sbox_mux
+-
+-
+-  //----------------------------------------------------------------
+   // encdex_mux
+   //
+   // Controls which of the datapaths that get the next signal, have
+@@ -243,7 +223,6 @@
+         begin
+           // Encipher operations
+           enc_next        = next;
+-          muxed_round_nr  = enc_round_nr;
+           muxed_new_block = enc_new_block;
+           muxed_ready     = enc_ready;
+         end
+@@ -251,7 +230,6 @@
+         begin
+           // Decipher operations
+           dec_next        = next;
+-          muxed_round_nr  = dec_round_nr;
+           muxed_new_block = dec_new_block;
+           muxed_ready     = dec_ready;
+         end
+@@ -267,7 +245,6 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : aes_core_ctrl
+-      init_state        = 1'b0;
+       ready_new         = 1'b0;
+       ready_we          = 1'b0;
+       result_valid_new  = 1'b0;
+@@ -280,7 +257,6 @@
+           begin
+             if (init)
+               begin
+-                init_state        = 1'b1;
+                 ready_new         = 1'b0;
+                 ready_we          = 1'b1;
+                 result_valid_new  = 1'b0;
+@@ -290,7 +266,6 @@
+               end
+             else if (next)
+               begin
+-                init_state        = 1'b0;
+                 ready_new         = 1'b0;
+                 ready_we          = 1'b1;
+                 result_valid_new  = 1'b0;
+@@ -302,8 +277,6 @@
+ 
+         CTRL_INIT:
+           begin
+-            init_state = 1'b1;
+-
+             if (key_ready)
+               begin
+                 ready_new         = 1'b1;
+@@ -315,8 +288,6 @@
+ 
+         CTRL_NEXT:
+           begin
+-            init_state = 1'b0;
+-
+             if (muxed_ready)
+               begin
+                 ready_new         = 1'b1;
+--- a/aes_key_mem.v
++++ b/aes_key_mem.v
+@@ -48,8 +48,9 @@
+ 
+                    input wire    [3 : 0] round,
+                    output wire [127 : 0] round_key,
++                   input wire    [3 : 0] round2,
++                   output wire [127 : 0] round_key2,
+                    output wire           ready,
+-
+ 
+                    output wire [31 : 0]  sboxw,
+                    input wire  [31 : 0]  new_sboxw
+@@ -113,14 +114,16 @@
+   reg [31 : 0]  tmp_sboxw;
+   reg           round_key_update;
+   reg [127 : 0] tmp_round_key;
++  reg [127 : 0] tmp_round_key2;
+ 
+ 
+   //----------------------------------------------------------------
+   // Concurrent assignments for ports.
+   //----------------------------------------------------------------
+-  assign round_key = tmp_round_key;
+-  assign ready     = ready_reg;
+-  assign sboxw     = tmp_sboxw;
++  assign round_key  = tmp_round_key;
++  assign round_key2 = tmp_round_key2;
++  assign ready      = ready_reg;
++  assign sboxw      = tmp_sboxw;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -175,12 +178,17 @@
+   //----------------------------------------------------------------
+   // key_mem_read
+   //
+-  // Combinational read port for the key memory.
++  // Combinational read ports for the key memory.
+   //----------------------------------------------------------------
+   always @*
+     begin : key_mem_read
+       tmp_round_key = key_mem[round];
+     end // key_mem_read
++
++  always @*
++    begin : key_mem_read2
++      tmp_round_key2 = key_mem[round2];
++    end // key_mem_read2
+ 
+ 
+   //----------------------------------------------------------------
