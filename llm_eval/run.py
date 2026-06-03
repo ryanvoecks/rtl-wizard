@@ -23,14 +23,14 @@ from components.tasks import optimize_timing
 from inspect_ai import Task, eval_async, eval_retry_async
 from inspect_ai.log import read_eval_log
 
-from common.config import ARTIFACTS, LLM_RESULTS
+from common.config import LLM_RESULTS
 
 # Inspect requires an API key (working or not) in environment, so set a fake one
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
 MAX_PARALLEL_SESSIONS = 4
-MODEL = "anthropic/claude-haiku-4-5"
+MODEL = "anthropic/claude-sonnet-4-6"
 EPOCHS = 1
 SOLVER = claude_code_iterative_solver
 
@@ -52,7 +52,7 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
     # run_dir = ARTIFACTS / "llm" / "synth_feedback_agents
-    run_dir = LLM_RESULTS / "iterative_basic_test_haiku_6"
+    run_dir = LLM_RESULTS / "iterative_basic_test_sonnet_5"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 

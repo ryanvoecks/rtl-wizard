@@ -1,4 +1,4 @@
-exclude: '^(common/patches/|artifacts/)'
+exclude: '^(common/patches/|artifacts/|llm_eval/prompts/summaries/)'
 
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
