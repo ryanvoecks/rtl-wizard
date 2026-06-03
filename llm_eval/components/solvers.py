@@ -54,16 +54,22 @@ from mcp.server.fastmcp import FastMCP
 from common.config import TargetConfig
 from components.claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_env
 from components.container import TIMEOUT_RC, current_container
-from components.mcp_servers import OUTPUT_LIMIT, _synth_and_report, make_server
+from components.mcp_servers import (
+    OUTPUT_LIMIT,
+    _format_check,
+    _synth_report_df,
+    make_server,
+    wns_path_from_df,
+)
 from components.scorers import evaluate_testbench
 
 # Claude config
 DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 AGENT_TURNS = 60
 AGENT_TIMEOUT = 3600
-ONE_ROUND_TURNS = 30
+ONE_ROUND_TURNS = 40
 ONE_ROUND_TIMEOUT = 1200
-ITERATIVE_ROUNDS = 1
+ITERATIVE_ROUNDS = 3
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"
@@ -367,20 +373,52 @@ def _sum_usages(usages: list[ModelUsage]) -> ModelUsage | None:
     )
 
 
-def _build_feedback(synth_target: TargetConfig, diff: str) -> str:
-    """Run the testbench and a post-synth report and format the results
-    as a feedback message."""
+def _last_assistant_text(messages: list[ChatMessage]) -> str:
+    """Text of the last non-empty assistant message (a round's final message)."""
+    for m in reversed(messages):
+        if isinstance(m, ChatMessageAssistant) and m.text.strip():
+            return m.text.strip()
+    return ""
+
+
+def _format_wns_progress(
+    prev_wns_path: tuple[float, str] | None,
+    cur_wns_path: tuple[float, str] | None,
+) -> str:
+    """Round-over-round worst-negative-slack comparison block."""
+
+    def fmt(label: str, wp: tuple[float, str] | None) -> str:
+        if wp is None:
+            return f"- {label}: unavailable"
+        wns, path = wp
+        return f"- {label}: WNS = {wns:.4f} ns on path {path}"
+
+    return (
+        "Worst-negative-slack progress (less negative is better):\n"
+        f"{fmt('Previous round start', prev_wns_path)}\n"
+        f"{fmt('Current round start', cur_wns_path)}"
+    )
+
+
+def _build_feedback(
+    synth_target: TargetConfig,
+    diff: str,
+    prev_summary: str,
+    prev_wns_path: tuple[float, str] | None,
+) -> tuple[str, tuple[float, str] | None]:
+    """Format the next round's feedback: the previous round's final message, a
+    WNS comparison (previous vs current round start), then the testbench result
+    and post-synth logical-paths report for the current RTL."""
     design = synth_target.design
 
     tb_log, tb_rc = evaluate_testbench(design, diff)
-    if len(tb_log) > OUTPUT_LIMIT:
-        tb_log = (
-            tb_log[-OUTPUT_LIMIT:]
-            + f"\n[testbench output truncated to last {OUTPUT_LIMIT} chars]"
-        )
+    tb_block = _format_check("testbench", tb_rc, tb_log)
 
+    cur_wns_path: tuple[float, str] | None = None
     try:
-        synth_rpt = _synth_and_report(synth_target, diff)
+        df = _synth_report_df(synth_target, diff)
+        synth_rpt = df.to_string(index=False)
+        cur_wns_path = wns_path_from_df(df)
     except Exception as e:
         synth_rpt = f"[synth error] {type(e).__name__}: {e}"
     if len(synth_rpt) > OUTPUT_LIMIT:
@@ -389,19 +427,25 @@ def _build_feedback(synth_target: TargetConfig, diff: str) -> str:
             + f"\n[synth report truncated to last {OUTPUT_LIMIT} chars]"
         )
 
-    return (
+    summary_block = prev_summary.strip() or "[no summary provided]"
+    message = (
+        "# Previous round summary\n"
+        f"{summary_block}\n\n"
+        f"{_format_wns_progress(prev_wns_path, cur_wns_path)}\n\n"
         "Your current RTL was checked against the hidden testbench and "
         "synthesised through ORFS.\n\n"
-        f"Testbench [rc={tb_rc}]:\n```\n{tb_log}\n```\n\n"
+        f"```\n{tb_block}\n```\n\n"
         f"Post-synth logical-paths report:\n```\n{synth_rpt}\n```\n\n"
         "Continue optimising the design."
     )
+    return message, cur_wns_path
 
 
 @agent
 def claude_code_oauth(
     synth_target: TargetConfig,
     variant: SolverVariant,
+    initial_wns_path: tuple[float, str] | None = None,
 ):
     async def execute(state: AgentState) -> AgentState:
         model = _resolve_model()
@@ -430,6 +474,10 @@ def claude_code_oauth(
 
             mcp_servers = {HOST_MCP_NAME: {"type": "sse", "url": env.url}}
             prompt = state.messages[-1].text
+            # Starting WNS+path of the round that just ran; seeded with the
+            # unmodified design's WNS so round 1's feedback can compare.
+            prev_wns_path = initial_wns_path
+            cur_diff = ""
 
             for round_idx in range(rounds):
                 # Feedback prompts after the first round get logged as user messages
@@ -519,15 +567,31 @@ def claude_code_oauth(
                         )
                     )
 
-                if round_idx < rounds - 1:
-                    cur_diff = await asyncio.to_thread(build_diff_from_env, env, design)
-                    prompt = await asyncio.to_thread(
-                        _build_feedback, synth_target, cur_diff
-                    )
+                # Snapshot this round's diff into the agent's working dir.
+                cur_diff = await asyncio.to_thread(build_diff_from_env, env, design)
+                await asyncio.to_thread(
+                    env.write_file, f"diff/round_{round_idx + 1}.patch", cur_diff
+                )
 
-            # Capture the final RTL state for scorers before env tear-down
-            diff = await asyncio.to_thread(build_diff_from_env, env, design)
-            store().set("rtl_diff", diff)
+                if round_idx < rounds - 1:
+                    prev_summary = ""
+                    if final is not None:
+                        prev_summary = final.get("result") or ""
+                    if not prev_summary:
+                        prev_summary = _last_assistant_text(
+                            state.messages[len(prior_messages) :]
+                        )
+                    prompt, cur_wns_path = await asyncio.to_thread(
+                        _build_feedback,
+                        synth_target,
+                        cur_diff,
+                        prev_summary,
+                        prev_wns_path,
+                    )
+                    prev_wns_path = cur_wns_path
+
+            # Capture the final RTL state for scorers before env tear-down.
+            store().set("rtl_diff", cur_diff)
 
         # Viewer treats final response specially
         last_assistant = next(
@@ -594,8 +658,11 @@ def _make_solver(variant: SolverVariant) -> Solver:
         # Task prompt, then the initial report (if any), then solver instructions
         task_prompt = state.messages[-1].text
         prompt = task_prompt
+        initial_wns_path: tuple[float, str] | None = None
         if variant.include_initial_report:
-            report = await asyncio.to_thread(_synth_and_report, synth_target)
+            df = await asyncio.to_thread(_synth_report_df, synth_target)
+            report = df.to_string(index=False)
+            initial_wns_path = wns_path_from_df(df)
             prompt += (
                 "\n\nA post-synth logical-paths report for the unmodified "
                 "design follows. It ranks register-to-register path groups "
@@ -608,6 +675,7 @@ def _make_solver(variant: SolverVariant) -> Solver:
         agent_fn = claude_code_oauth(
             synth_target=synth_target,
             variant=variant,
+            initial_wns_path=initial_wns_path,
         )
         try:
             result = await agent_fn(agent_state)
