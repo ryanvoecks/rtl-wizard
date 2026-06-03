@@ -10,10 +10,18 @@ from inspect_ai import Task, task
 from inspect_ai.dataset import Sample
 from inspect_ai.solver import Solver
 
-from common.config import TargetConfig
+from common.config import LLM_EVAL, TargetConfig
 from common.targets import all_targets
 from components.claude_env import SANDBOX_RTL_ROOT
 from components.scorers import synthesis, testbench
+
+SUMMARIES_DIR = LLM_EVAL / "prompts" / "summaries"
+
+
+def _design_summary(design_name: str) -> str:
+    """Load the pre-generated RTL summary for a design, by `design.name`."""
+    path = SUMMARIES_DIR / f"{design_name}.md"
+    return path.read_text().strip()
 
 
 def _design_prompt(target: TargetConfig) -> str:
@@ -34,7 +42,11 @@ def _design_prompt(target: TargetConfig) -> str:
         "- Preserve functional behaviour.\n"
         "- The design must remain synthesisable by yosys.\n"
         f"- Edit the files in `{SANDBOX_RTL_ROOT}/` in place. Do not "
-        "rename them."
+        "rename them.\n\n"
+        "The following summary of the design's structure and key modules "
+        f"is provided to orient you (the RTL sources live under "
+        f"`{SANDBOX_RTL_ROOT}/`):\n\n"
+        f"{_design_summary(design.name)}"
     )
 
 
