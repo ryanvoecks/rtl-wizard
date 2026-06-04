@@ -23,6 +23,36 @@ from components.container import OAUTH_TOKEN_ENV, Container, ExecResult
 # RTL is staged under this prefix inside each env's workdir
 SANDBOX_RTL_ROOT = "rtl"
 
+# Tools the agent is not allowed to use
+DISALLOWED_TOOLS = (
+    # subagent / parallelism
+    "Agent",
+    "Task",
+    "Workflow",
+    "Monitor",
+    "TaskCreate",
+    "TaskGet",
+    "TaskList",
+    "TaskUpdate",
+    "TaskStop",
+    "TaskOutput",
+    "EnterWorktree",
+    "ExitWorktree",
+    "SendMessage",
+    "TeamCreate",
+    "TeamDelete",
+    # external info / exfiltration
+    "WebFetch",
+    "WebSearch",
+    "RemoteTrigger",
+    "PushNotification",
+    # scheduling
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "ScheduleWakeup",
+)
+
 
 @dataclass(frozen=True)
 class ClaudeResult:
@@ -173,10 +203,14 @@ class ClaudeEnv:
             "--output-format",
             "stream-json",
             "--verbose",
+            "--effort",
+            "low",
             "--model",
             model,
             "--max-turns",
             str(max_turns),
+            "--disallowedTools",
+            ",".join(DISALLOWED_TOOLS),
             "--dangerously-skip-permissions",
         ]
         if mcp_servers is not None:

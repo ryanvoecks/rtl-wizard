@@ -52,7 +52,7 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
     # run_dir = ARTIFACTS / "llm" / "synth_feedback_agents
-    run_dir = LLM_RESULTS / "iterative_basic_test_sonnet_5"
+    run_dir = LLM_RESULTS / "iterative_basic_test_sonnet_6"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 
@@ -63,7 +63,7 @@ async def main_async() -> None:
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,
-            sample_id="aes",
+            sample_id="verilog_axi",
         )
 
 
