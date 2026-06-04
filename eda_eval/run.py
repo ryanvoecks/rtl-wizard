@@ -92,7 +92,7 @@ def snapshot_inputs(run: RunConfig) -> Path:
             orfs_flow=ORFS_FLOW,
             platform=cfg.platform,
             place_density=cfg.place_density,
-            core_utilization=cfg.target_utilization,
+            core_utilization=target.target_utilization,
             core_aspect_ratio=cfg.core_aspect_ratio,
             core_margin=cfg.core_margin_um,
             seed=cfg.seed,

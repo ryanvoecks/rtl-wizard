@@ -77,7 +77,6 @@ class StudyConfig:
 
     platform: str = "nangate45"  # ORFS PDK
     anchor_period_ns: float = 10.0  # relaxed period for calibration's anchor P&R pass
-    target_utilization: float = 0.6  # core utilization target (drives floorplan)
     core_aspect_ratio: float = 1.0  # core height/width ratio
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
@@ -129,9 +128,10 @@ class TargetConfig:
 
     FILENAME: ClassVar[str] = "target_config.json"  # default dump basename
 
+    cfg: StudyConfig  # shared study-wide knobs
     design: DesignConfig  # design being driven through the flow
     period_ns: float  # clock period rendered into the SDC
-    cfg: StudyConfig  # shared study-wide knobs
+    target_utilization: float = 60  # core utilization percentage
 
     def dump(self, path: Path) -> None:
         """Serialise to JSON."""
