@@ -76,15 +76,12 @@ class StudyConfig:
     """Knobs for the ORFS flow."""
 
     platform: str = "nangate45"  # ORFS PDK
-    calibration_period_ns: float = 0.5  # over-constrained period for calibration
-    calibration_side_um: float = 1000.0  # under-constrained area for calibration
-    target_utilization: float = 0.6  # core utilization target for the final phase
-    minimum_side_um: float = 50.0  # floor on final floorplan side
+    anchor_period_ns: float = 0.5  # starting tight period for calibration anchor sweep
+    core_aspect_ratio: float = 1.0  # core height/width ratio
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density
     io_delay_fraction: float = 0.4  # IO delay as a fraction of clock period
     seed: int = 0  # seed passed to detailed routing
-    effective_pin_width: float = 2.667  # um of perimeter per IO pin (sets min die size)
     synth_memory_max_bits: int = 8192  # maximum memory-inferred-as-logic size
     place_pins_args: str = "-hor_layers metal3 -ver_layers metal4"  # pin settings
 
@@ -131,10 +128,10 @@ class TargetConfig:
 
     FILENAME: ClassVar[str] = "target_config.json"  # default dump basename
 
+    cfg: StudyConfig  # shared study-wide knobs
     design: DesignConfig  # design being driven through the flow
     period_ns: float  # clock period rendered into the SDC
-    side_um: float  # square floorplan side -> DIE_AREA/CORE_AREA
-    cfg: StudyConfig  # shared study-wide knobs
+    target_utilization: float = 60  # core utilization percentage
 
     def dump(self, path: Path) -> None:
         """Serialise to JSON."""

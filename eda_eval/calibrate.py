@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Calibrate a design's clock period and floorplan size via a synth +
-P&R sweep. Writes `calibration.json` with the chosen (period, side,
-utilization) and the per-iteration log.
+"""Pick a calibrated clock period and utilisation for one design.
 
-Usage:
-    uv run eda_eval/calibrate.py --design aes_reference
+Starts at a tight anchor period and doubles until P&R completes, then
+sweeps tighter periods targeting a constant closure/T pressure ratio.
+Backs off utilization on IO-perimeter overflow and pressure on other
+flow failures. Writes `calibration.json`.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ import argparse
 import json
 import math
 import os
+import re
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -21,21 +22,34 @@ from typing import Literal
 from common.config import (
     ALL_FLOW_TARGETS,
     EDA_RUNS,
-    SYNTH_FLOW_TARGETS,
     DesignConfig,
     RunConfig,
     StudyConfig,
     TargetConfig,
 )
 from common.designs import resolve_design
-from eda_eval.extract_metrics import extract, extract_synth
+from eda_eval.extract_metrics import extract
 from eda_eval.run import run_job
 
-Phase = Literal["synth", "pnr"]
+Phase = Literal["anchor", "pnr"]
 
-PNR_PASSES = 4  # Total number of P&R passes
-PRESSURE = 1.5  # Target ratio of post-route achievable period to clock period
-UTILIZATION_STEP = 0.10  # Utilization step used to relax density after a P&R failure
+PNR_PASSES = 3  # Number of successful P&R passes targeted
+INITIAL_PRESSURE = 1.5  # Starting ratio of post-route closure period to target T
+PRESSURE_STEP = 0.10  # Pressure backoff per non-IO flow failure
+PRESSURE_FLOOR = 1.0  # Below this, the calibrator gives up
+UTIL_STEP = 10  # Utilization (percent) backoff per IO-pin overflow failure
+UTIL_FLOOR = 30  # Below this, the calibrator gives up on IO-bound designs
+
+# Hard fail from OpenROAD's IO placer when die perimeter can't fit IO pins
+PPL_IO_OVERFLOW = re.compile(r"\[ERROR PPL-0024\]")
+
+
+def _is_io_pin_overflow(output_dir: Path) -> bool:
+    """True if `flow.log` contains the PPL-0024 IO-overflow error."""
+    log = output_dir / "flow.log"
+    if not log.exists():
+        return False
+    return bool(PPL_IO_OVERFLOW.search(log.read_text(errors="replace")))
 
 
 def iter_output_dir(
@@ -43,21 +57,6 @@ def iter_output_dir(
 ) -> Path:
     """Per-step phase dir."""
     return batch_dir / design.benchmark / design.name / f"iter_{phase}_{i}"
-
-
-def derive_final_side_um(
-    cell_area_um2: float,
-    io_pin_count: int,
-    cfg: StudyConfig,
-    utilization: float,
-) -> float:
-    """Square-die side that satisfies all three lower bounds: cell-area
-    at `utilization`, IO perimeter at `effective_pin_width` per pin, and
-    the absolute `minimum_side_um`."""
-    area_side = math.sqrt(cell_area_um2 / utilization)
-    area_side += 2 * cfg.core_margin_um
-    pin_side = io_pin_count * cfg.effective_pin_width / 4
-    return max(area_side, pin_side, cfg.minimum_side_um)
 
 
 class RunJobFailed(RuntimeError):
@@ -71,8 +70,7 @@ class PnrStep:
 
     iter: int
     period_ns: float
-    side_um: float
-    utilization: float
+    pressure: float
     output_dir: Path
     completed: bool
     route_ws_ns: float = float("NaN")
@@ -86,7 +84,7 @@ def run_iteration(
     phase: Phase,
     i: int,
     period_ns: float,
-    side_um: float,
+    target_utilization: float,
     cfg: StudyConfig,
     flow_targets: tuple[str, ...],
     num_threads: int,
@@ -98,7 +96,7 @@ def run_iteration(
         synth_target=TargetConfig(
             design=design,
             period_ns=period_ns,
-            side_um=side_um,
+            target_utilization=target_utilization,
             cfg=cfg,
         ),
         output_dir=output_dir,
@@ -107,8 +105,7 @@ def run_iteration(
     )
     if run_job(run) != 0:
         raise RunJobFailed(f"see {output_dir}/flow.log")
-    extractor = extract_synth if phase == "synth" else extract
-    return extractor(output_dir, design.top_module)
+    return extract(output_dir, design.top_module)
 
 
 def fmax_mhz(period_ns: float) -> float:
@@ -142,6 +139,7 @@ def main() -> None:
 
     cfg = StudyConfig()
     design = resolve_design(args.design)
+    util = float(TargetConfig.target_utilization)
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
@@ -149,106 +147,162 @@ def main() -> None:
     print(f"Output dir: {batch_dir}")
     print(
         f"Calibrating {design.benchmark}/{design.name}/{design.variant} "
-        f"(top={design.top_module})"
+        f"(top={design.top_module}, U={util:.0f})"
     )
 
-    # Step 1: synth-only at the over-constrained calibration clock.
+    # Step 1: find a period at which P&R completes. Start tight at
+    # `cfg.anchor_period_ns` and double on any non-IO failure; back off
+    # utilization on IO-pin overflow. The first passing pass becomes the
+    # anchor that the constant-pressure sweep zooms in on.
     print(
-        f"\nStep 1: synth-only at T={cfg.calibration_period_ns} ns, "
-        f"side={cfg.calibration_side_um:.0f} um (over-constrained)"
+        f"\nStep 1: anchor P&R starting at T={cfg.anchor_period_ns} ns "
+        f"(double on failure until pass)"
     )
-    m1 = run_iteration(
-        design,
-        batch_dir,
-        "synth",
-        0,
-        cfg.calibration_period_ns,
-        cfg.calibration_side_um,
-        cfg,
-        SYNTH_FLOW_TARGETS,
-        args.num_threads,
-    )
-    synth_ws_1 = _require_finite(m1, "synth_ws_ns")
-    synth_area_1 = _require_finite(m1, "synth_area_um2")
-    io_pin_count = int(_require_finite(m1, "io_pin_count"))
-    print(
-        f"  synth_ws={synth_ws_1:+.4f} ns, "
-        f"synth_area={synth_area_1:.1f} um^2, "
-        f"io_pins={io_pin_count}"
-    )
-
-    # Anchor + corrective sweep.
-    # Iteration 0: (T = pressure * T_synth_close, U = U_def).
-    # Iterations 1..N-1: shrink T toward T_close on success, relax U on failure.
-    t_synth_close = cfg.calibration_period_ns - synth_ws_1
-    t = PRESSURE * t_synth_close
-    u = cfg.target_utilization
-    area = synth_area_1
-
-    pnr_steps: list[PnrStep] = []
-    completed: list[PnrStep] = []
-
-    for i in range(PNR_PASSES):
-        side = derive_final_side_um(area, io_pin_count, cfg, utilization=u)
-        print(
-            f"\nStep {i + 2}: P&R at T={t:.4f} ns "
-            f"({fmax_mhz(t):.2f} MHz), U={u:.2f}, side={side:.2f} um"
-        )
-        output_dir = iter_output_dir(design, batch_dir, "pnr", i)
+    period = cfg.anchor_period_ns
+    anchor_attempts: list[dict] = []
+    attempt = 0
+    while True:
+        print(f"  attempt {attempt}: T={period:.4f} ns, U={util:.0f}")
+        anchor_dir = iter_output_dir(design, batch_dir, "anchor", attempt)
         try:
-            m = run_iteration(
+            m1 = run_iteration(
                 design,
                 batch_dir,
-                "pnr",
-                i,
-                t,
-                side,
+                "anchor",
+                attempt,
+                period,
+                util,
                 cfg,
                 ALL_FLOW_TARGETS,
                 args.num_threads,
             )
+            break
         except RunJobFailed as exc:
-            pnr_steps.append(
-                PnrStep(
-                    iter=i,
-                    period_ns=t,
-                    side_um=side,
-                    utilization=u,
-                    output_dir=output_dir,
-                    completed=False,
-                )
+            anchor_attempts.append(
+                {
+                    "attempt": attempt,
+                    "period_ns": period,
+                    "target_utilization": util,
+                    "output_dir": str(anchor_dir),
+                }
             )
-            print(f"  FAILED: {exc}")
-            u = u - UTILIZATION_STEP
-            continue
+            if _is_io_pin_overflow(anchor_dir):
+                print(f"  FAILED (PPL-0024 IO overflow) at U={util:.0f}")
+                util = round(util - UTIL_STEP)
+                if util < UTIL_FLOOR:
+                    raise RuntimeError(
+                        f"calibration gave up: util backed off below "
+                        f"{UTIL_FLOOR} (IO pins still don't fit)"
+                    ) from exc
+                print(f"  reducing utilization to U={util:.0f}")
+            else:
+                print(f"  FAILED at T={period:.4f} ns")
+                period *= 2
+                print(f"  doubling period to T={period:.4f} ns")
+        attempt += 1
+    anchor_period = period
+    anchor_ws = _require_finite(m1, "route_ws_ns")
+    anchor_closure = anchor_period - anchor_ws
+    print(
+        f"  route_ws={anchor_ws:+.4f} ns -> closure={anchor_closure:.4f} ns "
+        f"(T={anchor_period:.4f} ns, U={util:.0f})"
+    )
+
+    # P&R sweep at constant operating pressure. `t_anchor` is the most
+    # recent estimate of the period at which post-route timing closes;
+    # each pass targets `t_anchor / pressure` (so realised closure/T
+    # converges to `pressure`) and updates `t_anchor` to the period the
+    # pass actually achieved (t - ws).
+    t_anchor = anchor_closure
+    pressure = INITIAL_PRESSURE
+    pnr_steps: list[PnrStep] = []
+    completed: list[PnrStep] = []
+
+    failed_total = 0
+    for i in range(PNR_PASSES):
+        # Two backoffs, classified by parsing the flow log: PPL-0024 ->
+        # lower util (and persist it); other failures -> lower pressure.
+        while True:
+            t = t_anchor / pressure
+            print(
+                f"\nP&R pass {i} at T={t:.4f} ns ({fmax_mhz(t):.2f} MHz), "
+                f"pressure={pressure:.2f}, U={util:.0f}"
+            )
+            output_dir = iter_output_dir(design, batch_dir, "pnr", i)
+            try:
+                m = run_iteration(
+                    design,
+                    batch_dir,
+                    "pnr",
+                    i,
+                    t,
+                    util,
+                    cfg,
+                    ALL_FLOW_TARGETS,
+                    args.num_threads,
+                )
+                break
+            except RunJobFailed as exc:
+                pnr_steps.append(
+                    PnrStep(
+                        iter=i,
+                        period_ns=t,
+                        pressure=pressure,
+                        output_dir=output_dir,
+                        completed=False,
+                    )
+                )
+                failed_total += 1
+                print(f"  FAILED: {exc}")
+                if _is_io_pin_overflow(output_dir):
+                    util = round(util - UTIL_STEP)
+                    if util < UTIL_FLOOR:
+                        raise RuntimeError(
+                            f"calibration gave up: util backed off below "
+                            f"{UTIL_FLOOR} after {failed_total} failures"
+                        ) from exc
+                    print(f"  reducing utilization to U={util:.0f}")
+                else:
+                    # Round to one decimal: keeps the ladder on the
+                    # nominal 1.5 -> 1.4 -> ... -> 1.0 grid instead of
+                    # drifting onto 0.9999... after a few subtractions.
+                    pressure = round(pressure - PRESSURE_STEP, 1)
+                    if pressure < PRESSURE_FLOOR:
+                        raise RuntimeError(
+                            f"calibration gave up: pressure backed off "
+                            f"below {PRESSURE_FLOOR} after "
+                            f"{failed_total} failures"
+                        ) from exc
+                    print(f"  backing off to pressure={pressure:.2f}")
         ws = _require_finite(m, "route_ws_ns")
-        area = _require_finite(m, "route_area_um2")
+        route_area = _require_finite(m, "route_area_um2")
         realised = (t - ws) / t
         step = PnrStep(
             iter=i,
             period_ns=t,
-            side_um=side,
-            utilization=u,
+            pressure=pressure,
             output_dir=output_dir,
             completed=True,
             route_ws_ns=ws,
-            route_area_um2=area,
+            route_area_um2=route_area,
             realised_pressure=realised,
         )
         completed.append(step)
         pnr_steps.append(step)
         print(
-            f"  route_ws={ws:+.4f} ns, route_area={area:.1f} um^2, "
+            f"  route_ws={ws:+.4f} ns, route_area={route_area:.1f} um^2, "
             f"realised_pressure={realised:.3f}"
         )
-        t = (t - ws) / PRESSURE
+        t_anchor = t - ws
 
     if not completed:
         raise RuntimeError("no P&R run completed")
 
+    # Pick the completed pass whose realised pressure landed closest to
+    # the pressure it was operating at.
     best = min(
         completed,
-        key=lambda s: abs((s.realised_pressure or 0.0) - PRESSURE),
+        key=lambda s: (abs(s.realised_pressure - s.pressure), -s.iter),
     )
 
     summary = {
@@ -260,21 +314,21 @@ def main() -> None:
         },
         "result": {
             "period_ns": best.period_ns,
-            "side_um": best.side_um,
-            "utilization": best.utilization,
+            "pressure": best.pressure,
             "fmax_mhz": fmax_mhz(best.period_ns),
             "route_ws_ns": best.route_ws_ns,
             "route_area_um2": best.route_area_um2,
             "realised_pressure": best.realised_pressure,
+            "target_utilization": util,
             "selected_iter": best.iter,
         },
-        "step1_synth": {
-            "period_ns": cfg.calibration_period_ns,
-            "side_um": cfg.calibration_side_um,
-            "synth_ws_ns": synth_ws_1,
-            "synth_area_um2": synth_area_1,
-            "io_pin_count": io_pin_count,
-            "output_dir": str(iter_output_dir(design, batch_dir, "synth", 0)),
+        "step1_anchor": {
+            "start_period_ns": cfg.anchor_period_ns,
+            "period_ns": anchor_period,
+            "route_ws_ns": anchor_ws,
+            "closure_ns": anchor_closure,
+            "output_dir": str(iter_output_dir(design, batch_dir, "anchor", attempt)),
+            "failed_attempts": anchor_attempts,
         },
         "pnr_steps": [asdict(s) for s in pnr_steps],
     }
@@ -285,7 +339,8 @@ def main() -> None:
     print(
         f"\nResult: iter={best.iter} | "
         f"period={best.period_ns:.4f} ns | "
-        f"side={best.side_um:.2f} um | U={best.utilization:.2f} | "
+        f"pressure={best.pressure:.2f} | "
+        f"U={util:.0f} | "
         f"fmax={fmax_mhz(best.period_ns):.2f} MHz | "
         f"realised_pressure={best.realised_pressure:.3f}"
     )

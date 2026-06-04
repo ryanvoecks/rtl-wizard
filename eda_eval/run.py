@@ -30,20 +30,21 @@ from eda_eval.cache import EDA_CACHE, link, lookup, publish
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
 
-# ODB files to keep after pruning
-KEEP_ODB = frozenset({"1_synth.odb", "6_final.odb"})
+# Files to keep after pruning (overrides PRUNE_SUFFIXES)
+KEEP_FILES = frozenset(
+    {
+        "1_synth.odb",
+        "2_floorplan.odb",
+        "3_place.odb",
+        "4_cts.odb",
+        "5_route.odb",
+        "6_final.odb",
+        "1_2_yosys.v",
+    }
+)
 
 # File suffixes prune deletes for ORFS outputs
 PRUNE_SUFFIXES = frozenset({".odb", ".def", ".guide", ".rtlil", ".v"})
-
-
-def render_floorplan(side_um: float, core_margin_um: float) -> tuple[str, str]:
-    """ORFS DIE_AREA/CORE_AREA strings for a square `side_um` x `side_um`
-    die with a `core_margin_um` boundary on each edge."""
-    inner = side_um - core_margin_um
-    die_area = f"0 0 {side_um:.3f} {side_um:.3f}"
-    core_area = f"{core_margin_um:.3f} {core_margin_um:.3f} {inner:.3f} {inner:.3f}"
-    return die_area, core_area
 
 
 def snapshot_inputs(run: RunConfig) -> Path:
@@ -73,8 +74,10 @@ def snapshot_inputs(run: RunConfig) -> Path:
         )
     )
 
-    # Generate Makefile with design config
-    die_area, core_area = render_floorplan(target.side_um, cfg.core_margin_um)
+    # Generate Makefile with design config. ORFS auto-sizes the die from
+    # CORE_UTILIZATION + CORE_ASPECT_RATIO + CORE_MARGIN, growing the die
+    # until both the cell-area-at-utilization and IO-perimeter constraints
+    # are satisfied.
     rtl_src = design.root / design.rtl_dir
     include_dirs = " ".join(str(rtl_src / d) for d in design.include_dirs)
     makefile_dst = inputs / "Makefile"
@@ -89,8 +92,9 @@ def snapshot_inputs(run: RunConfig) -> Path:
             orfs_flow=ORFS_FLOW,
             platform=cfg.platform,
             place_density=cfg.place_density,
-            die_area=die_area,
-            core_area=core_area,
+            core_utilization=target.target_utilization,
+            core_aspect_ratio=cfg.core_aspect_ratio,
+            core_margin=cfg.core_margin_um,
             seed=cfg.seed,
             flow_targets=" ".join(run.flow_targets),
             place_pins_args=cfg.place_pins_args,
@@ -109,7 +113,7 @@ def prune(run: RunConfig) -> None:
     for f in results.rglob("*"):
         if not f.is_file() or f.suffix not in PRUNE_SUFFIXES:
             continue
-        if f.suffix == ".odb" and f.name in KEEP_ODB:
+        if f.name in KEEP_FILES:
             continue
         f.unlink()
 
