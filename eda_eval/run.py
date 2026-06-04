@@ -30,8 +30,18 @@ from eda_eval.cache import EDA_CACHE, link, lookup, publish
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
 
-# ODB files to keep after pruning
-KEEP_ODB = frozenset({"1_synth.odb", "6_final.odb"})
+# Files to keep after pruning (overrides PRUNE_SUFFIXES)
+KEEP_FILES = frozenset(
+    {
+        "1_synth.odb",
+        "2_floorplan.odb",
+        "3_place.odb",
+        "4_cts.odb",
+        "5_route.odb",
+        "6_final.odb",
+        "1_2_yosys.v",
+    }
+)
 
 # File suffixes prune deletes for ORFS outputs
 PRUNE_SUFFIXES = frozenset({".odb", ".def", ".guide", ".rtlil", ".v"})
@@ -103,7 +113,7 @@ def prune(run: RunConfig) -> None:
     for f in results.rglob("*"):
         if not f.is_file() or f.suffix not in PRUNE_SUFFIXES:
             continue
-        if f.suffix == ".odb" and f.name in KEEP_ODB:
+        if f.name in KEEP_FILES:
             continue
         f.unlink()
 

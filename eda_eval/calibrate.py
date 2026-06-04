@@ -3,11 +3,16 @@
 U=`cfg.target_utilization` (ORFS auto-sizes the die). Writes
 `calibration.json` with the chosen period and the per-iteration log.
 
-The sweep targets a constant `INITIAL_PRESSURE` ratio of
-post-route-achievable period to clock period. If the ORFS flow fails at
-the current pressure, the pressure is backed off by `PRESSURE_STEP`
-(1.5 -> 1.4 -> 1.3 -> ...) and retried until either the flow completes
-or the floor `PRESSURE_FLOOR` is reached.
+Step 1 is an anchor pass: full P&R at the relaxed `cfg.anchor_period_ns`
+(default 10 ns) so the design routes cleanly and the post-route closure
+period becomes the calibrator's ground-truth anchor. If this anchor
+pass fails, it is treated as a real error (no backoff).
+
+The pressure sweep then targets a constant `INITIAL_PRESSURE` ratio of
+post-route closure period to clock period, anchored on the realised
+P&R closure from step 1. If the ORFS flow fails at the current
+pressure, pressure is backed off by `PRESSURE_STEP` (1.5 -> 1.4 -> ...
+-> 1.0) and retried; falling below `PRESSURE_FLOOR` gives up.
 
 Usage:
     uv run eda_eval/calibrate.py --design aes_reference
@@ -27,17 +32,16 @@ from typing import Literal
 from common.config import (
     ALL_FLOW_TARGETS,
     EDA_RUNS,
-    SYNTH_FLOW_TARGETS,
     DesignConfig,
     RunConfig,
     StudyConfig,
     TargetConfig,
 )
 from common.designs import resolve_design
-from eda_eval.extract_metrics import extract, extract_synth
+from eda_eval.extract_metrics import extract
 from eda_eval.run import run_job
 
-Phase = Literal["synth", "pnr"]
+Phase = Literal["anchor", "pnr"]
 
 PNR_PASSES = 3  # Number of successful P&R passes targeted
 INITIAL_PRESSURE = 1.5  # Starting ratio of post-route closure period to target T
@@ -96,8 +100,7 @@ def run_iteration(
     )
     if run_job(run) != 0:
         raise RunJobFailed(f"see {output_dir}/flow.log")
-    extractor = extract_synth if phase == "synth" else extract
-    return extractor(output_dir, design.top_module)
+    return extract(output_dir, design.top_module)
 
 
 def fmax_mhz(period_ns: float) -> float:
@@ -141,30 +144,36 @@ def main() -> None:
         f"(top={design.top_module}, U={cfg.target_utilization})"
     )
 
-    # Step 1: synth-only at the over-constrained calibration clock to
-    # estimate where timing closes after synthesis. Used as the anchor for
-    # the initial P&R period.
+    # Step 1: full P&R at the relaxed anchor period. Gives a real,
+    # post-route closure number to anchor the pressure sweep on (rather
+    # than a synth-only estimate that systematically under-predicts
+    # post-route delay). A failure here is a real error, not a
+    # calibration backoff condition.
     print(
-        f"\nStep 1: synth-only at T={cfg.calibration_period_ns} ns (over-constrained)"
+        f"\nStep 1: anchor P&R at T={cfg.anchor_period_ns} ns (relaxed)"
     )
     m1 = run_iteration(
         design,
         batch_dir,
-        "synth",
+        "anchor",
         0,
-        cfg.calibration_period_ns,
+        cfg.anchor_period_ns,
         cfg,
-        SYNTH_FLOW_TARGETS,
+        ALL_FLOW_TARGETS,
         args.num_threads,
     )
-    synth_ws_1 = _require_finite(m1, "synth_ws_ns")
-    print(f"  synth_ws={synth_ws_1:+.4f} ns")
+    anchor_ws = _require_finite(m1, "route_ws_ns")
+    anchor_closure = cfg.anchor_period_ns - anchor_ws
+    print(
+        f"  route_ws={anchor_ws:+.4f} ns -> closure={anchor_closure:.4f} ns"
+    )
 
     # P&R sweep at constant operating pressure. `t_anchor` is the most
     # recent estimate of the period at which post-route timing closes;
-    # each pass targets `pressure * t_anchor` and updates `t_anchor` to
-    # the period the pass actually achieved (t - ws).
-    t_anchor = cfg.calibration_period_ns - synth_ws_1
+    # each pass targets `t_anchor / pressure` (so realised closure/T
+    # converges to `pressure`) and updates `t_anchor` to the period the
+    # pass actually achieved (t - ws).
+    t_anchor = anchor_closure
     pressure = INITIAL_PRESSURE
     pnr_steps: list[PnrStep] = []
     completed: list[PnrStep] = []
@@ -174,7 +183,7 @@ def main() -> None:
         # Retry at progressively lower pressure until the flow runs or
         # the floor is reached.
         while True:
-            t = pressure * t_anchor
+            t = t_anchor / pressure
             print(
                 f"\nP&R pass {i} at T={t:.4f} ns ({fmax_mhz(t):.2f} MHz), "
                 f"pressure={pressure:.2f}"
@@ -204,7 +213,10 @@ def main() -> None:
                 )
                 failed_total += 1
                 print(f"  FAILED: {exc}")
-                pressure -= PRESSURE_STEP
+                # Round to one decimal: keeps the ladder on the nominal
+                # 1.5 -> 1.4 -> ... -> 1.0 grid instead of drifting onto
+                # 0.9999... after a few subtractions.
+                pressure = round(pressure - PRESSURE_STEP, 1)
                 if pressure < PRESSURE_FLOOR:
                     raise RuntimeError(
                         f"calibration gave up: pressure backed off below "
@@ -258,10 +270,11 @@ def main() -> None:
             "realised_pressure": best.realised_pressure,
             "selected_iter": best.iter,
         },
-        "step1_synth": {
-            "period_ns": cfg.calibration_period_ns,
-            "synth_ws_ns": synth_ws_1,
-            "output_dir": str(iter_output_dir(design, batch_dir, "synth", 0)),
+        "step1_anchor": {
+            "period_ns": cfg.anchor_period_ns,
+            "route_ws_ns": anchor_ws,
+            "closure_ns": anchor_closure,
+            "output_dir": str(iter_output_dir(design, batch_dir, "anchor", 0)),
         },
         "pnr_steps": [asdict(s) for s in pnr_steps],
     }

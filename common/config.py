@@ -76,7 +76,7 @@ class StudyConfig:
     """Knobs for the ORFS flow."""
 
     platform: str = "nangate45"  # ORFS PDK
-    calibration_period_ns: float = 0.5  # over-constrained period for calibration
+    anchor_period_ns: float = 10.0  # relaxed period for calibration's anchor P&R pass
     target_utilization: float = 0.6  # core utilization target (drives floorplan)
     core_aspect_ratio: float = 1.0  # core height/width ratio
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
