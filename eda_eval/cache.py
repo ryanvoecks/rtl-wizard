@@ -72,6 +72,7 @@ def compute_run_hash(run: RunConfig) -> str:
     payload = {
         "study": asdict(target.cfg),
         "period_ns": target.period_ns,
+        "target_utilization": target.target_utilization,
         "top_module": design.top_module,
         "clock_port": design.clock_port,
         "rtl_files": [

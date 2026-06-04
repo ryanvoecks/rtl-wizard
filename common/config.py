@@ -76,7 +76,7 @@ class StudyConfig:
     """Knobs for the ORFS flow."""
 
     platform: str = "nangate45"  # ORFS PDK
-    anchor_period_ns: float = 10.0  # relaxed period for calibration's anchor P&R pass
+    anchor_period_ns: float = 0.5  # starting tight period for calibration anchor sweep
     core_aspect_ratio: float = 1.0  # core height/width ratio
     core_margin_um: float = 2.0  # die-to-core boundary on each edge
     place_density: float = 0.75  # global placement target density

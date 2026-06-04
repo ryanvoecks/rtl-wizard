@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Pick a calibrated clock period and utilisation for one design.
 
-Runs an anchor P&R pass at a relaxed period, then sweeps tighter
-periods targeting a constant closure/T pressure ratio. Backs off
-utilization on IO-perimeter overflow and pressure on other failures.
-Writes `calibration.json`.
+Starts at a tight anchor period and doubles until P&R completes, then
+sweeps tighter periods targeting a constant closure/T pressure ratio.
+Backs off utilization on IO-perimeter overflow and pressure on other
+flow failures. Writes `calibration.json`.
 """
 
 from __future__ import annotations
@@ -150,20 +150,27 @@ def main() -> None:
         f"(top={design.top_module}, U={util:.0f})"
     )
 
-    # Step 1: full P&R at the relaxed anchor period. Gives a real,
-    # post-route closure number to anchor the pressure sweep on.
+    # Step 1: find a period at which P&R completes. Start tight at
+    # `cfg.anchor_period_ns` and double on any non-IO failure; back off
+    # utilization on IO-pin overflow. The first passing pass becomes the
+    # anchor that the constant-pressure sweep zooms in on.
     print(
-        f"\nStep 1: anchor P&R at T={cfg.anchor_period_ns} ns (relaxed)"
+        f"\nStep 1: anchor P&R starting at T={cfg.anchor_period_ns} ns "
+        f"(double on failure until pass)"
     )
-    anchor_dir = iter_output_dir(design, batch_dir, "anchor", 0)
+    period = cfg.anchor_period_ns
+    anchor_attempts: list[dict] = []
+    attempt = 0
     while True:
+        print(f"  attempt {attempt}: T={period:.4f} ns, U={util:.0f}")
+        anchor_dir = iter_output_dir(design, batch_dir, "anchor", attempt)
         try:
             m1 = run_iteration(
                 design,
                 batch_dir,
                 "anchor",
-                0,
-                cfg.anchor_period_ns,
+                attempt,
+                period,
                 util,
                 cfg,
                 ALL_FLOW_TARGETS,
@@ -171,21 +178,34 @@ def main() -> None:
             )
             break
         except RunJobFailed as exc:
-            if not _is_io_pin_overflow(anchor_dir):
-                raise
-            print(f"  FAILED (PPL-0024 IO overflow) at U={util:.0f}")
-            util = round(util - UTIL_STEP)
-            if util < UTIL_FLOOR:
-                raise RuntimeError(
-                    f"calibration gave up: util backed off below "
-                    f"{UTIL_FLOOR} (IO pins still don't fit)"
-                ) from exc
-            print(f"  reducing utilization to U={util:.0f}")
+            anchor_attempts.append(
+                {
+                    "attempt": attempt,
+                    "period_ns": period,
+                    "target_utilization": util,
+                    "output_dir": str(anchor_dir),
+                }
+            )
+            if _is_io_pin_overflow(anchor_dir):
+                print(f"  FAILED (PPL-0024 IO overflow) at U={util:.0f}")
+                util = round(util - UTIL_STEP)
+                if util < UTIL_FLOOR:
+                    raise RuntimeError(
+                        f"calibration gave up: util backed off below "
+                        f"{UTIL_FLOOR} (IO pins still don't fit)"
+                    ) from exc
+                print(f"  reducing utilization to U={util:.0f}")
+            else:
+                print(f"  FAILED at T={period:.4f} ns")
+                period *= 2
+                print(f"  doubling period to T={period:.4f} ns")
+        attempt += 1
+    anchor_period = period
     anchor_ws = _require_finite(m1, "route_ws_ns")
-    anchor_closure = cfg.anchor_period_ns - anchor_ws
+    anchor_closure = anchor_period - anchor_ws
     print(
         f"  route_ws={anchor_ws:+.4f} ns -> closure={anchor_closure:.4f} ns "
-        f"(U={util:.0f})"
+        f"(T={anchor_period:.4f} ns, U={util:.0f})"
     )
 
     # P&R sweep at constant operating pressure. `t_anchor` is the most
@@ -303,10 +323,12 @@ def main() -> None:
             "selected_iter": best.iter,
         },
         "step1_anchor": {
-            "period_ns": cfg.anchor_period_ns,
+            "start_period_ns": cfg.anchor_period_ns,
+            "period_ns": anchor_period,
             "route_ws_ns": anchor_ws,
             "closure_ns": anchor_closure,
-            "output_dir": str(iter_output_dir(design, batch_dir, "anchor", 0)),
+            "output_dir": str(iter_output_dir(design, batch_dir, "anchor", attempt)),
+            "failed_attempts": anchor_attempts,
         },
         "pnr_steps": [asdict(s) for s in pnr_steps],
     }
