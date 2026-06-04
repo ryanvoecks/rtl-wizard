@@ -22,19 +22,19 @@ from common.designs import (
 
 aes_target = TargetConfig(
     design=aes_reference,
-    period_ns=0.8421,
+    period_ns=0.8343,
     cfg=StudyConfig(),
 )
 
 sha512_target = TargetConfig(
     design=sha512_reference,
-    period_ns=1.6657,
+    period_ns=1.6471,
     cfg=StudyConfig(),
 )
 
 double_fpu_target = TargetConfig(
     design=double_fpu_reference,
-    period_ns=0.9507,
+    period_ns=0.9519,
     cfg=StudyConfig(),
 )
 
@@ -72,7 +72,7 @@ verilog_axi_target = TargetConfig(
 
 bitonic_target = TargetConfig(
     design=bitonic_sorter_reference,
-    period_ns=0.4554,
+    period_ns=0.3773,
     cfg=StudyConfig(),
 )
 
