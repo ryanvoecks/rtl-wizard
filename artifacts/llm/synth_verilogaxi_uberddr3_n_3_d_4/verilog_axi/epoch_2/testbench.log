@@ -1,0 +1,6 @@
+verilog_axi g0:                                                       ** TESTS=8 PASS=8 FAIL=0 SKIP=0                     613590.01          22.75      26970.64  **
+verilog_axi g1:                                                       ** TESTS=8 PASS=8 FAIL=0 SKIP=0                     613590.01          22.53      27234.63  **
+verilog_axi g2:                                                       ** TESTS=8 PASS=8 FAIL=0 SKIP=0                     613590.01          22.54      27218.36  **
+verilog_axi g3:                                                       ** TESTS=8 PASS=8 FAIL=0 SKIP=0                     613590.01          22.16      27694.17  **
+verilog_axi g4:                                                       ** TESTS=1 PASS=1 FAIL=0 SKIP=0                       47160.00           4.28      11025.71  **
+verilog_axi: 33/33 cocotb cases PASS across 5 groups

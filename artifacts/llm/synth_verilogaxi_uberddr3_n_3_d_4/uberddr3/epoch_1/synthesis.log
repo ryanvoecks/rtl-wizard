@@ -1,0 +1,18 @@
+Warning: Replacing memory \o_wb_data_q with list of registers. See ddr3_controller.v:2160
+Warning: Replacing memory \delay_before_read_counter_d with list of registers. See ddr3_controller.v:2003, ddr3_controller.v:1763
+Warning: Replacing memory \delay_before_write_counter_d with list of registers. See ddr3_controller.v:2006, ddr3_controller.v:1762
+Warning: Replacing memory \delay_before_activate_counter_d with list of registers. See ddr3_controller.v:1995, ddr3_controller.v:1761
+Warning: Replacing memory \delay_before_precharge_counter_d with list of registers. See ddr3_controller.v:1760
+Warning: Replacing memory \unaligned_dm with list of registers. See ddr3_controller.v:1004
+Warning: Replacing memory \unaligned_data with list of registers. See ddr3_controller.v:1003
+Warning: Replacing memory \cmd_d with list of registers. See ddr3_controller.v:1715, ddr3_controller.v:716
+Warning: Replacing memory \shift_reg_read_pipe_d with list of registers. See ddr3_controller.v:1767, ddr3_controller.v:711
+Warning: Replacing memory \shift_reg_read_pipe_q with list of registers. See ddr3_controller.v:2163, ddr3_controller.v:710
+Warning: Replacing memory \delay_before_read_counter_q with list of registers. See ddr3_controller.v:1011, ddr3_controller.v:706
+Warning: Replacing memory \delay_before_write_counter_q with list of registers. See ddr3_controller.v:1010, ddr3_controller.v:705
+Warning: Replacing memory \delay_before_activate_counter_q with list of registers. See ddr3_controller.v:1009, ddr3_controller.v:704
+Warning: Replacing memory \delay_before_precharge_counter_q with list of registers. See ddr3_controller.v:1008, ddr3_controller.v:703
+Warning: Replacing memory \stage2_dm with list of registers. See ddr3_controller.v:1021, ddr3_controller.v:699
+Warning: Replacing memory \stage2_data with list of registers. See ddr3_controller.v:1020, ddr3_controller.v:698
+Warning: Replacing memory \bank_active_row_d with list of registers. See ddr3_controller.v:2027, ddr3_controller.v:1711, ddr3_controller.v:694
+Warning: Replacing memory \bank_active_row_q with list of registers. See ddr3_controller.v:1016, ddr3_controller.v:693
