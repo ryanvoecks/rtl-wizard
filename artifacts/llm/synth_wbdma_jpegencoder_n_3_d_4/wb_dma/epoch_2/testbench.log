@@ -1,0 +1,20 @@
+bench/verilog/tests.v:207: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:234: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:485: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:848: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:857: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:866: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:875: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1222: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1230: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1238: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1246: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1653: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1668: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1792: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:1807: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:2254: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:2263: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:2272: warning: extra digits given for sized hex constant.
+bench/verilog/tests.v:2281: warning: extra digits given for sized hex constant.
+xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value

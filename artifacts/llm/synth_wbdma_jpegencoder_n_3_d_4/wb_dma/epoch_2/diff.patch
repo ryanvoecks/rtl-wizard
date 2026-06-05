@@ -1,0 +1,264 @@
+--- a/wb_dma_ch_arb.v
++++ b/wb_dma_ch_arb.v
+@@ -146,7 +146,7 @@
+ 
+ assign	gnt = state;
+ 
+-always@(posedge clk or negedge rst)
++always@(posedge clk)
+ 	if(!rst)	state <= #1 grant0;
+ 	else		state <= #1 next_state;
+ 
+--- a/wb_dma_ch_sel.v
++++ b/wb_dma_ch_sel.v
+@@ -549,7 +549,7 @@
+ 	ack_o[30] <= #1 ch30_conf[0] & (ch_sel == 5'h1e) & ch30_csr[`WDMA_MODE] & de_ack;
+ 
+ // Channel Select
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)	ch_sel_r <= #1 0;
+ 	else
+ 	if(de_start)	ch_sel_r <= #1 ch_sel_d;
+--- a/wb_dma_ch_rf.v
++++ b/wb_dma_ch_rf.v
+@@ -261,7 +261,7 @@
+ // ---------------------------------------------------
+ // Pointers
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ptr_valid <= #1 1'b0;
+ 	else
+ 	if(CH_EN & HAVE_ED)
+@@ -273,7 +273,7 @@
+ 	   end
+ 	else				ptr_valid <= #1 1'b0;
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_eol <= #1 1'b0;
+ 	else
+ 	if(CH_EN & HAVE_ED)
+@@ -303,7 +303,7 @@
+ // ---------------------------------------------------
+ // CSR
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -317,7 +317,7 @@
+ 	   end
+ 
+ // done bit
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		ch_done <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -336,7 +336,7 @@
+ 	ch_stop <= #1 CH_EN & ch_csr_we & wb_rf_din[`WDMA_STOP];
+ 
+ // error bit
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_err <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -347,25 +347,25 @@
+ 	   end
+ 
+ // Priority Bits
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r2 <= #1 3'h0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		ch_csr_r2 <= #1 wb_rf_din[15:13];
+ 
+ // Restart Enable Bit (REST)
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			rest_en <= #1 1'b0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		rest_en <= #1 wb_rf_din[16];
+ 
+ // INT Mask
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r3 <= #1 3'h0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		ch_csr_r3 <= #1 wb_rf_din[19:17];
+ 
+ // INT Source
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[2] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -375,7 +375,7 @@
+ 		if(ch_csr_re)		int_src_r[2] <= #1 1'b0;
+ 	   end
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[1] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -385,7 +385,7 @@
+ 		if(ch_csr_re)		int_src_r[1] <= #1 1'b0;
+ 	   end
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[0] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -455,7 +455,7 @@
+ 
+ // ---------------------------------------------------
+ // AM0
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		ch_am0_r <= #1 28'hfffffff;
+ 	else
+ 	if(ch_am0_we)		ch_am0_r <= #1 wb_rf_din[31:4];
+@@ -484,14 +484,14 @@
+ 
+ // ---------------------------------------------------
+ // AM1
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)				ch_am1_r <= #1 28'hfffffff;
+ 	else
+ 	if(ch_am1_we & CH_EN & HAVE_CBUF)	ch_am1_r <= #1 wb_rf_din[31:4];
+ 
+ // ---------------------------------------------------
+ // Software Pointer
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)				sw_pointer_r <= #1 28'h0;
+ 	else
+ 	if(sw_pointer_we & CH_EN & HAVE_CBUF)	sw_pointer_r <= #1 wb_rf_din[31:4];
+--- a/wb_dma_rf.v
++++ b/wb_dma_rf.v
+@@ -636,19 +636,19 @@
+ 
+ // ---------------------------------------------------
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		csr_r <= #1 8'h0;
+ 	else
+ 	if(csr_we)		csr_r <= #1 wb_rf_din[7:0];
+ 
+ // ---------------------------------------------------
+ // INT_MASK
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		int_maska_r <= #1 31'h0;
+ 	else
+ 	if(int_maska_we)	int_maska_r <= #1 wb_rf_din[30:0];
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		int_maskb_r <= #1 31'h0;
+ 	else
+ 	if(int_maskb_we)	int_maskb_r <= #1 wb_rf_din[30:0];
+--- a/wb_dma_de.v
++++ b/wb_dma_de.v
+@@ -241,11 +241,17 @@
+ reg		m0_we;
+ reg		ptr_set;
+ 
++reg	[31:0]	csr_r;
++always @(posedge clk) csr_r <= #1 csr;
++
++reg		m0_we_r;
++always @(posedge clk) m0_we_r <= #1 m0_we;
++
+ // Aliases
+-wire		a0_inc_en = csr[4];	// Source Address (Adr 0) increment enable
+-wire		a1_inc_en = csr[3];	// Dest. Address (Adr 1) increment enable
++wire		a0_inc_en = csr_r[4];	// Source Address (Adr 0) increment enable
++wire		a1_inc_en = csr_r[3];	// Dest. Address (Adr 1) increment enable
+ wire		ptr_valid = pointer[0];
+-wire		use_ed = csr[`WDMA_USE_ED];
++wire		use_ed = csr_r[`WDMA_USE_ED];
+ 
+ reg		mast0_drdy_r;
+ reg		paused;
+@@ -419,8 +425,8 @@
+ 	rd_ack_r <= #1 read_r;
+ 
+ // Data Path
+-assign mast0_dout = m0_we ? {20'h0, tsz_cnt} : csr[2] ? mast1_din : mast0_din;
+-assign mast1_dout = csr[2] ? mast1_din : mast0_din;
++assign mast0_dout = m0_we_r ? {20'h0, tsz_cnt} : csr_r[2] ? mast1_din : mast0_din;
++assign mast1_dout = csr_r[2] ? mast1_din : mast0_din;
+ 
+ // Address Path
+ always @(posedge clk)
+@@ -439,17 +445,17 @@
+ 
+ assign read_hold = done ? read : (read | write);
+ 
+-assign mast0_go = (!csr[2] & read_hold) | (!csr[1] & write_hold) | m0_go;
+-assign mast1_go = ( csr[2] & read_hold) | ( csr[1] & write_hold);
+-
+-assign mast0_we = m0_go ? m0_we : (!csr[1] & write);
+-assign mast1_we = csr[1] & write;
+-
+-assign rd_ack = (csr[2] ? mast1_drdy : mast0_drdy);
+-assign wr_ack = (csr[1] ? mast1_drdy : mast0_drdy);
+-
+-assign mast0_wait = !((!csr[2] & read) | (!csr[1] & write)) & !m0_go;
+-assign mast1_wait = !(( csr[2] & read) | ( csr[1] & write));
++assign mast0_go = (!csr_r[2] & read_hold) | (!csr_r[1] & write_hold) | m0_go;
++assign mast1_go = ( csr_r[2] & read_hold) | ( csr_r[1] & write_hold);
++
++assign mast0_we = m0_go ? m0_we : (!csr_r[1] & write);
++assign mast1_we = csr_r[1] & write;
++
++assign rd_ack = (csr_r[2] ? mast1_drdy : mast0_drdy);
++assign wr_ack = (csr_r[1] ? mast1_drdy : mast0_drdy);
++
++assign mast0_wait = !((!csr_r[2] & read) | (!csr_r[1] & write)) & !m0_go;
++assign mast1_wait = !(( csr_r[2] & read) | ( csr_r[1] & write));
+ 
+ always @(posedge clk)
+ 	mast0_drdy_r <= #1 mast0_drdy;
+@@ -461,12 +467,12 @@
+ // State Machine
+ //
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)	state <= #1 IDLE;
+ 	else		state <= #1 next_state;
+ 
+ always @(state or pause_req or dma_abort_r or de_start or rd_ack or wr_ack or
+-	done or ptr_valid or use_ed or mast0_drdy or mast0_drdy_r or csr or nd)
++	done or ptr_valid or use_ed or mast0_drdy or mast0_drdy_r or csr_r or nd)
+    begin
+ 	next_state = state;	// Default keep state
+ 	read = 1'b0;
+@@ -491,7 +497,7 @@
+ 	     begin
+ 		if(pause_req)			next_state = PAUSE;
+ 		else
+-		if(de_start & !csr[`WDMA_ERR])
++		if(de_start & !csr_r[`WDMA_ERR])
+ 		   begin
+ 			if(use_ed & !ptr_valid)	next_state = LD_DESC1;
+ 			else			next_state = READ;
+@@ -538,7 +544,7 @@
+ 		de_txsz_we = 1'b1;
+ 		de_adr0_we = 1'b1;
+ 		de_adr1_we = 1'b1;
+-		if(use_ed & csr[`WDMA_WRB] & nd)
++		if(use_ed & csr_r[`WDMA_WRB] & nd)
+ 		   begin
+ 			m0_we = 1'b1;
+ 			m0_go = 1'b1;

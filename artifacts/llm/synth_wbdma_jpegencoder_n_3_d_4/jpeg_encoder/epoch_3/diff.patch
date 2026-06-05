@@ -1,0 +1,264 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -109,8 +109,7 @@
+ 	//
+ 	// variables
+ 	//
+-	reg go, dgo, ddgo, ddcnt, dddcnt;
+-	reg [di_width:1] ddin;
++	reg go, dgo, ddgo, ddcnt, dddcnt, ddddcnt;
+ 
+ 	//
+ 	// module body
+@@ -133,26 +132,26 @@
+ 	always @(posedge clk or negedge rst)
+ 	  if (~rst)
+ 	  begin
+-	      go     <= #1 1'b0;
+-		  dgo    <= #1 1'b0;
+-		  ddgo   <= #1 1'b0;
+-		  ddin   <= #1 0;
+-
+-	      douten <= #1 1'b0;
+-	      ddcnt  <= #1 1'b1;
+-	      dddcnt <= #1 1'b1;
++	      go       <= #1 1'b0;
++		  dgo      <= #1 1'b0;
++		  ddgo     <= #1 1'b0;
++
++	      douten   <= #1 1'b0;
++	      ddcnt    <= #1 1'b1;
++	      dddcnt   <= #1 1'b1;
++	      ddddcnt  <= #1 1'b1;
+ 	  end
+ 	  else if (ena)
+ 	  begin
+ 	      go     <= #1 dstrb;
+ 	      dgo    <= #1 go;
+ 	      ddgo   <= #1 dgo;
+-	      ddin   <= #1 din;
+-
+-	      ddcnt  <= #1 dcnt;
+-	      dddcnt <= #1 ddcnt;
+-
+-	      douten <= #1 ddcnt & ~dddcnt;
++
++	      ddcnt   <= #1 dcnt;
++	      dddcnt  <= #1 ddcnt;
++	      ddddcnt <= #1 dddcnt;
++
++	      douten <= #1 dddcnt & ~ddddcnt;
+ 	  end
+ 
+ 	// Hookup DCT units
+@@ -165,7 +164,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_00), // (U,V) = (0,0)
+ 		.dout1(dout_01), // (U,V) = (0,1)
+ 		.dout2(dout_02), // (U,V) = (0,2)
+@@ -184,7 +183,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_10), // (U,V) = (1,0)
+ 		.dout1(dout_11), // (U,V) = (1,1)
+ 		.dout2(dout_12), // (U,V) = (1,2)
+@@ -203,7 +202,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_20), // (U,V) = (2,0)
+ 		.dout1(dout_21), // (U,V) = (2,1)
+ 		.dout2(dout_22), // (U,V) = (2,2)
+@@ -222,7 +221,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_30), // (U,V) = (3,0)
+ 		.dout1(dout_31), // (U,V) = (3,1)
+ 		.dout2(dout_32), // (U,V) = (3,2)
+@@ -241,7 +240,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_40), // (U,V) = (4,0)
+ 		.dout1(dout_41), // (U,V) = (4,1)
+ 		.dout2(dout_42), // (U,V) = (4,2)
+@@ -260,7 +259,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_50), // (U,V) = (5,0)
+ 		.dout1(dout_51), // (U,V) = (5,1)
+ 		.dout2(dout_52), // (U,V) = (5,2)
+@@ -279,7 +278,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_60), // (U,V) = (6,0)
+ 		.dout1(dout_61), // (U,V) = (6,1)
+ 		.dout2(dout_62), // (U,V) = (6,2)
+@@ -298,7 +297,7 @@
+ 		.ddgo(ddgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+-		.ddin(ddin),
++		.ddin(din),
+ 		.dout0(dout_70), // (U,V) = (7,0)
+ 		.dout1(dout_71), // (U,V) = (7,1)
+ 		.dout2(dout_72), // (U,V) = (7,2)
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -81,30 +81,38 @@
+ 	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
++	reg  [mwidth -1:0] mult_res;
++	wire [rwidth -1:0] ext_mult_res;
+ 
+-	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
+-	wire [rwidth -1:0] ext_mult_res;
++	// Pipeline stage 1: two narrow partial products (split din into lo/hi nibbles)
++	reg signed [cwidth+4:0] pp_lo; // coef * {0, din[lo]}
++	reg signed [cwidth+3:0] pp_hi; // coef * din[hi] (signed)
++	reg                     dclr_d;
+ 
+ 
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// Stage 1: compute 11x4 partial products (narrower than 11x8 → shorter critical path)
++	always @(posedge clk)
++	  if(ena) begin
++	    pp_lo  <= #1 $signed(coef) * $signed({1'b0, din[dwidth/2-1:0]});
++	    pp_hi  <= #1 $signed(coef) * $signed(din[dwidth-1:dwidth/2]);
++	    dclr_d <= #1 dclr;
++	  end
++
++	// Stage 2: combine partial products
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	    mult_res <= #1 $signed(pp_lo) + ($signed(pp_hi) <<< (dwidth/2));
+ 
+ 	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
+ 
+-	// generate adder structure
++	// generate adder structure (uses dclr delayed by 1 to match pipelined multiply)
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(dclr)
++	    if(dclr_d)
+ 	      result <= #1 ext_mult_res;
+ 	    else
+ 	      result <= #1 ext_mult_res + result;
+--- a/dct/rtl/verilog/dctub.v
++++ b/dct/rtl/verilog/dctub.v
+@@ -78,6 +78,13 @@
+ 	// module body
+ 	//
+ 
++	// Local register for ddin only — reduces fanout from 64 (dct.v) to 8 per block
++	(* keep *) reg [di_width:1] ddin_r;
++
++	always @(posedge clk)
++	  if(ena)
++	    ddin_r <= #1 ddin;
++
+ 	// Hookup DCT units
+ 	dctu #(coef_width, di_width, v, 3'h0)
+ 	dct_unit_0 (
+@@ -86,7 +93,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout0)
+ 	);
+ 
+@@ -97,7 +104,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout1)
+ 	);
+ 
+@@ -108,7 +115,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout2)
+ 	);
+ 
+@@ -119,7 +126,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout3)
+ 	);
+ 
+@@ -130,7 +137,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout4)
+ 	);
+ 
+@@ -141,7 +148,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout5)
+ 	);
+ 
+@@ -152,7 +159,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout6)
+ 	);
+ 
+@@ -163,7 +170,7 @@
+ 		.ddgo(ddgo),
+ 		.x(x),
+ 		.y(y),
+-		.ddin(ddin),
++		.ddin(ddin_r),
+ 		.dout(dout7)
+ 	);
+ endmodule

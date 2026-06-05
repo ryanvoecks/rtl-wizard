@@ -1,0 +1,219 @@
+--- a/wb_dma_ch_arb.v
++++ b/wb_dma_ch_arb.v
+@@ -146,7 +146,7 @@
+ 
+ assign	gnt = state;
+ 
+-always@(posedge clk or negedge rst)
++always@(posedge clk)
+ 	if(!rst)	state <= #1 grant0;
+ 	else		state <= #1 next_state;
+ 
+--- a/wb_dma_ch_sel.v
++++ b/wb_dma_ch_sel.v
+@@ -261,6 +261,7 @@
+ wire	[2:0]	pri28, pri29, pri30;
+ reg	[4:0]	ch_sel_d;
+ reg	[4:0]	ch_sel_r;
++reg		dma_busy_r;
+ 
+ reg		ndr;
+ reg		next_start;
+@@ -549,12 +550,15 @@
+ 	ack_o[30] <= #1 ch30_conf[0] & (ch_sel == 5'h1e) & ch30_csr[`WDMA_MODE] & de_ack;
+ 
+ // Channel Select
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)	ch_sel_r <= #1 0;
+ 	else
+ 	if(de_start)	ch_sel_r <= #1 ch_sel_d;
+ 
+-assign ch_sel = !dma_busy ? ch_sel_d : ch_sel_r;
++always @(posedge clk)
++	dma_busy_r <= #1 dma_busy;
++
++assign ch_sel = !dma_busy_r ? ch_sel_d : ch_sel_r;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+--- a/wb_dma_ch_rf.v
++++ b/wb_dma_ch_rf.v
+@@ -261,7 +261,7 @@
+ // ---------------------------------------------------
+ // Pointers
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ptr_valid <= #1 1'b0;
+ 	else
+ 	if(CH_EN & HAVE_ED)
+@@ -273,7 +273,7 @@
+ 	   end
+ 	else				ptr_valid <= #1 1'b0;
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_eol <= #1 1'b0;
+ 	else
+ 	if(CH_EN & HAVE_ED)
+@@ -303,7 +303,7 @@
+ // ---------------------------------------------------
+ // CSR
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -317,7 +317,7 @@
+ 	   end
+ 
+ // done bit
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		ch_done <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -336,7 +336,7 @@
+ 	ch_stop <= #1 CH_EN & ch_csr_we & wb_rf_din[`WDMA_STOP];
+ 
+ // error bit
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_err <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -347,25 +347,25 @@
+ 	   end
+ 
+ // Priority Bits
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r2 <= #1 3'h0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		ch_csr_r2 <= #1 wb_rf_din[15:13];
+ 
+ // Restart Enable Bit (REST)
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			rest_en <= #1 1'b0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		rest_en <= #1 wb_rf_din[16];
+ 
+ // INT Mask
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			ch_csr_r3 <= #1 3'h0;
+ 	else
+ 	if(CH_EN & ch_csr_we)		ch_csr_r3 <= #1 wb_rf_din[19:17];
+ 
+ // INT Source
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[2] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -375,7 +375,7 @@
+ 		if(ch_csr_re)		int_src_r[2] <= #1 1'b0;
+ 	   end
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[1] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -385,7 +385,7 @@
+ 		if(ch_csr_re)		int_src_r[1] <= #1 1'b0;
+ 	   end
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)			int_src_r[0] <= #1 1'b0;
+ 	else
+ 	if(CH_EN)
+@@ -455,7 +455,7 @@
+ 
+ // ---------------------------------------------------
+ // AM0
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		ch_am0_r <= #1 28'hfffffff;
+ 	else
+ 	if(ch_am0_we)		ch_am0_r <= #1 wb_rf_din[31:4];
+@@ -484,14 +484,14 @@
+ 
+ // ---------------------------------------------------
+ // AM1
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)				ch_am1_r <= #1 28'hfffffff;
+ 	else
+ 	if(ch_am1_we & CH_EN & HAVE_CBUF)	ch_am1_r <= #1 wb_rf_din[31:4];
+ 
+ // ---------------------------------------------------
+ // Software Pointer
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)				sw_pointer_r <= #1 28'h0;
+ 	else
+ 	if(sw_pointer_we & CH_EN & HAVE_CBUF)	sw_pointer_r <= #1 wb_rf_din[31:4];
+--- a/wb_dma_rf.v
++++ b/wb_dma_rf.v
+@@ -636,19 +636,19 @@
+ 
+ // ---------------------------------------------------
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		csr_r <= #1 8'h0;
+ 	else
+ 	if(csr_we)		csr_r <= #1 wb_rf_din[7:0];
+ 
+ // ---------------------------------------------------
+ // INT_MASK
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		int_maska_r <= #1 31'h0;
+ 	else
+ 	if(int_maska_we)	int_maska_r <= #1 wb_rf_din[30:0];
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)		int_maskb_r <= #1 31'h0;
+ 	else
+ 	if(int_maskb_we)	int_maskb_r <= #1 wb_rf_din[30:0];
+--- a/wb_dma_wb_slv.v
++++ b/wb_dma_wb_slv.v
+@@ -133,6 +133,7 @@
+ wire		rf_sel;
+ reg		rf_ack;
+ reg	[31:0]	slv_adr, slv_dout;
++reg		pt_sel_r;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -149,8 +150,11 @@
+ //assign pt_sel = !rf_sel;
+ assign pt_sel = !rf_sel & wb_cyc_i;
+ 
++always @(posedge clk)
++	pt_sel_r <= #1 pt_sel;
++
+ assign slv_pt_out = {wb_data_i, wb_addr_i, wb_sel_i, wb_we_i, wb_cyc_i, wb_stb_i};
+-assign {wb_data_o, wb_ack_o, wb_err_o, wb_rty_o} = pt_sel ? slv_pt_in :
++assign {wb_data_o, wb_ack_o, wb_err_o, wb_rty_o} = pt_sel_r ? slv_pt_in :
+ 	{slv_din, rf_ack, 1'b0, 1'b0};
+ 
+ ////////////////////////////////////////////////////////////////////
+--- a/wb_dma_de.v
++++ b/wb_dma_de.v
+@@ -461,7 +461,7 @@
+ // State Machine
+ //
+ 
+-always @(posedge clk or negedge rst)
++always @(posedge clk)
+ 	if(!rst)	state <= #1 IDLE;
+ 	else		state <= #1 next_state;
+ 
