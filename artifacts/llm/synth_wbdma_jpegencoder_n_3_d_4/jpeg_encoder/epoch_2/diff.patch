@@ -1,0 +1,260 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -162,7 +162,7 @@
+ 	dct_block_0 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -181,7 +181,7 @@
+ 	dct_block_1 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -200,7 +200,7 @@
+ 	dct_block_2 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -219,7 +219,7 @@
+ 	dct_block_3 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -238,7 +238,7 @@
+ 	dct_block_4 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -257,7 +257,7 @@
+ 	dct_block_5 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -276,7 +276,7 @@
+ 	dct_block_6 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+@@ -295,7 +295,7 @@
+ 	dct_block_7 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
++		.ddgo(dgo),
+ 		.x(sample_cnt[2:0]),
+ 		.y(sample_cnt[5:3]),
+ 		.ddin(ddin),
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -57,7 +57,7 @@
+ `include "timescale.v"
+ //synopsys translate_on
+ 
+-module dct_mac(clk, ena, dclr, din, coef, result);
++module dct_mac(clk, ena, dclr, din, coef, neg_coef, result);
+ 
+ 	//
+ 	// parameters
+@@ -70,44 +70,76 @@
+ 	//
+ 	// inputs & outputs
+ 	//
+-	input               clk;    // clock input
+-	input               ena;    // clock enable
+-	input               dclr;   // start new mac (delayed 1 cycle)
+-	input  [dwidth-1:0] din;    // data input
+-	input  [cwidth-1:0] coef;   // coefficient input
+-	output [rwidth-1:0] result; // mac-result
++	input               clk;             // clock input
++	input               ena;             // clock enable
++	input               dclr;            // start new mac (delayed 1 cycle)
++	input  [dwidth-1:0] din;             // data input
++	input  [cwidth-1:0] coef;            // coefficient input
++	input  [cwidth-1:0] neg_coef;        // -coef, pre-registered
++	output [rwidth-1:0] result;          // mac-result
+ 	reg [rwidth -1:0] result;
+ 
+ 	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
++	// 3-stage pipelined multiply: split din into four 2-bit slices
++	// din[7:6] signed, din[5:4] unsigned, din[3:2] unsigned, din[1:0] unsigned
++	localparam qwidth = dwidth / 4;                  // 2
++	localparam hwidth = dwidth / 2;                  // 4
++	localparam qpwidth = cwidth + qwidth;            // 13  (11x2 product)
++	localparam hpwidth = cwidth + hwidth;            // 15  (11x4 combined)
+ 
+-	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
+-	wire [rwidth -1:0] ext_mult_res;
++	// Stage 1 regs: four 11x2 partial products + dclr
++	reg signed [qpwidth-1:0] pp3, pp2, pp1, pp0;
++	reg                      dclr_d1;
+ 
++	// Stage 2 regs: two combined 11x4 halves + dclr
++	reg signed [hpwidth-1:0] ph, pl;
++	reg                      dclr_d2;
+ 
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// Stage 1: four narrow (11x2) partial products
++	// pp3 uses pre-registered neg_coef to replace the 2's-complement carry chain
++	// with a 4-way mux: din[7:6] in {00→0, 01→coef, 10→(-coef)<<1, 11→neg_coef}
+ 	always @(posedge clk)
+-	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	  if (ena) begin
++	    case (din[dwidth-1 : dwidth-qwidth])
++	      2'b00: pp3 <= #1 {qpwidth{1'b0}};
++	      2'b01: pp3 <= #1 $signed({{(qpwidth-cwidth){coef[cwidth-1]}},     coef});
++	      2'b10: pp3 <= #1 $signed({{(qpwidth-cwidth-1){neg_coef[cwidth-1]}}, neg_coef, 1'b0});
++	      2'b11: pp3 <= #1 $signed({{(qpwidth-cwidth){neg_coef[cwidth-1]}}, neg_coef});
++	    endcase
++	    pp2    <= #1 $signed(coef) * $signed({1'b0, din[dwidth-qwidth-1 : hwidth]});
++	    pp1    <= #1 $signed(coef) * $signed({1'b0, din[hwidth-1 : qwidth]});
++	    pp0    <= #1 $signed(coef) * $signed({1'b0, din[qwidth-1 : 0]});
++	    dclr_d1 <= #1 dclr;
++	  end
+ 
+-	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
++	// Stage 2: combine into two 4-bit-slice products
++	// ph = coef * din[7:4]  = pp3*4 + pp2
++	// pl = coef * din[3:0]  = pp1*4 + pp0
++	always @(posedge clk)
++	  if (ena) begin
++	    ph      <= #1 ($signed(pp3) <<< qwidth) + $signed(pp2);
++	    pl      <= #1 ($signed(pp1) <<< qwidth) + $signed(pp0);
++	    dclr_d2 <= #1 dclr_d1;
++	  end
+ 
+-	// generate adder structure
++	// Stage 3: combine halves and accumulate
++	// din = ph*16 + pl  (ph is signed 4-bit half, pl is unsigned 4-bit half)
++	wire [mwidth-1:0] mult_full =
++	    ($signed(ph) <<< hwidth) + $signed(pl);
++	wire [rwidth-1:0] ext_mult_full = { {3{mult_full[mwidth-1]}}, mult_full };
++
+ 	always @(posedge clk)
+-	  if(ena)
+-	    if(dclr)
+-	      result <= #1 ext_mult_res;
++	  if (ena)
++	    if (dclr_d2)
++	      result <= #1 ext_mult_full;
+ 	    else
+-	      result <= #1 ext_mult_res + result;
++	      result <= #1 ext_mult_full + result;
+ endmodule
+ 
+ 
+--- a/dct/rtl/verilog/dctu.v
++++ b/dct/rtl/verilog/dctu.v
+@@ -78,7 +78,8 @@
+ 	//
+ 	// variables
+ 	//
+-	reg [      31:0] coef;
++	reg [coef_width-1:0] coef;
++	reg [coef_width-1:0] neg_coef;  // -coef, pre-registered to avoid negation on critical path
+ 
+ 	wire [coef_width +10:0] result;
+ 	`include "../../../dct/rtl/verilog/dct_cos_table.v"
+@@ -86,10 +87,14 @@
+ 	// module body
+ 	//
+ 
+-	// hookup cosine-table
++	// hookup cosine-table — register coef and its negation in the same cycle
++	wire [31:0] cos_raw = dct_cos_table(x, y, u, v);
++	wire [coef_width-1:0] cos_val = cos_raw[31:31-coef_width+1];
+ 	always @(posedge clk)
+-	  if(ena)
+-	    coef <= #1 dct_cos_table(x, y, u, v);
++	  if(ena) begin
++	    coef     <= #1  cos_val;
++	    neg_coef <= #1 -cos_val;
++	  end
+ 
+ 	// hookup dct-mac unit
+ 	dct_mac #(8, coef_width)
+@@ -98,7 +103,8 @@
+ 		.ena(ena),
+ 		.dclr(ddgo),
+ 		.din(ddin),
+-		.coef( coef[31:31 -coef_width +1] ),
++		.coef(coef),
++		.neg_coef(neg_coef),
+ 		.result(result)
+ 	);
+ 
+--- a/dct/rtl/verilog/zigzag.v
++++ b/dct/rtl/verilog/zigzag.v
+@@ -91,7 +91,7 @@
+ 	// variables
+ 	//
+ 
+-	reg ld_zigzag;
++	reg ld_zigzag, ld_zigzag2;
+ 	reg [11:0] sresult [63:0]; // store results for zig-zagging
+ 
+ 	//
+@@ -99,10 +99,12 @@
+ 	//
+ 
+ 	always @(posedge clk)
+-	  if(ena)
+-	    ld_zigzag <= #1 dstrb;
+-
+-	assign douten = ld_zigzag;
++	  if(ena) begin
++	    ld_zigzag  <= #1 dstrb;
++	    ld_zigzag2 <= #1 ld_zigzag;
++	  end
++
++	assign douten = ld_zigzag2;
+ 
+ 
+ 	//
+@@ -126,7 +128,7 @@
+ 
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(ld_zigzag)   // reload results-register file
++	    if(ld_zigzag2)   // reload results-register file
+ 	    begin
+ 	        sresult[63] <= #1 din_00;
+ 	        sresult[62] <= #1 din_01;

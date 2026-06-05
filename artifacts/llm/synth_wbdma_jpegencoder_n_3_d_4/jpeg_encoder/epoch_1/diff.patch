@@ -1,0 +1,281 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -109,7 +109,7 @@
+ 	//
+ 	// variables
+ 	//
+-	reg go, dgo, ddgo, ddcnt, dddcnt;
++	reg go, dgo, ddgo, ddcnt, dddcnt, ddddcnt, dddddcnt, ddddddcnt;
+ 	reg [di_width:1] ddin;
+ 
+ 	//
+@@ -133,26 +133,32 @@
+ 	always @(posedge clk or negedge rst)
+ 	  if (~rst)
+ 	  begin
+-	      go     <= #1 1'b0;
+-		  dgo    <= #1 1'b0;
+-		  ddgo   <= #1 1'b0;
+-		  ddin   <= #1 0;
+-
+-	      douten <= #1 1'b0;
+-	      ddcnt  <= #1 1'b1;
+-	      dddcnt <= #1 1'b1;
++	      go      <= #1 1'b0;
++		  dgo     <= #1 1'b0;
++		  ddgo    <= #1 1'b0;
++		  ddin    <= #1 0;
++
++	      douten    <= #1 1'b0;
++	      ddcnt     <= #1 1'b1;
++	      dddcnt    <= #1 1'b1;
++	      ddddcnt   <= #1 1'b1;
++	      dddddcnt  <= #1 1'b1;
++	      ddddddcnt <= #1 1'b1;
+ 	  end
+ 	  else if (ena)
+ 	  begin
+-	      go     <= #1 dstrb;
+-	      dgo    <= #1 go;
+-	      ddgo   <= #1 dgo;
+-	      ddin   <= #1 din;
+-
+-	      ddcnt  <= #1 dcnt;
+-	      dddcnt <= #1 ddcnt;
+-
+-	      douten <= #1 ddcnt & ~dddcnt;
++	      go        <= #1 dstrb;
++	      dgo       <= #1 go;
++	      ddgo      <= #1 dgo;
++	      ddin      <= #1 din;
++
++	      ddcnt     <= #1 dcnt;
++	      dddcnt    <= #1 ddcnt;
++	      ddddcnt   <= #1 dddcnt;
++	      dddddcnt  <= #1 ddddcnt;
++	      ddddddcnt <= #1 dddddcnt;
++
++	      douten    <= #1 dddddcnt & ~ddddddcnt;
+ 	  end
+ 
+ 	// Hookup DCT units
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -79,32 +79,65 @@
+ 	reg [rwidth -1:0] result;
+ 
+ 	//
++	// parameters (split din into two halves for a 2-stage pipelined multiply)
++	//
++	localparam halfw = dwidth/2;  // = 4 for dwidth=8
++
++	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
++	// Stage 1: input pipeline registers
++	reg  [dwidth-1:0] din_r;
++	reg  [cwidth-1:0] coef_r;
++	reg               dclr_d;
+ 
+-	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
++	// Stage 2: partial-product pipeline registers
++	// Split din_r into signed upper half and unsigned lower half, then multiply
++	// each by coef_r. Two narrower (cwidth×halfw) multiplies are each ~half the
++	// combinatorial depth of a single cwidth×dwidth multiply.
++	reg signed [cwidth+halfw-1:0] pp_hi_r;  // coef_r × din_r[dwidth-1:halfw] (signed)
++	reg signed [cwidth+halfw  :0] pp_lo_r;  // coef_r × {1'b0,din_r[halfw-1:0]} (unsigned lo)
++	reg                           dclr_dd;
++
++	reg  [mwidth -1:0] mult_res;
+ 	wire [rwidth -1:0] ext_mult_res;
+ 
+ 
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// Stage 1: register inputs locally (breaks high-fanout bus, fanout=1 per MAC)
++	always @(posedge clk)
++	  if(ena) begin
++	    din_r  <= #1 din;
++	    coef_r <= #1 coef;
++	    dclr_d <= #1 dclr;
++	  end
++
++	// Stage 2: two half-width sub-multiplies (each ~half the gate depth of full multiply)
++	wire signed [cwidth-1:0] s_c   = coef_r;
++	wire signed [halfw-1:0]  d_hi  = din_r[dwidth-1:halfw];
++	wire        [halfw-1:0]  d_lo  = din_r[halfw-1:0];
++
++	always @(posedge clk)
++	  if(ena) begin
++	    pp_hi_r <= #1 s_c * d_hi;
++	    pp_lo_r <= #1 s_c * $signed({1'b0, d_lo});
++	    dclr_dd <= #1 dclr_d;
++	  end
++
++	// Stage 3: combine partial products — pure adder, very fast
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	    mult_res <= #1 $signed(pp_lo_r) + ($signed(pp_hi_r) << halfw);
+ 
+ 	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
+ 
+-	// generate adder structure
++	// generate adder structure (accumulator uses dclr_dd: 2 cycles after input dclr)
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(dclr)
++	    if(dclr_dd)
+ 	      result <= #1 ext_mult_res;
+ 	    else
+ 	      result <= #1 ext_mult_res + result;
+--- a/dct/rtl/verilog/dctub.v
++++ b/dct/rtl/verilog/dctub.v
+@@ -75,18 +75,30 @@
+ 	output [11:0] dout0, dout1, dout2, dout3, dout4, dout5, dout6, dout7;
+ 
+ 	//
+-	// module body
++	// variables
+ 	//
++	reg [di_width:1] ddin_r;
++	reg              ddgo_r;
++	reg [2:0]        x_r, y_r;
++
++	// Buffer high-fanout signals locally to shorten wire load on critical path
++	always @(posedge clk)
++	  if (ena) begin
++	    ddin_r <= ddin;
++	    ddgo_r <= ddgo;
++	    x_r    <= x;
++	    y_r    <= y;
++	  end
+ 
+ 	// Hookup DCT units
+ 	dctu #(coef_width, di_width, v, 3'h0)
+ 	dct_unit_0 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout0)
+ 	);
+ 
+@@ -94,10 +106,10 @@
+ 	dct_unit_1 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout1)
+ 	);
+ 
+@@ -105,10 +117,10 @@
+ 	dct_unit_2 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout2)
+ 	);
+ 
+@@ -116,10 +128,10 @@
+ 	dct_unit_3 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout3)
+ 	);
+ 
+@@ -127,10 +139,10 @@
+ 	dct_unit_4 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout4)
+ 	);
+ 
+@@ -138,10 +150,10 @@
+ 	dct_unit_5 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout5)
+ 	);
+ 
+@@ -149,10 +161,10 @@
+ 	dct_unit_6 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout6)
+ 	);
+ 
+@@ -160,10 +172,10 @@
+ 	dct_unit_7 (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.ddgo(ddgo),
+-		.x(x),
+-		.y(y),
+-		.ddin(ddin),
++		.ddgo(ddgo_r),
++		.x(x_r),
++		.y(y_r),
++		.ddin(ddin_r),
+ 		.dout(dout7)
+ 	);
+ endmodule
