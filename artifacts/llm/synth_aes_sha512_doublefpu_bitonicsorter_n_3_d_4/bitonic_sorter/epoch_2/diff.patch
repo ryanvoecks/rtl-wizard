@@ -1,0 +1,143 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -55,12 +55,46 @@
+ 
+ wire LESS;
+ 
++// Kogge-Stone parallel prefix comparator: O(log DATA_WIDTH) gate depth
++// For signed: invert MSB to convert signed ordering to unsigned ordering
++localparam NLEVELS = $clog2(DATA_WIDTH);
++wire [DATA_WIDTH-1:0] cmp_a;
++wire [DATA_WIDTH-1:0] cmp_b;
++wire [DATA_WIDTH-1:0] ks_g [0:NLEVELS]; // prefix "less" result
++wire [DATA_WIDTH-1:0] ks_p [0:NLEVELS]; // prefix "equal" result
++
++genvar ksi, ksl;
+ generate
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		assign cmp_a = A;
++		assign cmp_b = B;
+ 	end else begin
+-		assign LESS = $signed(A) < $signed(B);
++		assign cmp_a = {~A[DATA_WIDTH-1], A[DATA_WIDTH-2:0]};
++		assign cmp_b = {~B[DATA_WIDTH-1], B[DATA_WIDTH-2:0]};
+ 	end
++
++	// Level 0: per-bit generate/propagate; index 0 = MSB of comparison
++	for (ksi = 0; ksi < DATA_WIDTH; ksi = ksi + 1) begin: KS_INIT
++		assign ks_g[0][ksi] = ~cmp_a[DATA_WIDTH-1-ksi] & cmp_b[DATA_WIDTH-1-ksi];
++		assign ks_p[0][ksi] = ~(cmp_a[DATA_WIDTH-1-ksi] ^ cmp_b[DATA_WIDTH-1-ksi]);
++	end
++
++	// Kogge-Stone levels: stride-doubling prefix from MSB toward LSB
++	for (ksl = 1; ksl <= NLEVELS; ksl = ksl + 1) begin: KS_LVL
++		localparam STRIDE = 1 << (ksl-1);
++		for (ksi = 0; ksi < DATA_WIDTH; ksi = ksi + 1) begin: KS_BIT
++			if (ksi >= STRIDE) begin: KS_COMBINE
++				// LEFT = ks[ksi-STRIDE] (covers higher bits), RIGHT = ks[ksi]
++				assign ks_g[ksl][ksi] = ks_g[ksl-1][ksi-STRIDE] | (ks_p[ksl-1][ksi-STRIDE] & ks_g[ksl-1][ksi]);
++				assign ks_p[ksl][ksi] = ks_p[ksl-1][ksi-STRIDE] & ks_p[ksl-1][ksi];
++			end else begin: KS_PASS
++				assign ks_g[ksl][ksi] = ks_g[ksl-1][ksi];
++				assign ks_p[ksl][ksi] = ks_p[ksl-1][ksi];
++			end
++		end
++	end
++
++	assign LESS = ks_g[NLEVELS][DATA_WIDTH-1];
+ 	
+ 	if (POLARITY == 0) begin
+ 		always @(*) begin
+--- a/bitonic_node.v
++++ b/bitonic_node.v
+@@ -42,7 +42,8 @@
+ 	parameter POLARITY = 0,
+ 	parameter SIGNED = 0,
+ 	parameter PIPE_REG = 1,
+-	parameter INDEX = 0
++	parameter INDEX = 0,
++	parameter OUT_REG = 0  // 1 = keep register at comparator output (last-stage nodes)
+ )
+ (
+ 	input wire clk,
+@@ -52,6 +53,23 @@
+ 
+ localparam COMP_NUM = 2**ORDER;
+ localparam REGOUT_EN = (PIPE_REG == 0) ? 0 : ((INDEX % PIPE_REG) == 0);
++localparam NODE_DATA_WIDTH = DATA_WIDTH * 2**(ORDER+1);
++
++// Pipeline register placement:
++//   OUT_REG=0: register at node INPUT  — fast data_in path, used for all but last stage
++//   OUT_REG=1: register at comparator OUTPUT — fast data_out path, used for last-stage nodes
++// Both placements preserve identical latency; only the critical-path profile differs.
++wire [NODE_DATA_WIDTH-1:0] data_in_r;
++
++generate
++	if (REGOUT_EN == 1 && OUT_REG == 0) begin: REG_INPUT
++		reg [NODE_DATA_WIDTH-1:0] din_reg;
++		always @(posedge clk) din_reg <= data_in;
++		assign data_in_r = din_reg;
++	end else begin: PASS_INPUT
++		assign data_in_r = data_in;
++	end
++endgenerate
+ 
+ genvar i;
+ 
+@@ -60,9 +78,9 @@
+ 	wire [DATA_WIDTH-1:0]B;
+ 	wire [DATA_WIDTH-1:0]H;
+ 	wire [DATA_WIDTH-1:0]L;
+-	
+-	assign A = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH];
+-	assign B = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH];
++
++	assign A = data_in_r[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH];
++	assign B = data_in_r[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH];
+ 	assign data_out[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH] = H;
+ 	assign data_out[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH] = L;
+ 
+@@ -70,7 +88,7 @@
+ 		.DATA_WIDTH(DATA_WIDTH),
+ 		.POLARITY(POLARITY),
+ 		.SIGNED(SIGNED),
+-		.REGOUT_EN(REGOUT_EN)
++		.REGOUT_EN(REGOUT_EN & OUT_REG)
+ 	) comp_inst (
+ 		.CLK(clk),
+ 		.A(A),
+--- a/bitonic_block.v
++++ b/bitonic_block.v
+@@ -41,7 +41,8 @@
+ 	parameter ORDER = 0,
+ 	parameter POLARITY = 0,
+ 	parameter SIGNED = 0,
+-	parameter PIPE_REG = 1
++	parameter PIPE_REG = 1,
++	parameter LAST_SORT_STAGE = 0
+ )
+ (
+ 	input wire clk,
+@@ -97,7 +98,8 @@
+ 			.POLARITY(POLARITY),
+ 			.SIGNED(SIGNED),
+ 			.PIPE_REG(PIPE_REG),
+-			.INDEX(index(ORDER, stage))
++			.INDEX(index(ORDER, stage)),
++			.OUT_REG(LAST_SORT_STAGE && (stage == STAGES - 1) ? 1 : 0)
+ 		) bitonic_node_inst (
+ 			.clk(clk),
+ 			.data_in(node_data_in),
+--- a/bitonic_sort.v
++++ b/bitonic_sort.v
+@@ -90,7 +90,8 @@
+ 			.ORDER(BLOCK_ORDER),
+ 			.POLARITY(BLOCK_POLARITY),
+ 			.SIGNED(SIGNED),
+-			.PIPE_REG(PIPE_REG)
++			.PIPE_REG(PIPE_REG),
++			.LAST_SORT_STAGE(stage == STAGES - 1 ? 1 : 0)
+ 		) bitonic_block_inst (
+ 			.clk(clk),
+ 			.data_in(block_data_in),

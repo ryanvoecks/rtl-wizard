@@ -1,0 +1,63 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -55,13 +55,57 @@
+ 
+ wire LESS;
+ 
++// Three-level parallel prefix comparison tree (16->8->4->2 bits per sub-compare).
++localparam HALF = DATA_WIDTH / 2;
++localparam QTR  = DATA_WIDTH / 4;
++localparam EIGHTH = DATA_WIDTH / 8;
++wire less_hi, eq_hi, less_lo;
++wire less_hh, eq_hh, less_hl, eq_hl;
++wire less_lh, eq_lh, less_ll, eq_ll;
++wire less_hhh, eq_hhh, less_hhl, eq_hhl;
++wire less_hlh, eq_hlh, less_hll, eq_hll;
++wire less_lhh, eq_lhh, less_lhl, eq_lhl;
++wire less_llh, eq_llh, less_lll, eq_lll;
++
+ generate
++	// Eight 2-bit leaves (all run in parallel)
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		assign less_hhh = $unsigned(A[DATA_WIDTH-1        :DATA_WIDTH-EIGHTH  ]) < $unsigned(B[DATA_WIDTH-1        :DATA_WIDTH-EIGHTH  ]);
+ 	end else begin
+-		assign LESS = $signed(A) < $signed(B);
++		assign less_hhh = $signed(A[DATA_WIDTH-1          :DATA_WIDTH-EIGHTH  ]) < $signed(B[DATA_WIDTH-1          :DATA_WIDTH-EIGHTH  ]);
+ 	end
+-	
++	assign eq_hhh = A[DATA_WIDTH-1        :DATA_WIDTH-EIGHTH  ] == B[DATA_WIDTH-1        :DATA_WIDTH-EIGHTH  ];
++	assign less_hhl = $unsigned(A[DATA_WIDTH-EIGHTH-1   :DATA_WIDTH-QTR    ]) < $unsigned(B[DATA_WIDTH-EIGHTH-1   :DATA_WIDTH-QTR    ]);
++	assign eq_hhl   = A[DATA_WIDTH-EIGHTH-1   :DATA_WIDTH-QTR    ] == B[DATA_WIDTH-EIGHTH-1   :DATA_WIDTH-QTR    ];
++	assign less_hlh = $unsigned(A[DATA_WIDTH-QTR-1      :DATA_WIDTH-3*EIGHTH]) < $unsigned(B[DATA_WIDTH-QTR-1      :DATA_WIDTH-3*EIGHTH]);
++	assign eq_hlh   = A[DATA_WIDTH-QTR-1      :DATA_WIDTH-3*EIGHTH] == B[DATA_WIDTH-QTR-1      :DATA_WIDTH-3*EIGHTH];
++	assign less_hll = $unsigned(A[DATA_WIDTH-3*EIGHTH-1 :HALF               ]) < $unsigned(B[DATA_WIDTH-3*EIGHTH-1 :HALF               ]);
++	assign eq_hll   = A[DATA_WIDTH-3*EIGHTH-1 :HALF               ] == B[DATA_WIDTH-3*EIGHTH-1 :HALF               ];
++	assign less_lhh = $unsigned(A[HALF-1               :HALF-EIGHTH         ]) < $unsigned(B[HALF-1               :HALF-EIGHTH         ]);
++	assign eq_lhh   = A[HALF-1               :HALF-EIGHTH         ] == B[HALF-1               :HALF-EIGHTH         ];
++	assign less_lhl = $unsigned(A[HALF-EIGHTH-1        :QTR                 ]) < $unsigned(B[HALF-EIGHTH-1        :QTR                 ]);
++	assign eq_lhl   = A[HALF-EIGHTH-1        :QTR                 ] == B[HALF-EIGHTH-1        :QTR                 ];
++	assign less_llh = $unsigned(A[QTR-1               :QTR-EIGHTH          ]) < $unsigned(B[QTR-1               :QTR-EIGHTH          ]);
++	assign eq_llh   = A[QTR-1               :QTR-EIGHTH          ] == B[QTR-1               :QTR-EIGHTH          ];
++	assign less_lll = $unsigned(A[QTR-EIGHTH-1        :0                   ]) < $unsigned(B[QTR-EIGHTH-1        :0                   ]);
++	assign eq_lll   = A[QTR-EIGHTH-1        :0                   ] == B[QTR-EIGHTH-1        :0                   ];
++
++	// Combine to 4-bit level
++	assign less_hh = less_hhh | (eq_hhh & less_hhl);
++	assign eq_hh   = eq_hhh & eq_hhl;
++	assign less_hl = less_hlh | (eq_hlh & less_hll);
++	assign eq_hl   = eq_hlh & eq_hll;
++	assign less_lh = less_lhh | (eq_lhh & less_lhl);
++	assign eq_lh   = eq_lhh & eq_lhl;
++	assign less_ll = less_llh | (eq_llh & less_lll);
++
++	// Combine to 8-bit level
++	assign less_hi = less_hh | (eq_hh & less_hl);
++	assign eq_hi   = eq_hh & eq_hl;
++	assign less_lo = less_lh | (eq_lh & less_ll);
++
++	assign LESS = less_hi | (eq_hi & less_lo);
++
+ 	if (POLARITY == 0) begin
+ 		always @(*) begin
+ 			H_REG = (LESS) ? A : B;

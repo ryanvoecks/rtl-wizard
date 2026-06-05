@@ -1,0 +1,577 @@
+iverilog -Wall -o top.sim ../src/tb/tb_aes.v ../src/rtl/aes.v ../src/rtl/aes_core.v ../src/rtl/aes_key_mem.v ../src/rtl/aes_sbox.v ../src/rtl/aes_inv_sbox.v ../src/rtl/aes_encipher_block.v ../src/rtl/aes_decipher_block.v
+iverilog -Wall -o core.sim ../src/tb/tb_aes_core.v ../src/rtl/aes_core.v ../src/rtl/aes_key_mem.v ../src/rtl/aes_sbox.v ../src/rtl/aes_inv_sbox.v ../src/rtl/aes_encipher_block.v ../src/rtl/aes_decipher_block.v
+iverilog -Wall -o keymem.sim ../src/tb/tb_aes_key_mem.v ../src/rtl/aes_key_mem.v ../src/rtl/aes_sbox.v
+iverilog -Wall -o encipher.sim ../src/tb/tb_aes_encipher_block.v ../src/rtl/aes_encipher_block.v ../src/rtl/aes_sbox.v
+iverilog -Wall -o decipher.sim ../src/tb/tb_aes_decipher_block.v ../src/rtl/aes_decipher_block.v ../src/rtl/aes_inv_sbox.v
+   -= Testbench for AES started =-
+    ==============================
+
+Dumping all variables to tb_aes vcd file.
+VCD info: dumpfile tb_aes.vcd opened for output.
+cycle: 0x0000000000000000
+State of DUT
+------------
+ctrl_reg:   init   = 0xx, next   = 0xx
+config_reg: encdec = 0xx, length = 0xx 
+
+block: 0xxxxxxxxx, 0xxxxxxxxx, 0xxxxxxxxx, 0xxxxxxxxx
+
+*** Toggle reset.
+
+cycle: 0x0000000000000001
+State of DUT
+------------
+ctrl_reg:   init   = 0x0, next   = 0x0
+config_reg: encdec = 0x0, length = 0x0 
+
+block: 0x00000000, 0x00000000, 0x00000000, 0x00000000
+
+ECB 128 bit key tests
+---------------------
+*** TC 1 ECB mode test started.
+*** TC 1 successful.
+
+*** TC 2 ECB mode test started.
+*** TC 2 successful.
+
+*** TC 3 ECB mode test started.
+*** TC 3 successful.
+
+*** TC 4 ECB mode test started.
+*** TC 4 successful.
+
+*** TC 5 ECB mode test started.
+*** TC 5 successful.
+
+*** TC 6 ECB mode test started.
+*** TC 6 successful.
+
+*** TC 7 ECB mode test started.
+*** TC 7 successful.
+
+*** TC 8 ECB mode test started.
+*** TC 8 successful.
+
+*** TC 9 ECB mode test started.
+*** TC 9 successful.
+
+*** TC 10 ECB mode test started.
+*** TC 10 successful.
+
+
+ECB 256 bit key tests
+---------------------
+*** TC 16 ECB mode test started.
+*** TC 16 successful.
+
+*** TC 17 ECB mode test started.
+*** TC 17 successful.
+
+*** TC 18 ECB mode test started.
+*** TC 18 successful.
+
+*** TC 19 ECB mode test started.
+*** TC 19 successful.
+
+*** TC 20 ECB mode test started.
+*** TC 20 successful.
+
+*** TC 21 ECB mode test started.
+*** TC 21 successful.
+
+*** TC 22 ECB mode test started.
+*** TC 22 successful.
+
+*** TC 23 ECB mode test started.
+*** TC 23 successful.
+
+*** TC 24 ECB mode test started.
+*** TC 24 successful.
+
+*** TC 25 ECB mode test started.
+*** TC 25 successful.
+
+*** All 20 test cases completed successfully
+
+   -= Testbench for AES completed =-
+    ===============================
+
+   -= Testbench for aes core started =-
+     ================================
+
+tb: Dumping all variables to tb_aes_core vcd file.
+VCD info: dumpfile tb_aes_core.vcd opened for output.
+State of DUT
+------------
+Inputs and outputs:
+encdec = 0x0, init = 0x0, next = 0x0
+keylen = 0x0, key  = 0x0000000000000000000000000000000000000000000000000000000000000000 
+block  = 0x00000000000000000000000000000000
+
+ready        = 0xx
+result_valid = 0xx, result = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+Encipher state::
+enc_ctrl = 0xx, round_ctr = 0xx
+
+*** Toggle reset.
+State of DUT
+------------
+Inputs and outputs:
+encdec = 0x0, init = 0x0, next = 0x0
+keylen = 0x0, key  = 0x0000000000000000000000000000000000000000000000000000000000000000 
+block  = 0x00000000000000000000000000000000
+
+ready        = 0x1
+result_valid = 0x0, result = 0x00000000000000000000000000000000
+
+Encipher state::
+enc_ctrl = 0x0, round_ctr = 0x0
+
+ECB 128 bit key tests
+---------------------
+*** TC 1 ECB mode test started.
+Key expansion done
+
+*** TC 1 successful.
+
+*** TC 2 ECB mode test started.
+Key expansion done
+
+*** TC 2 successful.
+
+*** TC 3 ECB mode test started.
+Key expansion done
+
+*** TC 3 successful.
+
+*** TC 4 ECB mode test started.
+Key expansion done
+
+*** TC 4 successful.
+
+*** TC 5 ECB mode test started.
+Key expansion done
+
+*** TC 5 successful.
+
+*** TC 6 ECB mode test started.
+Key expansion done
+
+*** TC 6 successful.
+
+*** TC 7 ECB mode test started.
+Key expansion done
+
+*** TC 7 successful.
+
+*** TC 8 ECB mode test started.
+Key expansion done
+
+*** TC 8 successful.
+
+*** TC 9 ECB mode test started.
+Key expansion done
+
+*** TC 9 successful.
+
+*** TC 10 ECB mode test started.
+Key expansion done
+
+*** TC 10 successful.
+
+
+ECB 256 bit key tests
+---------------------
+*** TC 16 ECB mode test started.
+Key expansion done
+
+*** TC 16 successful.
+
+*** TC 17 ECB mode test started.
+Key expansion done
+
+*** TC 17 successful.
+
+*** TC 18 ECB mode test started.
+Key expansion done
+
+*** TC 18 successful.
+
+*** TC 19 ECB mode test started.
+Key expansion done
+
+*** TC 19 successful.
+
+*** TC 20 ECB mode test started.
+Key expansion done
+
+*** TC 20 successful.
+
+*** TC 21 ECB mode test started.
+Key expansion done
+
+*** TC 21 successful.
+
+*** TC 22 ECB mode test started.
+Key expansion done
+
+*** TC 22 successful.
+
+*** TC 23 ECB mode test started.
+Key expansion done
+
+*** TC 23 successful.
+
+*** TC 24 ECB mode test started.
+Key expansion done
+
+*** TC 24 successful.
+
+*** TC 25 ECB mode test started.
+Key expansion done
+
+*** TC 25 successful.
+
+*** All 20 test cases completed successfully
+
+   -= Testbench for aes core cmpleted =-
+     =================================
+
+   -= Testbench for aes key mem started =-
+    =====================================
+
+Dumping all variables to tb_aes_key_mem vcd file.
+VCD info: dumpfile tb_aes_key_mem.vcd opened for output.
+State of DUT
+------------
+Inputs and outputs:
+key       = 0x0000000000000000000000000000000000000000000000000000000000000000
+keylen    = 0x0, init = 0x0, ready = 0xx
+round     = 0x00
+round_key = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+Internal states:
+key_mem_ctrl = 0xx, round_key_update = 0xx, round_ctr_reg = 0xx
+prev_key0_reg = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, prev_key0_new = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, prev_key0_we = 0xx
+prev_key1_reg = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, prev_key1_new = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, prev_key1_we = 0xx
+rcon_reg = 0xxx, rcon_new = 0xxx,  rcon_set = 0xx,  rcon_next = 0xx, rcon_we = 0xx
+w0 = 0xxxxxxxxx, w1 = 0xxxxxxxxx, w2 = 0xxxxxxxxx, w3 = 0xxxxxxxxx
+w4 = 0xxxxxxxxx, w5 = 0xxxxxxxxx, w6 = 0xxxxxxxxx, w7 = 0xxxxxxxxx
+sboxw = 0xxxxxxxxx, new_sboxw = 0xxxxxxxxx, rconw = 0xxxxxxxxx
+tw = 0xxxxxxxxx, trw = 0xxxxxxxxx
+key_mem_new = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx, key_mem_we = 0xx
+
+*** Toggle reset.
+State after reset:
+State of DUT
+------------
+Inputs and outputs:
+key       = 0x0000000000000000000000000000000000000000000000000000000000000000
+keylen    = 0x0, init = 0x0, ready = 0x1
+round     = 0x00
+round_key = 0x00000000000000000000000000000000
+
+Internal states:
+key_mem_ctrl = 0x0, round_key_update = 0x0, round_ctr_reg = 0x0
+prev_key0_reg = 0x00000000000000000000000000000000, prev_key0_new = 0x00000000000000000000000000000000, prev_key0_we = 0x0
+prev_key1_reg = 0x00000000000000000000000000000000, prev_key1_new = 0x00000000000000000000000000000000, prev_key1_we = 0x0
+rcon_reg = 0x00, rcon_new = 0x8d,  rcon_set = 0x1,  rcon_next = 0x0, rcon_we = 0x1
+w0 = 0x00000000, w1 = 0x00000000, w2 = 0x00000000, w3 = 0x00000000
+w4 = 0x00000000, w5 = 0x00000000, w6 = 0x00000000, w7 = 0x00000000
+sboxw = 0x00000000, new_sboxw = 0x63636363, rconw = 0x00000000
+tw = 0x63636363, trw = 0x63636363
+key_mem_new = 0x00000000000000000000000000000000, key_mem_we = 0x0
+
+
+** Testing with 128-bit key 0x00000000000000000000000000000000
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 128-bit key 0xffffffffffffffffffffffffffffffff
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 128-bit key 0x000102030405060708090a0b0c0d0e0f
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 128-bit key 0x6920e299a5202a6d656e636869746f2a
+
+
+
+
+
+
+
+
+
+
+
+
+Testing the NIST AES-128 key.
+** Testing with 128-bit key 0x2b7e151628aed2a6abf7158809cf4f3c
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 256-bit key 0x0000000000000000000000000000000000000000000000000000000000000000
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 256-bit key 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 256-bit key 0x000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+** Testing with 256-bit key 0x603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+*** All 09 test cases completed successfully
+
+   -= Testbench for aes key mem completed =-
+    =======================================
+   -= Testbench for aes encipher block started =-
+     ============================================
+
+Dumping all variables to tb_aes_encipher_block vcd file.
+VCD info: dumpfile tb_aes_encipher_block.vcd opened for output.
+--- Toggle reset.
+
+--- test_nist_enc_128_1: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0x3ad77bb40d7a3660a89ecaf32466ef97
+--- ECB mode test completed.
+--- test_nist_enc_128_1: Completed.
+
+--- test_nist_enc_128_2: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0xf5d3d58503b9699de785895a96fdbaaf
+--- ECB mode test completed.
+--- test_nist_enc_128_2: Completed.
+
+--- test_nist_enc_128_3: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0x43b1cd7f598ece23881b00e3ed030688
+--- ECB mode test completed.
+--- test_nist_enc_128_3: Completed.
+
+--- test_nist_enc_128_4: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0x7b0c785e27e8ad3f8223207104725dd4
+--- ECB mode test completed.
+--- test_nist_enc_128_4: Completed.
+
+--- test_nist_enc_256_1: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0xf3eed1bdb5d2a03c064b5a7e3db181f8
+--- ECB mode test completed.
+--- test_nist_enc_256_1: Completed.
+
+--- test_nist_enc_256_2: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0x591ccb10d410ed26dc5ba74a31362870
+--- ECB mode test completed.
+--- test_nist_enc_256_2: Completed.
+
+--- test_nist_enc_256_3: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0xb6ed21b99ca6f4f9f153e7b1beafed1d
+--- ECB mode test completed.
+--- test_nist_enc_256_3: Completed.
+
+--- test_nist_enc_256_4: Started.
+--- ECB mode test started.
+--- Testcase successful.
+--- Got: 0x23304b7a39f9f3ff067d8d8f9e24ecc7
+--- ECB mode test completed.
+--- test_nist_enc_256_4: Completed.
+
+--- All 08 test cases completed successfully
+
+   -= Testbench for aes encipher block completed =-
+     ============================================
+   -= Testbench for aes decipher block started =-
+     ============================================
+
+Dumping all variables to tb_aes_decipher_block vcd file.
+VCD info: dumpfile tb_aes_decipher_block.vcd opened for output.
+State of DUT
+------------
+Interfaces
+ready = 0xx, next = 0x0, keylen = 0x0
+block     = 0x00000000000000000000000000000000
+new_block = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+Control states
+round = 0xx
+dec_ctrl = 0xx, update_type = 0xx, sword_ctr = 0xx, round_ctr = 0xx
+
+Internal data values
+round_key = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+sboxw = 0xxxxxxxxx, new_sboxw = 0xxxxxxxxx
+block_w0_reg = 0xxxxxxxxx, block_w1_reg = 0xxxxxxxxx, block_w2_reg = 0xxxxxxxxx, block_w3_reg = 0xxxxxxxxx
+
+old_block            = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+inv_shiftrows_block  = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+inv_mixcolumns_block = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+addkey_block         = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+block_w0_new = 0xxxxxxxxx, block_w1_new = 0xxxxxxxxx, block_w2_new = 0xxxxxxxxx, block_w3_new = 0xxxxxxxxx
+
+*** Toggle reset.
+State of DUT
+------------
+Interfaces
+ready = 0x1, next = 0x0, keylen = 0x0
+block     = 0x00000000000000000000000000000000
+new_block = 0x00000000000000000000000000000000
+
+Control states
+round = 0x0
+dec_ctrl = 0x0, update_type = 0x0, sword_ctr = 0x0, round_ctr = 0x0
+
+Internal data values
+round_key = 0xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+sboxw = 0x00000000, new_sboxw = 0x52525252
+block_w0_reg = 0x00000000, block_w1_reg = 0x00000000, block_w2_reg = 0x00000000, block_w3_reg = 0x00000000
+
+old_block            = 0x00000000000000000000000000000000
+inv_shiftrows_block  = 0x00000000000000000000000000000000
+inv_mixcolumns_block = 0x00000000000000000000000000000000
+addkey_block         = 0x00000000000000000000000000000000
+block_w0_new = 0x00000000, block_w1_new = 0x00000000, block_w2_new = 0x00000000, block_w3_new = 0x00000000
+
+*** TC 0 ECB mode test started.
+*** TC 0 successful.
+
+*** TC 1 ECB mode test started.
+*** TC 1 successful.
+
+*** TC 2 ECB mode test started.
+*** TC 2 successful.
+
+*** TC 3 ECB mode test started.
+*** TC 3 successful.
+
+*** TC 4 ECB mode test started.
+*** TC 4 successful.
+
+*** TC 5 ECB mode test started.
+*** TC 5 successful.
+
+*** TC 6 ECB mode test started.
+*** TC 6 successful.
+
+*** TC 7 ECB mode test started.
+*** TC 7 successful.
+
+*** All 08 test cases completed successfully
+
+   -= Testbench for aes decipher block completed =-
+     ============================================
+
+../src/rtl/aes_key_mem.v:194: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/rtl/aes_key_mem.v:195: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/rtl/aes_key_mem.v:194: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/rtl/aes_key_mem.v:195: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/rtl/aes_key_mem.v:194: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/rtl/aes_key_mem.v:195: warning: @* is sensitive to all 15 words in array 'key_mem'.
+../src/tb/tb_aes_key_mem.v:85: warning: Instantiating module aes_key_mem with dangling input port 7 (round_b) floating.

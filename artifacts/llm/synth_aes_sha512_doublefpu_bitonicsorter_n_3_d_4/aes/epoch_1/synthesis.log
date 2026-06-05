@@ -1,0 +1,3 @@
+Warning: Replacing memory \key_reg with list of registers. See aes.v:183
+Warning: Replacing memory \block_reg with list of registers. See aes.v:180
+Warning: Replacing memory \key_mem with list of registers. See aes_key_mem.v:151
