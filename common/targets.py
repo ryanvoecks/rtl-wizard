@@ -17,8 +17,7 @@ from common.designs import (
 )
 
 # All targets below were produced by `eda_eval/calibrate.py` at PRESSURE=1.5.
-# ORFS sizes the floorplan from cfg.target_utilization; side is no longer
-# a calibrated output.
+# ORFS sizes the floorplan from cfg.target_utilization
 
 aes_target = TargetConfig(
     design=aes_reference,
@@ -40,33 +39,33 @@ double_fpu_target = TargetConfig(
 
 reed_solomon_target = TargetConfig(
     design=reed_solomon_reference,
-    period_ns=0.7450,
+    period_ns=0.7394,
     cfg=StudyConfig(),
 )
 
 jpeg_encoder_target = TargetConfig(
     design=jpeg_encoder_reference,
-    period_ns=0.7979,
+    period_ns=0.7991,
     cfg=StudyConfig(),
 )
 
-# Calibrator converged to realised_pressure=1.00 (timing-met point) rather
-# than the 1.5x target.
 wb_dma_target = TargetConfig(
     design=wb_dma_reference,
-    period_ns=2.5121,
+    period_ns=1.0715,
     cfg=StudyConfig(),
 )
 
 systolic_target = TargetConfig(
     design=systolic_tpu_reference,
-    period_ns=0.9126,
+    period_ns=0.9157,
     cfg=StudyConfig(),
 )
 
+# Calibrator backed off utilization from the 60 default on PPL-0024
 verilog_axi_target = TargetConfig(
     design=verilog_axi_reference,
-    period_ns=1.8300,
+    period_ns=0.6974,
+    target_utilization=50,
     cfg=StudyConfig(),
 )
 
@@ -78,20 +77,19 @@ bitonic_target = TargetConfig(
 
 viterbi_target = TargetConfig(
     design=viterbi_reference,
-    period_ns=1.9183,
+    period_ns=1.8900,
     cfg=StudyConfig(),
 )
 
-# fmax loosened by 10% to avoid CTS crashes.
 e203_target = TargetConfig(
     design=e203_reference,
-    period_ns=3.8943,
+    period_ns=2.2179,
     cfg=StudyConfig(),
 )
 
 uberddr3_target = TargetConfig(
     design=uberddr3_reference,
-    period_ns=1.6050,
+    period_ns=0.6729,
     cfg=StudyConfig(),
 )
 
