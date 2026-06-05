@@ -1,0 +1,259 @@
+--- a/sha512_core.v
++++ b/sha512_core.v
+@@ -147,6 +147,7 @@
+   reg [63 : 0] t2;
+ 
+   wire [63 : 0] k_data;
++  reg  [63 : 0] k_data_reg;
+ 
+   reg           w_init;
+   reg           w_next;
+@@ -166,7 +167,7 @@
+   // Module instantiantions.
+   //----------------------------------------------------------------
+   sha512_k_constants k_constants_inst(
+-                                      .addr(round_ctr_reg),
++                                      .addr(round_ctr_new),
+                                       .K(k_data)
+                                      );
+ 
+@@ -238,6 +239,7 @@
+           ready_reg           <= 1'b1;
+           digest_valid_reg    <= 1'b0;
+           round_ctr_reg       <= 7'h0;
++          k_data_reg          <= 64'h0;
+           sha512_ctrl_reg     <= CTRL_IDLE;
+         end
+ 
+@@ -268,7 +270,10 @@
+             end
+ 
+           if (round_ctr_we)
+-            round_ctr_reg <= round_ctr_new;
++            begin
++              round_ctr_reg <= round_ctr_new;
++              k_data_reg    <= k_data;
++            end
+ 
+           if (work_factor_ctr_we)
+             work_factor_ctr_reg <= work_factor_ctr_new;
+@@ -331,14 +336,19 @@
+ 
+ 
+   //----------------------------------------------------------------
+-  // t1_logic
++  // round_logic
+   //
+-  // The logic for the T1 function.
++  // Computes a_new and e_new as flat multi-operand sums so the
++  // synthesiser can build a single carry-save tree rather than
++  // the two sequential adder levels that result from computing
++  // T1 and T2 separately.
+   //----------------------------------------------------------------
+   always @*
+-    begin : t1_logic
++    begin : round_logic
++      reg [63 : 0] sum0;
+       reg [63 : 0] sum1;
+       reg [63 : 0] ch;
++      reg [63 : 0] maj;
+ 
+       sum1 = {e_reg[13 : 0], e_reg[63 : 14]} ^
+              {e_reg[17 : 0], e_reg[63 : 18]} ^
+@@ -346,28 +356,16 @@
+ 
+       ch = (e_reg & f_reg) ^ ((~e_reg) & g_reg);
+ 
+-      t1 = h_reg + sum1 + ch + k_data + w_data;
+-    end // t1_logic
+-
+-
+-  //----------------------------------------------------------------
+-  // t2_logic
+-  //
+-  // The logic for the T2 function
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : t2_logic
+-      reg [63 : 0] sum0;
+-      reg [63 : 0] maj;
+-
+       sum0 = {a_reg[27 : 0], a_reg[63 : 28]} ^
+              {a_reg[33 : 0], a_reg[63 : 34]} ^
+              {a_reg[38 : 0], a_reg[63 : 39]};
+ 
+       maj = (a_reg & b_reg) ^ (a_reg & c_reg) ^ (b_reg & c_reg);
+ 
++      // Keep t1/t2 for any tool that still references them.
++      t1 = h_reg + sum1 + ch + k_data_reg + w_data;
+       t2 = sum0 + maj;
+-    end // t2_logic
++    end // round_logic
+ 
+ 
+   //----------------------------------------------------------------
+@@ -378,6 +376,11 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : state_logic
++      reg [63 : 0] sum0;
++      reg [63 : 0] sum1;
++      reg [63 : 0] ch;
++      reg [63 : 0] maj;
++
+       a_new  = 64'h0;
+       b_new  = 64'h0;
+       c_new  = 64'h0;
+@@ -387,6 +390,18 @@
+       g_new  = 64'h0;
+       h_new  = 64'h0;
+       a_h_we = 0;
++
++      sum1 = {e_reg[13 : 0], e_reg[63 : 14]} ^
++             {e_reg[17 : 0], e_reg[63 : 18]} ^
++             {e_reg[40 : 0], e_reg[63 : 41]};
++
++      ch = (e_reg & f_reg) ^ ((~e_reg) & g_reg);
++
++      sum0 = {a_reg[27 : 0], a_reg[63 : 28]} ^
++             {a_reg[33 : 0], a_reg[63 : 34]} ^
++             {a_reg[38 : 0], a_reg[63 : 39]};
++
++      maj = (a_reg & b_reg) ^ (a_reg & c_reg) ^ (b_reg & c_reg);
+ 
+       if (state_init)
+         begin
+@@ -418,11 +433,14 @@
+ 
+       if (state_update)
+         begin
+-          a_new  = t1 + t2;
++          // a = T1 + T2; expose all 7 operands so the synthesiser
++          // builds one CSA tree instead of two sequential adders.
++          a_new  = h_reg + sum1 + ch + k_data_reg + w_data + sum0 + maj;
+           b_new  = a_reg;
+           c_new  = b_reg;
+           d_new  = c_reg;
+-          e_new  = d_reg + t1;
++          // e = d + T1; 6-operand flat sum for the same reason.
++          e_new  = d_reg + h_reg + sum1 + ch + k_data_reg + w_data;
+           f_new  = e_reg;
+           g_new  = f_reg;
+           h_new  = g_reg;
+--- a/sha512_w_mem.v
++++ b/sha512_w_mem.v
+@@ -84,6 +84,11 @@
+   reg [63 : 0] w_tmp;
+   reg [63 : 0] w_new;
+ 
++  // Pre-computed W for the next round (registered to break the
++  // two-adder-level critical path: w_new -> T1 -> a_reg).
++  reg [63 : 0] w_precomp_reg;
++  reg [63 : 0] w_precomp_new;
++
+ 
+   //----------------------------------------------------------------
+   // Concurrent connectivity for ports etc.
+@@ -106,7 +111,8 @@
+           for (i = 0; i < 16; i = i + 1)
+             w_mem[i] <= 64'h0;
+ 
+-          w_ctr_reg <= 7'h0;
++          w_ctr_reg    <= 7'h0;
++          w_precomp_reg <= 64'h0;
+         end
+       else
+         begin
+@@ -132,6 +138,12 @@
+ 
+           if (w_ctr_we)
+               w_ctr_reg <= w_ctr_new;
++
++          if (init)
++              w_precomp_reg <= block[1023 : 960];
++
++          if (next)
++              w_precomp_reg <= w_precomp_new;
+         end
+     end // reg_update
+ 
+@@ -139,15 +151,12 @@
+   //----------------------------------------------------------------
+   // select_w
+   //
+-  // Mux for the external read operation. This is where we exract
+-  // the W variable.
++  // W is always taken from the pre-registered value so that no
++  // combinational path from w_ctr_reg or w_mem reaches T1 directly.
+   //----------------------------------------------------------------
+   always @*
+     begin : select_w
+-      if (w_ctr_reg < 16)
+-        w_tmp = w_mem[w_ctr_reg[3 : 0]];
+-      else
+-        w_tmp = w_new;
++      w_tmp = w_precomp_reg;
+     end // select_w
+ 
+ 
+@@ -244,6 +253,60 @@
+ 
+ 
+   //----------------------------------------------------------------
++  // w_precomp_logic
++  //
++  // Pre-computes the W value needed for the NEXT round so it
++  // arrives at T1 already registered, removing one adder level
++  // from the critical path w_mem->w_new->T1->a_reg.
++  //
++  // For w_ctr < 16 (rounds 0-15), the window hasn't slid yet so
++  // the next expansion (W[16]) = w_new = w_mem[0]+σ0(w_mem[1])+
++  //   w_mem[9]+σ1(w_mem[14]).
++  // For w_ctr >= 16, after the slide the next window position 0
++  // maps to current position 1, giving:
++  //   w_mem[1]+σ0(w_mem[2])+w_mem[10]+σ1(w_mem[15]).
++  //----------------------------------------------------------------
++  always @*
++    begin : w_precomp_logic
++      reg [63 : 0] sig0_a;
++      reg [63 : 0] sig1_a;
++
++      sig0_a        = 64'h0;
++      sig1_a        = 64'h0;
++      w_precomp_new = 64'h0;
++
++      if (w_ctr_reg < 7'd15)
++        begin
++          // Rounds 0-14: next W is the next direct-read word W[ctr+1].
++          // Variable index only reaches w_precomp_reg (a register), not T1.
++          w_precomp_new = w_mem[w_ctr_reg[3 : 0] + 4'h1];
++        end
++      else if (w_ctr_reg == 7'd15)
++        begin
++          // Round 15: next W is the first expansion W[16].
++          sig0_a = {w_mem[1][0],     w_mem[1][63 : 1]} ^
++                   {w_mem[1][7 : 0], w_mem[1][63 : 8]} ^
++                   {7'b0000000,      w_mem[1][63 : 7]};
++          sig1_a = {w_mem[14][18 : 0], w_mem[14][63 : 19]} ^
++                   {w_mem[14][60 : 0], w_mem[14][63 : 61]} ^
++                   {6'b000000,         w_mem[14][63 : 6]};
++          w_precomp_new = w_mem[0] + sig0_a + w_mem[9] + sig1_a;
++        end
++      else
++        begin
++          // Rounds 16+: next W after one more slide, using fixed window indices.
++          sig0_a = {w_mem[2][0],     w_mem[2][63 : 1]} ^
++                   {w_mem[2][7 : 0], w_mem[2][63 : 8]} ^
++                   {7'b0000000,      w_mem[2][63 : 7]};
++          sig1_a = {w_mem[15][18 : 0], w_mem[15][63 : 19]} ^
++                   {w_mem[15][60 : 0], w_mem[15][63 : 61]} ^
++                   {6'b000000,         w_mem[15][63 : 6]};
++          w_precomp_new = w_mem[1] + sig0_a + w_mem[10] + sig1_a;
++        end
++    end // w_precomp_logic
++
++
++  //----------------------------------------------------------------
+   // w_ctr
+   // W schedule adress counter. Counts from 0x10 to 0x3f and
+   // is used to expand the block into words.

@@ -10,6 +10,7 @@ openroad and lets the TCL pick the right interconnect parasitics for that stage
 from __future__ import annotations
 
 import argparse
+import secrets
 import subprocess
 import sys
 from dataclasses import replace
@@ -143,7 +144,8 @@ def analyse(
     reports_dir.mkdir(parents=True, exist_ok=True)
 
     out_path = reports_dir / f"worst_logical_paths.{stage}.rpt"
-    staging = out_path.with_suffix(".rpt.partial")
+    # Generate thread-safe partial files for concurrent writes
+    staging = out_path.with_name(f"{out_path.name}.{secrets.token_hex(8)}.partial")
     run_openroad(odb, sdc, spef, set_rc, libs, top_n, stage, top_module, staging)
     staging.replace(out_path)
     return _read_report(out_path)

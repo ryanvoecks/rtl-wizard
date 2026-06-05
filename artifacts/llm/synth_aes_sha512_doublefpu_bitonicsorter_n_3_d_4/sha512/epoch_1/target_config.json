@@ -1,0 +1,34 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "secworks",
+    "name": "sha512",
+    "variant": "reference",
+    "root": "/workspace/external/sha512",
+    "rtl_dir": "src/rtl",
+    "rtl_files": [
+      "sha512.v",
+      "sha512_core.v",
+      "sha512_h_constants.v",
+      "sha512_k_constants.v",
+      "sha512_w_mem.v"
+    ],
+    "top_module": "sha512",
+    "test_script": "/workspace/common/scripts/sha512.sh",
+    "tb_timeout_s": 180,
+    "clock_port": "clk",
+    "include_dirs": []
+  },
+  "period_ns": 1.6471,
+  "target_utilization": 60
+}

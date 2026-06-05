@@ -1,2 +1,0 @@
-Warning: Encountered `translate_off' comment! Such legacy hot comments are supported by Yosys, but are not part of any formal language specification. Using a portable and standards-compliant construct such as `ifdef is recommended!
-ERROR: Can't open include file `e203_defines.v'!

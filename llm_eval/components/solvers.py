@@ -68,8 +68,8 @@ DEFAULT_TOOLS = ["Bash", "Read", "Write", "Edit"]
 AGENT_TURNS = 60
 AGENT_TIMEOUT = 3600
 ONE_ROUND_TURNS = 40
-ONE_ROUND_TIMEOUT = 1200
-ITERATIVE_ROUNDS = 3
+ONE_ROUND_TIMEOUT = 1800
+ITERATIVE_ROUNDS = 4
 
 # MCP config - the host name the sandbox sees
 HOST_MCP_NAME = "rtl-wizard-host"

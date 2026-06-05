@@ -29,9 +29,9 @@ from common.config import LLM_RESULTS
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
-MAX_PARALLEL_SESSIONS = 4
+MAX_PARALLEL_SESSIONS = 3
 MODEL = "anthropic/claude-sonnet-4-6"
-EPOCHS = 1
+EPOCHS = 3
 SOLVER = claude_code_iterative_solver
 
 
@@ -42,17 +42,19 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
         await eval_async(task, log_dir=str(run_dir), fail_on_error=False, **kwargs)
         return
     log = read_eval_log(str(existing[-1]), header_only=True)
-    if log.status == "success":
+    r = log.results
+    all_done = r is not None and r.completed_samples == r.total_samples
+    if log.status == "success" and all_done:
         print(f"Skipping (success): {existing[-1]}")
         return
-    print(f"Retrying ({log.status}): {existing[-1]}")
-    await eval_retry_async(log, fail_on_error=False)
+    done = f"{r.completed_samples}/{r.total_samples}" if r is not None else "?"
+    print(f"Retrying ({log.status}, {done}): {existing[-1]}")
+    await eval_retry_async(str(existing[-1]), log_dir=str(run_dir), fail_on_error=False)
 
 
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
-    # run_dir = ARTIFACTS / "llm" / "synth_feedback_agents
-    run_dir = LLM_RESULTS / "iterative_basic_test_sonnet_6"
+    run_dir = LLM_RESULTS / "synth_aes_sha512_doublefpu_bitonicsorter_n_3_d_4"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 
@@ -63,7 +65,7 @@ async def main_async() -> None:
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,
-            sample_id="verilog_axi",
+            sample_id=["aes", "sha512", "double_fpu", "bitonic_sorter"],
         )
 
 
