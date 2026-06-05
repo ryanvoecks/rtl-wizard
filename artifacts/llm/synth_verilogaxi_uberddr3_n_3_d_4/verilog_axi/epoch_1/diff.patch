@@ -1,0 +1,161 @@
+--- a/rtl/axi_crossbar_addr.v
++++ b/rtl/axi_crossbar_addr.v
+@@ -231,7 +231,8 @@
+ 
+ localparam [2:0]
+     STATE_IDLE = 3'd0,
+-    STATE_DECODE = 3'd1;
++    STATE_CHECK = 3'd1,
++    STATE_DECODE = 3'd2;
+ 
+ reg [2:0] state_reg = STATE_IDLE, state_next;
+ 
+@@ -258,8 +259,27 @@
+ assign m_rc_valid = m_rc_valid_reg;
+ 
+ reg match;
++reg match_reg = 1'b0, match_next;
+ reg trans_start;
+ reg trans_complete;
++
++// Pipeline completion inputs to cut m_axi_rid/bid -> thread_count_reg path
++reg [ID_WIDTH-1:0] s_cpl_id_r = 0;
++reg s_cpl_valid_r = 1'b0;
++
++always @(posedge clk) begin
++    s_cpl_id_r <= s_cpl_id;
++    s_cpl_valid_r <= rst ? 1'b0 : s_cpl_valid;
++end
++
++// Capture s_axi_aid in STATE_IDLE to cut s_axi_aid -> thread_count_reg path
++reg [ID_WIDTH-1:0] s_axi_aid_r = 0;
++
++always @(posedge clk) begin
++    if (state_reg == STATE_IDLE && s_axi_avalid && !s_axi_aready) begin
++        s_axi_aid_r <= s_axi_aid;
++    end
++end
+ 
+ reg [$clog2(S_ACCEPT+1)-1:0] trans_count_reg = 0;
+ wire trans_limit = trans_count_reg >= S_ACCEPT && !trans_complete;
+@@ -286,9 +306,9 @@
+         end
+ 
+         assign thread_active[n] = thread_count_reg[n] != 0;
+-        assign thread_match[n] = thread_active[n] && thread_id_reg[n] == s_axi_aid;
+-        assign thread_match_dest[n] = thread_match[n] && thread_m_reg[n] == m_select_next && (M_REGIONS < 2 || thread_region_reg[n] == m_axi_aregion_next);
+-        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id;
++        assign thread_match[n] = thread_active[n] && thread_id_reg[n] == s_axi_aid_r;
++        assign thread_match_dest[n] = thread_match[n] && thread_m_reg[n] == m_select_reg && (M_REGIONS < 2 || thread_region_reg[n] == m_axi_aregion_reg);
++        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id_r;
+         assign thread_trans_start[n] = (thread_match[n] || (!thread_active[n] && !thread_match && !(thread_trans_start & ({S_INT_THREADS{1'b1}} >> (S_INT_THREADS-n))))) && trans_start;
+         assign thread_trans_complete[n] = thread_cpl_match[n] && trans_complete;
+ 
+@@ -304,9 +324,9 @@
+             end
+ 
+             if (thread_trans_start[n]) begin
+-                thread_id_reg[n] <= s_axi_aid;
+-                thread_m_reg[n] <= m_select_next;
+-                thread_region_reg[n] <= m_axi_aregion_next;
++                thread_id_reg[n] <= s_axi_aid_r;
++                thread_m_reg[n] <= m_select_reg;
++                thread_region_reg[n] <= m_axi_aregion_reg;
+             end
+         end
+     end
+@@ -316,6 +336,7 @@
+     state_next = STATE_IDLE;
+ 
+     match = 1'b0;
++    match_next = match_reg;
+     trans_start = 1'b0;
+     trans_complete = 1'b0;
+ 
+@@ -330,7 +351,7 @@
+ 
+     case (state_reg)
+         STATE_IDLE: begin
+-            // idle state, store values
++            // idle state: perform address decode and register result
+             s_axi_aready_next = 1'b0;
+ 
+             if (s_axi_avalid && !s_axi_aready) begin
+@@ -344,31 +365,36 @@
+                         end
+                     end
+                 end
+-
+-                if (match) begin
+-                    // address decode successful
+-                    if (!trans_limit && (thread_match_dest || (!(&thread_active) && !thread_match))) begin
+-                        // transaction limit not reached
+-                        m_axi_avalid_next = 1'b1;
+-                        m_decerr_next = 1'b0;
+-                        m_wc_valid_next = WC_OUTPUT;
+-                        m_rc_valid_next = 1'b0;
+-                        trans_start = 1'b1;
+-                        state_next = STATE_DECODE;
+-                    end else begin
+-                        // transaction limit reached; block in idle
+-                        state_next = STATE_IDLE;
+-                    end
++                // Register decode result; admission check happens in STATE_CHECK
++                match_next = match;
++                state_next = STATE_CHECK;
++            end else begin
++                state_next = STATE_IDLE;
++            end
++        end
++        STATE_CHECK: begin
++            // Admission check using registered m_select_reg/m_axi_aregion_reg
++            if (match_reg) begin
++                // address decode successful
++                if (!trans_limit && (thread_match_dest || (!(&thread_active) && !thread_match))) begin
++                    // transaction limit not reached
++                    m_axi_avalid_next = 1'b1;
++                    m_decerr_next = 1'b0;
++                    m_wc_valid_next = WC_OUTPUT;
++                    m_rc_valid_next = 1'b0;
++                    trans_start = 1'b1;
++                    state_next = STATE_DECODE;
+                 end else begin
+-                    // decode error
+-                    m_axi_avalid_next = 1'b0;
+-                    m_decerr_next = 1'b1;
+-                    m_wc_valid_next = WC_OUTPUT;
+-                    m_rc_valid_next = 1'b1;
+-                    state_next = STATE_DECODE;
++                    // transaction limit reached; block in check
++                    state_next = STATE_CHECK;
+                 end
+             end else begin
+-                state_next = STATE_IDLE;
++                // decode error
++                m_axi_avalid_next = 1'b0;
++                m_decerr_next = 1'b1;
++                m_wc_valid_next = WC_OUTPUT;
++                m_rc_valid_next = 1'b1;
++                state_next = STATE_DECODE;
+             end
+         end
+         STATE_DECODE: begin
+@@ -381,8 +407,8 @@
+         end
+     endcase
+ 
+-    // manage completions
+-    trans_complete = s_cpl_valid;
++    // manage completions (use registered cpl signals to cut external ID path)
++    trans_complete = s_cpl_valid_r;
+ end
+ 
+ always @(posedge clk) begin
+@@ -400,6 +426,7 @@
+         m_axi_avalid_reg <= m_axi_avalid_next;
+         m_wc_valid_reg <= m_wc_valid_next;
+         m_rc_valid_reg <= m_rc_valid_next;
++        match_reg <= match_next;
+ 
+         if (trans_start && !trans_complete) begin
+             trans_count_reg <= trans_count_reg + 1;
