@@ -8,4 +8,5 @@ tmp/
 
 # Files
 .env
+*.png
 settings.local.json
