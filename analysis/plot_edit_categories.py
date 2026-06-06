@@ -166,10 +166,7 @@ def _plot(totals: Counter, n_epochs: int, out_path: Path) -> None:
 
     fig.tight_layout()
     fig.savefig(out_path)
-    pdf_path = out_path.with_suffix(".pdf")
-    fig.savefig(pdf_path)
     print(f"Wrote {out_path}")
-    print(f"Wrote {pdf_path}")
 
 
 def main() -> None:
