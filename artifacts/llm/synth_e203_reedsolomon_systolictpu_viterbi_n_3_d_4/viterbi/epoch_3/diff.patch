@@ -1,0 +1,200 @@
+--- a/BMU.v
++++ b/BMU.v
+@@ -49,8 +49,13 @@
+ 
+ wire [5:0] half_polyn_tmp;
+ 
+-wire signed [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5; 
+-wire signed [4:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5; 
++wire signed [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5;
++wire signed [4:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5;
++
++// Pipeline register: capture conditioned soft bits one cycle, sum them next cycle
++reg signed [4:0] x_soft_bit_r0,x_soft_bit_r1,x_soft_bit_r2,x_soft_bit_r3,x_soft_bit_r4,x_soft_bit_r5;
++reg [2:0] valid_polynomials_r;
++reg bm_pipe_valid_r;
+ 
+ reg signed [WIDTH_BM-1:0] bm_r;
+ reg bm_valid_r;
+@@ -225,28 +230,51 @@
+ assign x_soft_bit5 =  low_codeword[5]? -soft_bit5 : soft_bit5;
+ 
+ always@(posedge clk_i or negedge rst_an_i) begin
++  // Stage 1: capture conditioned soft bits and polynomials config
+   if(!rst_an_i) begin
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
++    bm_pipe_valid_r <= 1'b0;
++    x_soft_bit_r0 <= 0; x_soft_bit_r1 <= 0; x_soft_bit_r2 <= 0;
++    x_soft_bit_r3 <= 0; x_soft_bit_r4 <= 0; x_soft_bit_r5 <= 0;
++    valid_polynomials_r <= 0;
+     end
+   else if( rst_sync_i ) begin
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
+-    end
+-  else if( soft_data_valid_i ) begin
+-    bm_valid_r <= 1'b1;
+-    case( valid_polynomials_i)
+-      3'b000 : bm_r <=  x_soft_bit1 + x_soft_bit0; 
+-      3'b001 : bm_r <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-      3'b010 : bm_r <=  x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-      3'b011 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
+-      3'b100 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-	  default: bm_r <= 0;
+-    endcase    
+-  end 
++    bm_pipe_valid_r <= 1'b0;
++    x_soft_bit_r0 <= 0; x_soft_bit_r1 <= 0; x_soft_bit_r2 <= 0;
++    x_soft_bit_r3 <= 0; x_soft_bit_r4 <= 0; x_soft_bit_r5 <= 0;
++    valid_polynomials_r <= 0;
++    end
+   else begin
+-    bm_valid_r <= 1'b0;
+-    bm_r <= 0;
++    // Stage 1: register conditioned bits when soft data valid
++    if( soft_data_valid_i ) begin
++      bm_pipe_valid_r    <= 1'b1;
++      valid_polynomials_r <= valid_polynomials_i;
++      x_soft_bit_r0 <= x_soft_bit0;
++      x_soft_bit_r1 <= x_soft_bit1;
++      x_soft_bit_r2 <= x_soft_bit2;
++      x_soft_bit_r3 <= x_soft_bit3;
++      x_soft_bit_r4 <= x_soft_bit4;
++      x_soft_bit_r5 <= x_soft_bit5;
++    end else
++      bm_pipe_valid_r <= 1'b0;
++    // Stage 2: sum registered bits
++    if( bm_pipe_valid_r ) begin
++      bm_valid_r <= 1'b1;
++      case( valid_polynomials_r )
++        3'b000 : bm_r <= x_soft_bit_r1 + x_soft_bit_r0;
++        3'b001 : bm_r <= x_soft_bit_r2 + x_soft_bit_r1 + x_soft_bit_r0;
++        3'b010 : bm_r <= x_soft_bit_r3 + x_soft_bit_r2 + x_soft_bit_r1 + x_soft_bit_r0;
++        3'b011 : bm_r <= x_soft_bit_r4 + x_soft_bit_r3 + x_soft_bit_r2 + x_soft_bit_r1 + x_soft_bit_r0;
++        3'b100 : bm_r <= x_soft_bit_r5 + x_soft_bit_r4 + x_soft_bit_r3 + x_soft_bit_r2 + x_soft_bit_r1 + x_soft_bit_r0;
++        default: bm_r <= 0;
++      endcase
++    end else begin
++      bm_valid_r <= 1'b0;
++      bm_r <= 0;
++    end
+   end
+ end
+ endmodule
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -183,6 +183,13 @@
+ reg signed [WIDTH_BM-1:0] final_max_matric_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
++// Pipeline stage registers
++reg en_i_r, en_i_rr;
++reg signed [WIDTH_BM-1:0] max_r;
++reg signed [WIDTH_BM-1:0] pm_pipe_r [63:0];
++reg [63:0] pm_update_en_pipe_r;
++// Stage B: 8 per-group max registers (one per 8-state group) for pipelined global max
++reg signed [WIDTH_BM-1:0] grp_max_r [7:0];
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+ wire [5:0] state_16_0_s, state_16_1_s,  state_16_2_s,  state_16_3_s ; 
+ wire [5:0] state_24_0_s, state_24_1_s,  state_24_2_s,  state_24_3_s ; 
+@@ -384,13 +391,11 @@
+          else if(i==0) pm_nom_r[i] <= 0;
+          else pm_nom_r[i] <= Initial_Lower;
+       end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
++      else if(en_i_rr & pm_update_en_pipe_r[i])
++         if((pm_pipe_r[i] - max_r) < Initial_Lower)
++            pm_nom_r[i] <= -128;//Initial_Lower;
++         else
++            pm_nom_r[i] <= pm_pipe_r[i] - max_r;
+          
+      end     
+  
+@@ -399,13 +404,75 @@
+ assign max_state_index_o = max_state_index_r;
+ 
+ always@(posedge clk_i or negedge rst_an_i) begin
+-       if(!rst_an_i) 
+-         max_state_index_r <= 0;      
+-      else if(rst_sync_i) 
+-         max_state_index_r <= 0; 
+-      else if(en_i)  
++       if(!rst_an_i)
++         max_state_index_r <= 0;
++      else if(rst_sync_i)
++         max_state_index_r <= 0;
++      else if(en_i)
+          max_state_index_r <=  final_state_index_s;
+    end
++
++// Stage A: capture per-group maxes (3 tree levels), pm values, enable mask; keep max_state_index_r here
++// Stage B: compute global max from grp_max_r (3 more tree levels) -> max_r
++// Stage C: pm_nom_r = pm_pipe_r - max_r (subtract + clamp)
++always@(posedge clk_i or negedge rst_an_i) begin
++    if(!rst_an_i) begin
++        en_i_r  <= 1'b0;
++        en_i_rr <= 1'b0;
++        max_r   <= 0;
++        pm_update_en_pipe_r <= 0;
++    end else if(rst_sync_i) begin
++        en_i_r  <= 1'b0;
++        en_i_rr <= 1'b0;
++        max_r   <= 0;
++        pm_update_en_pipe_r <= 0;
++    end else begin
++        en_i_r  <= en_i;
++        en_i_rr <= en_i_r;
++        // Stage A: capture 8 group maxes and enable mask when en_i
++        if(en_i) begin
++            grp_max_r[0] <= max_matric_8_s;
++            grp_max_r[1] <= max_matric_16_s;
++            grp_max_r[2] <= max_matric_24_s;
++            grp_max_r[3] <= max_matric_32_s;
++            grp_max_r[4] <= max_matric_40_s;
++            grp_max_r[5] <= max_matric_48_s;
++            grp_max_r[6] <= max_matric_56_s;
++            grp_max_r[7] <= max_matric_64_s;
++            pm_update_en_pipe_r <= pm_update_en_s;
++        end
++        // Stage B: compute global max from the 8 registered group maxes (3-level tree)
++        if(en_i_r) begin
++            max_r <= ((grp_max_r[7] > grp_max_r[6] ? grp_max_r[7] : grp_max_r[6]) >
++                      (grp_max_r[5] > grp_max_r[4] ? grp_max_r[5] : grp_max_r[4]) ?
++                      (grp_max_r[7] > grp_max_r[6] ? grp_max_r[7] : grp_max_r[6]) :
++                      (grp_max_r[5] > grp_max_r[4] ? grp_max_r[5] : grp_max_r[4])) >
++                     ((grp_max_r[3] > grp_max_r[2] ? grp_max_r[3] : grp_max_r[2]) >
++                      (grp_max_r[1] > grp_max_r[0] ? grp_max_r[1] : grp_max_r[0]) ?
++                      (grp_max_r[3] > grp_max_r[2] ? grp_max_r[3] : grp_max_r[2]) :
++                      (grp_max_r[1] > grp_max_r[0] ? grp_max_r[1] : grp_max_r[0])) ?
++                     ((grp_max_r[7] > grp_max_r[6] ? grp_max_r[7] : grp_max_r[6]) >
++                      (grp_max_r[5] > grp_max_r[4] ? grp_max_r[5] : grp_max_r[4]) ?
++                      (grp_max_r[7] > grp_max_r[6] ? grp_max_r[7] : grp_max_r[6]) :
++                      (grp_max_r[5] > grp_max_r[4] ? grp_max_r[5] : grp_max_r[4])) :
++                     ((grp_max_r[3] > grp_max_r[2] ? grp_max_r[3] : grp_max_r[2]) >
++                      (grp_max_r[1] > grp_max_r[0] ? grp_max_r[1] : grp_max_r[0]) ?
++                      (grp_max_r[3] > grp_max_r[2] ? grp_max_r[3] : grp_max_r[2]) :
++                      (grp_max_r[1] > grp_max_r[0] ? grp_max_r[1] : grp_max_r[0]));
++        end
++    end
++end
++
++genvar j;
++generate
++    for(j=0; j<64; j=j+1) begin: pm_pipe
++        always@(posedge clk_i or negedge rst_an_i) begin
++            if(!rst_an_i)       pm_pipe_r[j] <= 0;
++            else if(rst_sync_i) pm_pipe_r[j] <= 0;
++            else if(en_i)       pm_pipe_r[j] <= pm_i_signed_s[j];
++        end
++    end
++endgenerate
+    
+  always@(*) begin
+    case(register_num_i)

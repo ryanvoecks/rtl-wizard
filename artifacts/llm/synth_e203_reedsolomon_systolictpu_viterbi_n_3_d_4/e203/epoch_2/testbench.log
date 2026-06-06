@@ -1,0 +1,10 @@
+E203_TEST_PASS:rv32ui-p-add
+E203_TEST_PASS:rv32ui-p-sra
+E203_TEST_PASS:rv32ui-p-auipc
+E203_TEST_PASS:rv32ui-p-lw
+E203_TEST_PASS:rv32ui-p-sw
+E203_TEST_PASS:rv32ui-p-beq
+E203_TEST_PASS:rv32ui-p-jal
+E203_TEST_PASS:rv32mi-p-csr
+E203_TEST_PASS:rv32mi-p-illegal
+xargs: warning: options --max-args and --replace/-I/-i are mutually exclusive, ignoring previous --max-args value

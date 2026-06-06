@@ -1,0 +1,413 @@
+--- a/RsDecodeChien.v
++++ b/RsDecodeChien.v
+@@ -234,12 +234,15 @@
+ 
+    //------------------------------------------------------------------
+    // + doneOrg
++   // Registered: detect count==254 so fires at count==255,
++   // breaking combinational path from count to downstream.
+    //------------------------------------------------------------------
+-   always @(count) begin
+-      if (count[7:0] == 8'd255) begin
+-         doneOrg   = 1'b1;
+-      end else begin
+-         doneOrg   = 1'b0;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         doneOrg <= 1'b0;
++      end
++      else if (enable == 1'b1) begin
++         doneOrg <= (count[7:0] == 8'd254);
+       end
+    end
+ 
+--- a/RsDecodeDegree.v
++++ b/RsDecodeDegree.v
+@@ -2,7 +2,7 @@
+ // Module Name : RsDecodeDegree
+ // File Name   : RsDecodeDegree.v
+ // Function    : Rs Decoder Degree Module
+-// 
++//
+ // Revision History:
+ // Date          By           Version    Change Description
+ //===================================================================
+@@ -40,29 +40,30 @@
+ );
+ 
+ 
+-   input  [7:0]   polynom_0;    // polynom 0
+-   input  [7:0]   polynom_1;    // polynom 1
+-   input  [7:0]   polynom_2;    // polynom 2
+-   input  [7:0]   polynom_3;    // polynom 3
+-   input  [7:0]   polynom_4;    // polynom 4
+-   input  [7:0]   polynom_5;    // polynom 5
+-   input  [7:0]   polynom_6;    // polynom 6
+-   input  [7:0]   polynom_7;    // polynom 7
+-   input  [7:0]   polynom_8;    // polynom 8
+-   input  [7:0]   polynom_9;    // polynom 9
+-   input  [7:0]   polynom_10;   // polynom 10
+-   input  [7:0]   polynom_11;   // polynom 11
+-   input  [7:0]   polynom_12;   // polynom 12
+-   input  [7:0]   polynom_13;   // polynom 13
+-   input  [7:0]   polynom_14;   // polynom 14
+-   input  [7:0]   polynom_15;   // polynom 15
+-   input  [7:0]   polynom_16;   // polynom 16
+-   input  [7:0]   polynom_17;   // polynom 17
+-   input  [7:0]   polynom_18;   // polynom 18
+-   input  [7:0]   polynom_19;   // polynom 19
+-   input  [7:0]   polynom_20;   // polynom 20
+-   input  [7:0]   polynom_21;   // polynom 21
+-   output [4:0]   degree;       // polynom degree
++   // 1-bit nonzero flags: 1 means coefficient is nonzero
++   input         polynom_0;
++   input         polynom_1;
++   input         polynom_2;
++   input         polynom_3;
++   input         polynom_4;
++   input         polynom_5;
++   input         polynom_6;
++   input         polynom_7;
++   input         polynom_8;
++   input         polynom_9;
++   input         polynom_10;
++   input         polynom_11;
++   input         polynom_12;
++   input         polynom_13;
++   input         polynom_14;
++   input         polynom_15;
++   input         polynom_16;
++   input         polynom_17;
++   input         polynom_18;
++   input         polynom_19;
++   input         polynom_20;
++   input         polynom_21;
++   output [4:0]  degree;
+ 
+ 
+ 
+@@ -73,59 +74,61 @@
+ //- step 0
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step0;
+-assign winner0Step0 =(polynom_1 [7:0] == 8'd0) ? ((polynom_0 [7:0] == 8'd0) ? 5'd0 : 5'd0):  5'd1;
++assign winner0Step0 = polynom_1 ? 5'd1 : (polynom_0 ? 5'd0 : 5'd0);
+ wire [4:0]   winner1Step0;
+-assign winner1Step0 =(polynom_3 [7:0] == 8'd0) ? ((polynom_2 [7:0] == 8'd0) ? 5'd0 : 5'd2):  5'd3;
++assign winner1Step0 = polynom_3 ? 5'd3 : (polynom_2 ? 5'd2 : 5'd0);
+ wire [4:0]   winner2Step0;
+-assign winner2Step0 =(polynom_5 [7:0] == 8'd0) ? ((polynom_4 [7:0] == 8'd0) ? 5'd0 : 5'd4):  5'd5;
++assign winner2Step0 = polynom_5 ? 5'd5 : (polynom_4 ? 5'd4 : 5'd0);
+ wire [4:0]   winner3Step0;
+-assign winner3Step0 =(polynom_7 [7:0] == 8'd0) ? ((polynom_6 [7:0] == 8'd0) ? 5'd0 : 5'd6):  5'd7;
++assign winner3Step0 = polynom_7 ? 5'd7 : (polynom_6 ? 5'd6 : 5'd0);
+ wire [4:0]   winner4Step0;
+-assign winner4Step0 =(polynom_9 [7:0] == 8'd0) ? ((polynom_8 [7:0] == 8'd0) ? 5'd0 : 5'd8):  5'd9;
++assign winner4Step0 = polynom_9 ? 5'd9 : (polynom_8 ? 5'd8 : 5'd0);
+ wire [4:0]   winner5Step0;
+-assign winner5Step0 =(polynom_11 [7:0] == 8'd0) ? ((polynom_10 [7:0] == 8'd0) ? 5'd0 : 5'd10):  5'd11;
++assign winner5Step0 = polynom_11 ? 5'd11 : (polynom_10 ? 5'd10 : 5'd0);
+ wire [4:0]   winner6Step0;
+-assign winner6Step0 =(polynom_13 [7:0] == 8'd0) ? ((polynom_12 [7:0] == 8'd0) ? 5'd0 : 5'd12):  5'd13;
++assign winner6Step0 = polynom_13 ? 5'd13 : (polynom_12 ? 5'd12 : 5'd0);
+ wire [4:0]   winner7Step0;
+-assign winner7Step0 =(polynom_15 [7:0] == 8'd0) ? ((polynom_14 [7:0] == 8'd0) ? 5'd0 : 5'd14):  5'd15;
++assign winner7Step0 = polynom_15 ? 5'd15 : (polynom_14 ? 5'd14 : 5'd0);
+ wire [4:0]   winner8Step0;
+-assign winner8Step0 =(polynom_17 [7:0] == 8'd0) ? ((polynom_16 [7:0] == 8'd0) ? 5'd0 : 5'd16):  5'd17;
++assign winner8Step0 = polynom_17 ? 5'd17 : (polynom_16 ? 5'd16 : 5'd0);
+ wire [4:0]   winner9Step0;
+-assign winner9Step0 =(polynom_19 [7:0] == 8'd0) ? ((polynom_18 [7:0] == 8'd0) ? 5'd0 : 5'd18):  5'd19;
++assign winner9Step0 = polynom_19 ? 5'd19 : (polynom_18 ? 5'd18 : 5'd0);
+ wire [4:0]   winner10Step0;
+-assign winner10Step0 =(polynom_21 [7:0] == 8'd0) ? ((polynom_20 [7:0] == 8'd0) ? 5'd0 : 5'd20):  5'd21;
++assign winner10Step0 = polynom_21 ? 5'd21 : (polynom_20 ? 5'd20 : 5'd0);
+ //---------------------------------------------------------------
+ //- step 1
++// Higher group values always exceed lower group when nonzero,
++// so OR-reduction replaces 5-bit magnitude comparison.
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step1;
+-assign winner0Step1 =( winner1Step0 [4:0] < winner0Step0  [4:0]) ? winner0Step0  [4:0]:  winner1Step0  [4:0];
++assign winner0Step1 = (|winner1Step0) ? winner1Step0 : winner0Step0;
+ wire [4:0]   winner1Step1;
+-assign winner1Step1 =( winner3Step0 [4:0] < winner2Step0  [4:0]) ? winner2Step0  [4:0]:  winner3Step0  [4:0];
++assign winner1Step1 = (|winner3Step0) ? winner3Step0 : winner2Step0;
+ wire [4:0]   winner2Step1;
+-assign winner2Step1 =( winner5Step0 [4:0] < winner4Step0  [4:0]) ? winner4Step0  [4:0]:  winner5Step0  [4:0];
++assign winner2Step1 = (|winner5Step0) ? winner5Step0 : winner4Step0;
+ wire [4:0]   winner3Step1;
+-assign winner3Step1 =( winner7Step0 [4:0] < winner6Step0  [4:0]) ? winner6Step0  [4:0]:  winner7Step0  [4:0];
++assign winner3Step1 = (|winner7Step0) ? winner7Step0 : winner6Step0;
+ wire [4:0]   winner4Step1;
+-assign winner4Step1 =( winner9Step0 [4:0] < winner8Step0  [4:0]) ? winner8Step0  [4:0]:  winner9Step0  [4:0];
++assign winner4Step1 = (|winner9Step0) ? winner9Step0 : winner8Step0;
+ //---------------------------------------------------------------
+ //- step 2
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step2;
+-assign winner0Step2 =( winner1Step1 [4:0] < winner0Step1  [4:0]) ? winner0Step1  [4:0]:  winner1Step1  [4:0];
++assign winner0Step2 = (|winner1Step1) ? winner1Step1 : winner0Step1;
+ wire [4:0]   winner1Step2;
+-assign winner1Step2 =( winner3Step1 [4:0] < winner2Step1  [4:0]) ? winner2Step1  [4:0]:  winner3Step1  [4:0];
++assign winner1Step2 = (|winner3Step1) ? winner3Step1 : winner2Step1;
+ wire [4:0]   winner2Step2;
+-assign winner2Step2 =( winner10Step0 [4:0] < winner4Step1  [4:0]) ? winner4Step1  [4:0]:  winner10Step0  [4:0];
++assign winner2Step2 = (|winner10Step0) ? winner10Step0 : winner4Step1;
+ //---------------------------------------------------------------
+ //- step 3
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step3;
+-assign winner0Step3 =( winner1Step2 [4:0] < winner0Step2  [4:0]) ? winner0Step2  [4:0]:  winner1Step2  [4:0];
++assign winner0Step3 = (|winner1Step2) ? winner1Step2 : winner0Step2;
+ //---------------------------------------------------------------
+ //- step 4
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step4;
+-assign winner0Step4 =( winner2Step2 [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  winner2Step2  [4:0];
++assign winner0Step4 = (|winner2Step2) ? winner2Step2 : winner0Step3;
+ //---------------------------------------------------------------
+ //---------------------------------------------------------------
+ assign degree [4:0] =  winner0Step4 [4:0] ;
+--- a/RsDecodeSyndrome.v
++++ b/RsDecodeSyndrome.v
+@@ -101,14 +101,16 @@
+ 
+    //------------------------------------------------------------------------
+    // + done
++   // Registered: detect count==254 so the output register fires at count==255,
++   // breaking the combinational path from count through to downstream sync.
+    //------------------------------------------------------------------------
+    reg         done;
+-   always @(count) begin
+-      if (count ==8'd255) begin
+-         done = 1'b1;
+-      end
+-      else begin
+-         done = 1'b0;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         done <= 1'b0;
++      end
++      else if (enable == 1'b1) begin
++         done <= (count[7:0] == 8'd254);
+       end
+    end
+ 
+--- a/RsDecodeTop.v
++++ b/RsDecodeTop.v
+@@ -1112,6 +1112,14 @@
+          omegaShiftedReg_19 [7:0] <= 8'd0;
+          omegaShiftedReg_20 [7:0] <= 8'd0;
+          omegaShiftedReg_21 [7:0] <= 8'd0;
++         nzOmega_0  <= 1'b0; nzOmega_1  <= 1'b0; nzOmega_2  <= 1'b0;
++         nzOmega_3  <= 1'b0; nzOmega_4  <= 1'b0; nzOmega_5  <= 1'b0;
++         nzOmega_6  <= 1'b0; nzOmega_7  <= 1'b0; nzOmega_8  <= 1'b0;
++         nzOmega_9  <= 1'b0; nzOmega_10 <= 1'b0; nzOmega_11 <= 1'b0;
++         nzOmega_12 <= 1'b0; nzOmega_13 <= 1'b0; nzOmega_14 <= 1'b0;
++         nzOmega_15 <= 1'b0; nzOmega_16 <= 1'b0; nzOmega_17 <= 1'b0;
++         nzOmega_18 <= 1'b0; nzOmega_19 <= 1'b0; nzOmega_20 <= 1'b0;
++         nzOmega_21 <= 1'b0;
+       end
+       else if (enable == 1'b1) begin
+          omegaShiftedReg_0 [7:0]  <= omegaShifted_0 [7:0];
+@@ -1136,9 +1144,36 @@
+          omegaShiftedReg_19 [7:0] <= omegaShifted_19 [7:0];
+          omegaShiftedReg_20 [7:0] <= omegaShifted_20 [7:0];
+          omegaShiftedReg_21 [7:0] <= omegaShifted_21 [7:0];
+-      end
+-   end
+-
++         // Pre-register nonzero flags to shorten degree critical path
++         nzOmega_0  <= |omegaShifted_0;
++         nzOmega_1  <= |omegaShifted_1;
++         nzOmega_2  <= |omegaShifted_2;
++         nzOmega_3  <= |omegaShifted_3;
++         nzOmega_4  <= |omegaShifted_4;
++         nzOmega_5  <= |omegaShifted_5;
++         nzOmega_6  <= |omegaShifted_6;
++         nzOmega_7  <= |omegaShifted_7;
++         nzOmega_8  <= |omegaShifted_8;
++         nzOmega_9  <= |omegaShifted_9;
++         nzOmega_10 <= |omegaShifted_10;
++         nzOmega_11 <= |omegaShifted_11;
++         nzOmega_12 <= |omegaShifted_12;
++         nzOmega_13 <= |omegaShifted_13;
++         nzOmega_14 <= |omegaShifted_14;
++         nzOmega_15 <= |omegaShifted_15;
++         nzOmega_16 <= |omegaShifted_16;
++         nzOmega_17 <= |omegaShifted_17;
++         nzOmega_18 <= |omegaShifted_18;
++         nzOmega_19 <= |omegaShifted_19;
++         nzOmega_20 <= |omegaShifted_20;
++         nzOmega_21 <= |omegaShifted_21;
++      end
++   end
++
++   reg nzOmega_0, nzOmega_1, nzOmega_2, nzOmega_3, nzOmega_4, nzOmega_5;
++   reg nzOmega_6, nzOmega_7, nzOmega_8, nzOmega_9, nzOmega_10, nzOmega_11;
++   reg nzOmega_12, nzOmega_13, nzOmega_14, nzOmega_15, nzOmega_16, nzOmega_17;
++   reg nzOmega_18, nzOmega_19, nzOmega_20, nzOmega_21;
+ 
+ 
+    //------------------------------------------------------------------
+@@ -1148,29 +1183,29 @@
+ 
+ 
+    RsDecodeDegree  RsDecodeDegree_1(
+-      // Inputs
+-      .polynom_0   (omegaShiftedReg_0),
+-      .polynom_1   (omegaShiftedReg_1),
+-      .polynom_2   (omegaShiftedReg_2),
+-      .polynom_3   (omegaShiftedReg_3),
+-      .polynom_4   (omegaShiftedReg_4),
+-      .polynom_5   (omegaShiftedReg_5),
+-      .polynom_6   (omegaShiftedReg_6),
+-      .polynom_7   (omegaShiftedReg_7),
+-      .polynom_8   (omegaShiftedReg_8),
+-      .polynom_9   (omegaShiftedReg_9),
+-      .polynom_10  (omegaShiftedReg_10),
+-      .polynom_11  (omegaShiftedReg_11),
+-      .polynom_12  (omegaShiftedReg_12),
+-      .polynom_13  (omegaShiftedReg_13),
+-      .polynom_14  (omegaShiftedReg_14),
+-      .polynom_15  (omegaShiftedReg_15),
+-      .polynom_16  (omegaShiftedReg_16),
+-      .polynom_17  (omegaShiftedReg_17),
+-      .polynom_18  (omegaShiftedReg_18),
+-      .polynom_19  (omegaShiftedReg_19),
+-      .polynom_20  (omegaShiftedReg_20),
+-      .polynom_21  (omegaShiftedReg_21),
++      // Inputs (1-bit nonzero flags, pre-registered to cut critical path)
++      .polynom_0   (nzOmega_0),
++      .polynom_1   (nzOmega_1),
++      .polynom_2   (nzOmega_2),
++      .polynom_3   (nzOmega_3),
++      .polynom_4   (nzOmega_4),
++      .polynom_5   (nzOmega_5),
++      .polynom_6   (nzOmega_6),
++      .polynom_7   (nzOmega_7),
++      .polynom_8   (nzOmega_8),
++      .polynom_9   (nzOmega_9),
++      .polynom_10  (nzOmega_10),
++      .polynom_11  (nzOmega_11),
++      .polynom_12  (nzOmega_12),
++      .polynom_13  (nzOmega_13),
++      .polynom_14  (nzOmega_14),
++      .polynom_15  (nzOmega_15),
++      .polynom_16  (nzOmega_16),
++      .polynom_17  (nzOmega_17),
++      .polynom_18  (nzOmega_18),
++      .polynom_19  (nzOmega_19),
++      .polynom_20  (nzOmega_20),
++      .polynom_21  (nzOmega_21),
+       // Outputs
+       .degree      (degreeOmega)
+    );
+@@ -1228,6 +1263,14 @@
+          lambdaReg2_19 [7:0] <= 8'd0;
+          lambdaReg2_20 [7:0] <= 8'd0;
+          lambdaReg2_21 [7:0] <= 8'd0;
++         nzLambda_0  <= 1'b0; nzLambda_1  <= 1'b0; nzLambda_2  <= 1'b0;
++         nzLambda_3  <= 1'b0; nzLambda_4  <= 1'b0; nzLambda_5  <= 1'b0;
++         nzLambda_6  <= 1'b0; nzLambda_7  <= 1'b0; nzLambda_8  <= 1'b0;
++         nzLambda_9  <= 1'b0; nzLambda_10 <= 1'b0; nzLambda_11 <= 1'b0;
++         nzLambda_12 <= 1'b0; nzLambda_13 <= 1'b0; nzLambda_14 <= 1'b0;
++         nzLambda_15 <= 1'b0; nzLambda_16 <= 1'b0; nzLambda_17 <= 1'b0;
++         nzLambda_18 <= 1'b0; nzLambda_19 <= 1'b0; nzLambda_20 <= 1'b0;
++         nzLambda_21 <= 1'b0;
+       end
+       else if (enable == 1'b1) begin
+          lambdaReg2_0 [7:0]  <= lambdaReg_0 [7:0];
+@@ -1252,8 +1295,36 @@
+          lambdaReg2_19 [7:0] <= lambdaReg_19 [7:0];
+          lambdaReg2_20 [7:0] <= lambdaReg_20 [7:0];
+          lambdaReg2_21 [7:0] <= lambdaReg_21 [7:0];
+-      end
+-   end
++         // Pre-register nonzero flags to shorten degree critical path
++         nzLambda_0  <= |lambdaReg_0;
++         nzLambda_1  <= |lambdaReg_1;
++         nzLambda_2  <= |lambdaReg_2;
++         nzLambda_3  <= |lambdaReg_3;
++         nzLambda_4  <= |lambdaReg_4;
++         nzLambda_5  <= |lambdaReg_5;
++         nzLambda_6  <= |lambdaReg_6;
++         nzLambda_7  <= |lambdaReg_7;
++         nzLambda_8  <= |lambdaReg_8;
++         nzLambda_9  <= |lambdaReg_9;
++         nzLambda_10 <= |lambdaReg_10;
++         nzLambda_11 <= |lambdaReg_11;
++         nzLambda_12 <= |lambdaReg_12;
++         nzLambda_13 <= |lambdaReg_13;
++         nzLambda_14 <= |lambdaReg_14;
++         nzLambda_15 <= |lambdaReg_15;
++         nzLambda_16 <= |lambdaReg_16;
++         nzLambda_17 <= |lambdaReg_17;
++         nzLambda_18 <= |lambdaReg_18;
++         nzLambda_19 <= |lambdaReg_19;
++         nzLambda_20 <= |lambdaReg_20;
++         nzLambda_21 <= |lambdaReg_21;
++      end
++   end
++
++   reg nzLambda_0, nzLambda_1, nzLambda_2, nzLambda_3, nzLambda_4, nzLambda_5;
++   reg nzLambda_6, nzLambda_7, nzLambda_8, nzLambda_9, nzLambda_10, nzLambda_11;
++   reg nzLambda_12, nzLambda_13, nzLambda_14, nzLambda_15, nzLambda_16, nzLambda_17;
++   reg nzLambda_18, nzLambda_19, nzLambda_20, nzLambda_21;
+ 
+ 
+ 
+@@ -1262,29 +1333,29 @@
+    //------------------------------------------------------------------
+    wire [4:0]   degreeLambda;
+    RsDecodeDegree  RsDecodeDegree_2(
+-      // Inputs
+-      .polynom_0   (lambdaReg2_0),
+-      .polynom_1   (lambdaReg2_1),
+-      .polynom_2   (lambdaReg2_2),
+-      .polynom_3   (lambdaReg2_3),
+-      .polynom_4   (lambdaReg2_4),
+-      .polynom_5   (lambdaReg2_5),
+-      .polynom_6   (lambdaReg2_6),
+-      .polynom_7   (lambdaReg2_7),
+-      .polynom_8   (lambdaReg2_8),
+-      .polynom_9   (lambdaReg2_9),
+-      .polynom_10  (lambdaReg2_10),
+-      .polynom_11  (lambdaReg2_11),
+-      .polynom_12  (lambdaReg2_12),
+-      .polynom_13  (lambdaReg2_13),
+-      .polynom_14  (lambdaReg2_14),
+-      .polynom_15  (lambdaReg2_15),
+-      .polynom_16  (lambdaReg2_16),
+-      .polynom_17  (lambdaReg2_17),
+-      .polynom_18  (lambdaReg2_18),
+-      .polynom_19  (lambdaReg2_19),
+-      .polynom_20  (lambdaReg2_20),
+-      .polynom_21  (lambdaReg2_21),
++      // Inputs (1-bit nonzero flags, pre-registered to cut critical path)
++      .polynom_0   (nzLambda_0),
++      .polynom_1   (nzLambda_1),
++      .polynom_2   (nzLambda_2),
++      .polynom_3   (nzLambda_3),
++      .polynom_4   (nzLambda_4),
++      .polynom_5   (nzLambda_5),
++      .polynom_6   (nzLambda_6),
++      .polynom_7   (nzLambda_7),
++      .polynom_8   (nzLambda_8),
++      .polynom_9   (nzLambda_9),
++      .polynom_10  (nzLambda_10),
++      .polynom_11  (nzLambda_11),
++      .polynom_12  (nzLambda_12),
++      .polynom_13  (nzLambda_13),
++      .polynom_14  (nzLambda_14),
++      .polynom_15  (nzLambda_15),
++      .polynom_16  (nzLambda_16),
++      .polynom_17  (nzLambda_17),
++      .polynom_18  (nzLambda_18),
++      .polynom_19  (nzLambda_19),
++      .polynom_20  (nzLambda_20),
++      .polynom_21  (nzLambda_21),
+       // Outputs
+       .degree      (degreeLambda)
+    );

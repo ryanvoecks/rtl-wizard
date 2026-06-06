@@ -54,7 +54,7 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
-    run_dir = LLM_RESULTS / "synth_wbdma_jpegencoder_n_3_d_4"
+    run_dir = LLM_RESULTS / "synth_e203_reedsolomon_systolictpu_viterbi_n_3_d_4"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 
@@ -65,7 +65,7 @@ async def main_async() -> None:
             model=MODEL,
             max_samples=MAX_PARALLEL_SESSIONS,
             epochs=EPOCHS,
-            sample_id=["wb_dma", "jpeg_encoder"],
+            sample_id=["e203", "reed_solomon", "systolic_tpu", "viterbi"],
         )
 
 

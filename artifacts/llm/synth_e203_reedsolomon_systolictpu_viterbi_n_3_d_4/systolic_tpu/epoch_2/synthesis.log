@@ -1,0 +1,16 @@
+Warning: Replacing memory \matrix_mul_2D with list of registers. See systolic.v:151
+Warning: Replacing memory \is_accum_reg with list of registers. See systolic.v:130
+Warning: Replacing memory \is_reset_reg with list of registers. See systolic.v:129
+Warning: Replacing memory \mul_product_reg with list of registers. See systolic.v:128
+Warning: Replacing memory \is_accum_1 with list of registers. See systolic.v:94
+Warning: Replacing memory \is_reset_1 with list of registers. See systolic.v:93
+Warning: Replacing memory \mul_partial_lo with list of registers. See systolic.v:92
+Warning: Replacing memory \mul_partial_hi with list of registers. See systolic.v:91
+Warning: Replacing memory \data_queue with list of registers. See systolic.v:57
+Warning: Replacing memory \weight_queue with list of registers. See systolic.v:56
+Warning: Replacing memory \en_c_p1 with list of registers. See write_out.v:56
+Warning: Replacing memory \src_c_p1 with list of registers. See write_out.v:56
+Warning: Replacing memory \en_b_p1 with list of registers. See write_out.v:55
+Warning: Replacing memory \src_b_p1 with list of registers. See write_out.v:55
+Warning: Replacing memory \en_a_p1 with list of registers. See write_out.v:54
+Warning: Replacing memory \src_a_p1 with list of registers. See write_out.v:54

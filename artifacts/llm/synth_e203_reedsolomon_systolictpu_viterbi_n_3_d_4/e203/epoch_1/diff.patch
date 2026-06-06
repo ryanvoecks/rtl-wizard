@@ -1,0 +1,101 @@
+--- a/core/e203_clk_ctrl.v
++++ b/core/e203_clk_ctrl.v
+@@ -30,7 +30,7 @@
+ module e203_clk_ctrl (
+   input  clk,        // clock
+   input  rst_n,      // async reset
+-  input  test_mode,  // test mode 
++  input  test_mode,  // test mode (static DFT signal)
+ 
+   // The cgstop is coming from CSR (0xBFE mcgstop)'s filed 0
+   // // This register is our self-defined CSR register to disable the 
+@@ -71,6 +71,13 @@
+   input  core_wfi
+ );
+ 
++  // Register test_mode to break the long fanout path from primary input to all ICG enables.
++  // test_mode is a static DFT signal, so registering it one cycle is functionally safe.
++  reg test_mode_r;
++  always @(posedge clk or negedge rst_n)
++    if (!rst_n) test_mode_r <= 1'b0;
++    else        test_mode_r <= test_mode;
++
+   // The CSR control bit CGSTOP will override the automatical clock gating here for special debug purpose
+ 
+       // The IFU is always actively fetching unless it is WFI to override it
+@@ -88,28 +95,28 @@
+ 
+   e203_clkgate u_ifu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (ifu_clk_en),
+     .clk_out  (clk_core_ifu)
+   );
+ 
+   e203_clkgate u_exu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (exu_clk_en),
+     .clk_out  (clk_core_exu)
+   );
+ 
+   e203_clkgate u_lsu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (lsu_clk_en),
+     .clk_out  (clk_core_lsu)
+   );
+ 
+   e203_clkgate u_biu_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (biu_clk_en),
+     .clk_out  (clk_core_biu)
+   );
+@@ -126,7 +133,7 @@
+ 
+   e203_clkgate u_itcm_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (itcm_clk_en),
+     .clk_out  (clk_itcm)
+   );
+@@ -140,7 +147,7 @@
+ 
+   e203_clkgate u_dtcm_clkgate(
+     .clk_in   (clk        ),
+-    .test_mode(test_mode  ),
++    .test_mode(test_mode_r),
+     .clock_en (dtcm_clk_en),
+     .clk_out  (clk_dtcm)
+   );
+--- a/core/e203_reset_ctrl.v
++++ b/core/e203_reset_ctrl.v
+@@ -64,6 +64,11 @@
+   if(MASTER == 1) begin:master_gen
+ 
+      
++     reg test_mode_r;
++     always @(posedge clk or negedge rst_n)
++       if (rst_n == 1'b0) test_mode_r <= 1'b0;
++       else               test_mode_r <= test_mode;
++
+      always @(posedge clk or negedge rst_n)
+      begin:rst_sync_PROC
+        if(rst_n == 1'b0)
+@@ -75,8 +80,8 @@
+            rst_sync_r[RST_SYNC_LEVEL-1:0] <= {rst_sync_r[RST_SYNC_LEVEL-2:0],1'b1};
+          end
+      end
+-     
+-     assign rst_sync_n     = test_mode ? rst_n : rst_sync_r[`E203_ASYNC_FF_LEVELS-1];
++
++     assign rst_sync_n     = rst_sync_r[`E203_ASYNC_FF_LEVELS-1];
+      
+ 
+   end
