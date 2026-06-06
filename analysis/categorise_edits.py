@@ -71,7 +71,7 @@ def _apply_unified_diff(originals: dict[str, str], diff_text: str) -> dict[str, 
         if not lines[i].startswith("--- a/"):
             i += 1
             continue
-        rel_a = lines[i][len("--- a/"):].rstrip()
+        rel_a = lines[i][len("--- a/") :].rstrip()
         i += 1
         if i >= len(lines) or not lines[i].startswith("+++ b/"):
             continue
@@ -271,9 +271,7 @@ def _gather_jobs(
                 diffs[-1] = (ep_dir / "diff.patch").read_text()
         originals = {
             str(rel): abs_p.read_text()
-            for rel, abs_p in zip(
-                target.design.rtl_files, target.design.rtl_abs_paths
-            )
+            for rel, abs_p in zip(target.design.rtl_files, target.design.rtl_abs_paths)
         }
         out.append((ep_dir, design_name, epoch, diffs, originals))
     return out
@@ -282,10 +280,17 @@ def _gather_jobs(
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--parallel", type=int, default=4)
-    ap.add_argument("--force", action="store_true",
-                    help="Overwrite existing edit<n>_category.txt files.")
-    ap.add_argument("--run", action="append", default=None,
-                    help="Only process this artifact run dir (basename).")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="Overwrite existing edit<n>_category.txt files.",
+    )
+    ap.add_argument(
+        "--run",
+        action="append",
+        default=None,
+        help="Only process this artifact run dir (basename).",
+    )
     args = ap.parse_args()
 
     prompt_template = PROMPT_PATH.read_text()
@@ -299,14 +304,17 @@ def main() -> None:
         try:
             jobs = _gather_jobs(run_dir)
         except Exception as e:  # noqa: BLE001
-            print(f"[WARN] {run_dir.name}: {e}\n{traceback.format_exc()}",
-                  file=sys.stderr)
+            print(
+                f"[WARN] {run_dir.name}: {e}\n{traceback.format_exc()}", file=sys.stderr
+            )
             continue
         all_jobs.extend(jobs)
         print(f"[plan] {run_dir.name}: {len(jobs)} epochs")
 
-    print(f"[plan] total epochs: {len(all_jobs)} "
-          f"(expect 4 round labels each => {4 * len(all_jobs)} categorisations)")
+    print(
+        f"[plan] total epochs: {len(all_jobs)} "
+        f"(expect 4 round labels each => {4 * len(all_jobs)} categorisations)"
+    )
 
     results: list[tuple[str, list[str]]] = []
     warnings: list[str] = []
@@ -314,8 +322,13 @@ def main() -> None:
     def worker(job):
         ep_dir, design_name, epoch, diffs, originals = job
         return _process_epoch(
-            ep_dir, design_name, epoch, diffs, originals,
-            prompt_template, args.force,
+            ep_dir,
+            design_name,
+            epoch,
+            diffs,
+            originals,
+            prompt_template,
+            args.force,
         )
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallel) as pool:
@@ -324,8 +337,10 @@ def main() -> None:
             try:
                 tag, labels, ws = fut.result()
             except Exception as e:  # noqa: BLE001
-                print(f"[ERROR] worker failed: {e}\n{traceback.format_exc()}",
-                      file=sys.stderr)
+                print(
+                    f"[ERROR] worker failed: {e}\n{traceback.format_exc()}",
+                    file=sys.stderr,
+                )
                 continue
             results.append((tag, labels))
             warnings.extend(ws)
@@ -334,6 +349,7 @@ def main() -> None:
     print()
     print(f"=== SUMMARY ({len(results)} epochs processed) ===")
     from collections import Counter
+
     totals: Counter = Counter()
     for _tag, labels in results:
         totals.update(labels)

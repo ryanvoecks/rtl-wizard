@@ -51,32 +51,34 @@ BAR_EDGE_WIDTH = 0.6
 def _set_rc() -> None:
     """Paper-style rcParams. STIX ships with matplotlib so no system
     font dependency, and we get proper math/typography fallbacks."""
-    rcParams.update({
-        "font.family": "serif",
-        "font.serif": ["STIX Two Text", "STIXGeneral", "DejaVu Serif"],
-        "mathtext.fontset": "stix",
-        "axes.labelsize": 11,
-        "axes.titlesize": 12,
-        "axes.edgecolor": TEXT_COLOR,
-        "axes.labelcolor": TEXT_COLOR,
-        "axes.linewidth": 0.8,
-        "xtick.color": TEXT_COLOR,
-        "ytick.color": TEXT_COLOR,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "xtick.direction": "out",
-        "ytick.direction": "out",
-        "xtick.major.size": 3.5,
-        "ytick.major.size": 3.5,
-        "xtick.major.width": 0.8,
-        "ytick.major.width": 0.8,
-        "legend.fontsize": 9,
-        "figure.dpi": 200,
-        "savefig.dpi": 600,
-        "savefig.bbox": "tight",
-        "pdf.fonttype": 42,  # editable text in PDF
-        "ps.fonttype": 42,
-    })
+    rcParams.update(
+        {
+            "font.family": "serif",
+            "font.serif": ["STIX Two Text", "STIXGeneral", "DejaVu Serif"],
+            "mathtext.fontset": "stix",
+            "axes.labelsize": 11,
+            "axes.titlesize": 12,
+            "axes.edgecolor": TEXT_COLOR,
+            "axes.labelcolor": TEXT_COLOR,
+            "axes.linewidth": 0.8,
+            "xtick.color": TEXT_COLOR,
+            "ytick.color": TEXT_COLOR,
+            "xtick.labelsize": 10,
+            "ytick.labelsize": 10,
+            "xtick.direction": "out",
+            "ytick.direction": "out",
+            "xtick.major.size": 3.5,
+            "ytick.major.size": 3.5,
+            "xtick.major.width": 0.8,
+            "ytick.major.width": 0.8,
+            "legend.fontsize": 9,
+            "figure.dpi": 200,
+            "savefig.dpi": 600,
+            "savefig.bbox": "tight",
+            "pdf.fonttype": 42,  # editable text in PDF
+            "ps.fonttype": 42,
+        }
+    )
 
 
 def _collect() -> tuple[Counter, int]:
@@ -118,14 +120,19 @@ def _plot(totals: Counter, n_epochs: int, out_path: Path) -> None:
     counts = [totals[c] for c in cats]
     n_edits = sum(counts)
     colors = [
-        RESIDUAL_COLOR if c in RESIDUAL_CATEGORIES else PRIMARY_COLOR
-        for c in cats
+        RESIDUAL_COLOR if c in RESIDUAL_CATEGORIES else PRIMARY_COLOR for c in cats
     ]
 
     fig, ax = plt.subplots(figsize=(6.5, 3.6))
-    bars = ax.bar(cats, counts, color=colors, width=0.7,
-                  edgecolor=BAR_EDGE_COLOR, linewidth=BAR_EDGE_WIDTH,
-                  zorder=3)
+    bars = ax.bar(
+        cats,
+        counts,
+        color=colors,
+        width=0.7,
+        edgecolor=BAR_EDGE_COLOR,
+        linewidth=BAR_EDGE_WIDTH,
+        zorder=3,
+    )
 
     # Bar-top counts; smaller, in dark grey -- present but unobtrusive.
     y_max = max(counts)
@@ -134,7 +141,9 @@ def _plot(totals: Counter, n_epochs: int, out_path: Path) -> None:
             bar.get_x() + bar.get_width() / 2,
             bar.get_height() + y_max * 0.015,
             str(count),
-            ha="center", va="bottom", fontsize=8.5,
+            ha="center",
+            va="bottom",
+            fontsize=8.5,
             color=TEXT_COLOR,
         )
 
@@ -143,8 +152,9 @@ def _plot(totals: Counter, n_epochs: int, out_path: Path) -> None:
     ax.set_ylim(0, y_max * 1.12)
 
     # Restrained gridline, behind the bars.
-    ax.grid(axis="y", linestyle="-", linewidth=0.4,
-            color="#d0d0d0", alpha=0.9, zorder=1)
+    ax.grid(
+        axis="y", linestyle="-", linewidth=0.4, color="#d0d0d0", alpha=0.9, zorder=1
+    )
     ax.set_axisbelow(True)
 
     # Drop the top/right spines and lighten the remaining frame.
@@ -153,15 +163,18 @@ def _plot(totals: Counter, n_epochs: int, out_path: Path) -> None:
     for side in ("left", "bottom"):
         ax.spines[side].set_color(TEXT_COLOR)
 
-    plt.setp(ax.get_xticklabels(), rotation=25, ha="right",
-             rotation_mode="anchor")
+    plt.setp(ax.get_xticklabels(), rotation=25, ha="right", rotation_mode="anchor")
 
     # Sample-size annotation, top-right, in the same style as a figure caption.
     ax.text(
-        0.99, 0.97,
+        0.99,
+        0.97,
         f"n = {n_edits} edits",
-        transform=ax.transAxes, ha="right", va="top",
-        fontsize=11, color=TEXT_COLOR,
+        transform=ax.transAxes,
+        ha="right",
+        va="top",
+        fontsize=11,
+        color=TEXT_COLOR,
     )
 
     fig.tight_layout()
