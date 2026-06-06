@@ -1,0 +1,34 @@
+--- a/core/e203_clk_ctrl.v
++++ b/core/e203_clk_ctrl.v
+@@ -79,7 +79,9 @@
+       //  WFI because it may have request from external agent
+       //  and also, it actually will automactically become inactive regardess
+       //  currently is WFI or not, hence we dont need WFI here
+-  wire exu_clk_en = core_cgstop | (core_exu_active);
++  wire core_exu_active_r;
++  sirv_gnrl_dffr #(1) exu_active_dffr(core_exu_active, core_exu_active_r, clk, rst_n);
++  wire exu_clk_en = core_cgstop | core_exu_active | core_exu_active_r;
+   wire lsu_clk_en = core_cgstop | (core_lsu_active);
+   wire biu_clk_en = core_cgstop | (core_biu_active);
+ 
+--- a/core/e203_clkgate.v
++++ b/core/e203_clkgate.v
+@@ -43,7 +43,7 @@
+ 
+ always@(*)
+   if (!clk_in)
+-    enb = (clock_en | test_mode);
++    enb = clock_en;
+ 
+ assign clk_out = enb & clk_in;
+ 
+--- a/core/e203_cpu.v
++++ b/core/e203_cpu.v
+@@ -891,6 +891,6 @@
+   assign inspect_mem_rsp_valid = mem_icb_rsp_valid;
+   assign inspect_mem_rsp_ready = mem_icb_rsp_ready;
+   assign inspect_core_clk   = clk;
+-  assign core_csr_clk       = clk_core_exu;
++  assign core_csr_clk       = clk_aon;
+ 
+ endmodule

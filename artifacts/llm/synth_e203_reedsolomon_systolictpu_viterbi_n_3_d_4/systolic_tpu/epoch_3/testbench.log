@@ -1,0 +1,656 @@
+SRAM a0!!!!
+SRAM at address   0 is 
+ -81    0    0    0  
+SRAM at address   1 is 
+ -98   -1    0    0  
+SRAM at address   2 is 
+ 110   81   -6    0  
+SRAM at address   3 is 
+ -97  -76  -53  -46  
+SRAM at address   4 is 
+  14  -32   64  -85  
+SRAM at address   5 is 
+  -7   72   23   -3  
+SRAM at address   6 is 
+ -65  -47   43  -16  
+SRAM at address   7 is 
+ -71  -62   27  -25  
+SRAM at address   8 is 
+-119    1 -103  -49  
+SRAM at address   9 is 
+ -75  -26  114  -81  
+SRAM at address  10 is 
+ -77  -71 -105   -3  
+SRAM at address  11 is 
+ 108  -67    6  -47  
+SRAM at address  12 is 
+-119   56  -63  116  
+SRAM at address  13 is 
+  28   -7  -83   -1  
+SRAM at address  14 is 
+ -94  -57 -127  101  
+SRAM at address  15 is 
+ -26  112   70  -76  
+SRAM at address  16 is 
+  44  122  -72   19  
+SRAM at address  17 is 
+  34   83   46   34  
+SRAM at address  18 is 
+-102 -119  105   -2  
+SRAM at address  19 is 
+  27  -78  -40   19  
+SRAM at address  20 is 
+ -62   22  115  -20  
+SRAM at address  21 is 
+  27   33   34  126  
+SRAM at address  22 is 
+  38  104   41 -111  
+SRAM at address  23 is 
+ -15 -111   99  101  
+SRAM at address  24 is 
+   0  -11 -100    1  
+SRAM at address  25 is 
+   0    0    0   55  
+SRAM at address  26 is 
+   0    0    0  -43  
+SRAM at address  27 is 
+   0    0    0    0  
+SRAM at address  28 is 
+   0    0    0    0  
+SRAM at address  29 is 
+   0    0    0    0  
+SRAM at address  30 is 
+   0    0    0    0  
+SRAM at address  31 is 
+   0    0    0    0  
+SRAM at address  32 is 
+   0    0    0    0  
+SRAM at address  33 is 
+   0    0    0    0  
+SRAM at address  34 is 
+   0    0    0    0  
+SRAM at address  35 is 
+   0    0    0    0  
+SRAM at address  36 is 
+   0    0    0    0  
+SRAM at address  37 is 
+   0    0    0    0  
+SRAM at address  38 is 
+   0    0    0    0  
+SRAM at address  39 is 
+   0    0    0    0  
+SRAM at address  40 is 
+   0    0    0    0  
+SRAM at address  41 is 
+   0    0    0    0  
+SRAM at address  42 is 
+   0    0    0    0  
+SRAM at address  43 is 
+   0    0    0    0  
+SRAM at address  44 is 
+   0    0    0    0  
+SRAM at address  45 is 
+   0    0    0    0  
+SRAM at address  46 is 
+   0    0    0    0  
+SRAM at address  47 is 
+   0    0    0    0  
+SRAM at address  48 is 
+   0    0    0    0  
+SRAM at address  49 is 
+   0    0    0    0  
+SRAM at address  50 is 
+   0    0    0    0  
+SRAM at address  51 is 
+   0    0    0    0  
+SRAM at address  52 is 
+   0    0    0    0  
+SRAM at address  53 is 
+   0    0    0    0  
+SRAM at address  54 is 
+   0    0    0    0  
+SRAM at address  55 is 
+   0    0    0    0  
+SRAM at address  56 is 
+   0    0    0    0  
+SRAM at address  57 is 
+   0    0    0    0  
+SRAM at address  58 is 
+   0    0    0    0  
+SRAM at address  59 is 
+   0    0    0    0  
+SRAM at address  60 is 
+   0    0    0    0  
+SRAM at address  61 is 
+   0    0    0    0  
+SRAM at address  62 is 
+   0    0    0    0  
+SRAM at address  63 is 
+   0    0    0    0  
+SRAM at address  64 is 
+   0    0    0    0  
+SRAM at address  65 is 
+   0    0    0    0  
+SRAM at address  66 is 
+   0    0    0    0  
+SRAM at address  67 is 
+   0    0    0    0  
+SRAM at address  68 is 
+   0    0    0    0  
+SRAM at address  69 is 
+   0    0    0    0  
+SRAM at address  70 is 
+   0    0    0    0  
+SRAM at address  71 is 
+   0    0    0    0  
+SRAM at address  72 is 
+   0    0    0    0  
+SRAM at address  73 is 
+   0    0    0    0  
+SRAM at address  74 is 
+   0    0    0    0  
+SRAM at address  75 is 
+   0    0    0    0  
+SRAM at address  76 is 
+   0    0    0    0  
+SRAM at address  77 is 
+   0    0    0    0  
+SRAM at address  78 is 
+   0    0    0    0  
+SRAM at address  79 is 
+   0    0    0    0  
+SRAM at address  80 is 
+   0    0    0    0  
+SRAM at address  81 is 
+   0    0    0    0  
+SRAM at address  82 is 
+   0    0    0    0  
+SRAM at address  83 is 
+   0    0    0    0  
+SRAM at address  84 is 
+   0    0    0    0  
+SRAM at address  85 is 
+   0    0    0    0  
+SRAM at address  86 is 
+   0    0    0    0  
+SRAM at address  87 is 
+   0    0    0    0  
+SRAM at address  88 is 
+   0    0    0    0  
+SRAM at address  89 is 
+   0    0    0    0  
+SRAM at address  90 is 
+   0    0    0    0  
+SRAM at address  91 is 
+   0    0    0    0  
+SRAM at address  92 is 
+   0    0    0    0  
+SRAM at address  93 is 
+   0    0    0    0  
+SRAM at address  94 is 
+   0    0    0    0  
+SRAM at address  95 is 
+   0    0    0    0  
+SRAM at address  96 is 
+   0    0    0    0  
+SRAM at address  97 is 
+   0    0    0    0  
+SRAM at address  98 is 
+   0    0    0    0  
+SRAM at address  99 is 
+   0    0    0    0  
+SRAM at address 100 is 
+   0    0    0    0  
+SRAM at address 101 is 
+   0    0    0    0  
+SRAM at address 102 is 
+   0    0    0    0  
+SRAM at address 103 is 
+   0    0    0    0  
+SRAM at address 104 is 
+   0    0    0    0  
+SRAM at address 105 is 
+   0    0    0    0  
+SRAM at address 106 is 
+   0    0    0    0  
+SRAM at address 107 is 
+   0    0    0    0  
+SRAM at address 108 is 
+   0    0    0    0  
+SRAM at address 109 is 
+   0    0    0    0  
+SRAM at address 110 is 
+   0    0    0    0  
+SRAM at address 111 is 
+   0    0    0    0  
+SRAM at address 112 is 
+   0    0    0    0  
+SRAM at address 113 is 
+   0    0    0    0  
+SRAM at address 114 is 
+   0    0    0    0  
+SRAM at address 115 is 
+   0    0    0    0  
+SRAM at address 116 is 
+   0    0    0    0  
+SRAM at address 117 is 
+   0    0    0    0  
+SRAM at address 118 is 
+   0    0    0    0  
+SRAM at address 119 is 
+   0    0    0    0  
+SRAM at address 120 is 
+   0    0    0    0  
+SRAM at address 121 is 
+   0    0    0    0  
+SRAM at address 122 is 
+   0    0    0    0  
+SRAM at address 123 is 
+   0    0    0    0  
+SRAM at address 124 is 
+   0    0    0    0  
+SRAM at address 125 is 
+   0    0    0    0  
+SRAM at address 126 is 
+   0    0    0    0  
+SRAM at address 127 is 
+   0    0    0    0  
+SRAM b0!!!!
+SRAM at address   0 is 
+  99    0    0    0  
+SRAM at address   1 is 
+ -48  -93    0    0  
+SRAM at address   2 is 
+  77  123  117    0  
+SRAM at address   3 is 
+ -60  -89   33    8  
+SRAM at address   4 is 
+ 109   15   28   95  
+SRAM at address   5 is 
+-101   22 -120 -113  
+SRAM at address   6 is 
+  37   13  -82  -79  
+SRAM at address   7 is 
+ 102  -65   66  100  
+SRAM at address   8 is 
+ -58  -75   53   48  
+SRAM at address   9 is 
+ -81   36  -61 -113  
+SRAM at address  10 is 
+ -82   53    7 -112  
+SRAM at address  11 is 
+  -5   84   73  -53  
+SRAM at address  12 is 
+-115  -66   25  123  
+SRAM at address  13 is 
+  -4   93 -106   76  
+SRAM at address  14 is 
+  35   77  -43  -43  
+SRAM at address  15 is 
+ -71   -8  -65  -58  
+SRAM at address  16 is 
+  28  -18  -63  -32  
+SRAM at address  17 is 
+  -1   10   59   73  
+SRAM at address  18 is 
+  37   96  -92  -14  
+SRAM at address  19 is 
+ -65 -102  -41   44  
+SRAM at address  20 is 
+ -84   92   18  117  
+SRAM at address  21 is 
+-119 -128   52   -2  
+SRAM at address  22 is 
+  24 -118 -112   52  
+SRAM at address  23 is 
+  57   92   68   89  
+SRAM at address  24 is 
+   0  -66  -47   37  
+SRAM at address  25 is 
+   0    0  103   73  
+SRAM at address  26 is 
+   0    0    0  -55  
+SRAM at address  27 is 
+   0    0    0    0  
+SRAM at address  28 is 
+   0    0    0    0  
+SRAM at address  29 is 
+   0    0    0    0  
+SRAM at address  30 is 
+   0    0    0    0  
+SRAM at address  31 is 
+   0    0    0    0  
+SRAM at address  32 is 
+   0    0    0    0  
+SRAM at address  33 is 
+   0    0    0    0  
+SRAM at address  34 is 
+   0    0    0    0  
+SRAM at address  35 is 
+   0    0    0    0  
+SRAM at address  36 is 
+   0    0    0    0  
+SRAM at address  37 is 
+   0    0    0    0  
+SRAM at address  38 is 
+   0    0    0    0  
+SRAM at address  39 is 
+   0    0    0    0  
+SRAM at address  40 is 
+   0    0    0    0  
+SRAM at address  41 is 
+   0    0    0    0  
+SRAM at address  42 is 
+   0    0    0    0  
+SRAM at address  43 is 
+   0    0    0    0  
+SRAM at address  44 is 
+   0    0    0    0  
+SRAM at address  45 is 
+   0    0    0    0  
+SRAM at address  46 is 
+   0    0    0    0  
+SRAM at address  47 is 
+   0    0    0    0  
+SRAM at address  48 is 
+   0    0    0    0  
+SRAM at address  49 is 
+   0    0    0    0  
+SRAM at address  50 is 
+   0    0    0    0  
+SRAM at address  51 is 
+   0    0    0    0  
+SRAM at address  52 is 
+   0    0    0    0  
+SRAM at address  53 is 
+   0    0    0    0  
+SRAM at address  54 is 
+   0    0    0    0  
+SRAM at address  55 is 
+   0    0    0    0  
+SRAM at address  56 is 
+   0    0    0    0  
+SRAM at address  57 is 
+   0    0    0    0  
+SRAM at address  58 is 
+   0    0    0    0  
+SRAM at address  59 is 
+   0    0    0    0  
+SRAM at address  60 is 
+   0    0    0    0  
+SRAM at address  61 is 
+   0    0    0    0  
+SRAM at address  62 is 
+   0    0    0    0  
+SRAM at address  63 is 
+   0    0    0    0  
+SRAM at address  64 is 
+   0    0    0    0  
+SRAM at address  65 is 
+   0    0    0    0  
+SRAM at address  66 is 
+   0    0    0    0  
+SRAM at address  67 is 
+   0    0    0    0  
+SRAM at address  68 is 
+   0    0    0    0  
+SRAM at address  69 is 
+   0    0    0    0  
+SRAM at address  70 is 
+   0    0    0    0  
+SRAM at address  71 is 
+   0    0    0    0  
+SRAM at address  72 is 
+   0    0    0    0  
+SRAM at address  73 is 
+   0    0    0    0  
+SRAM at address  74 is 
+   0    0    0    0  
+SRAM at address  75 is 
+   0    0    0    0  
+SRAM at address  76 is 
+   0    0    0    0  
+SRAM at address  77 is 
+   0    0    0    0  
+SRAM at address  78 is 
+   0    0    0    0  
+SRAM at address  79 is 
+   0    0    0    0  
+SRAM at address  80 is 
+   0    0    0    0  
+SRAM at address  81 is 
+   0    0    0    0  
+SRAM at address  82 is 
+   0    0    0    0  
+SRAM at address  83 is 
+   0    0    0    0  
+SRAM at address  84 is 
+   0    0    0    0  
+SRAM at address  85 is 
+   0    0    0    0  
+SRAM at address  86 is 
+   0    0    0    0  
+SRAM at address  87 is 
+   0    0    0    0  
+SRAM at address  88 is 
+   0    0    0    0  
+SRAM at address  89 is 
+   0    0    0    0  
+SRAM at address  90 is 
+   0    0    0    0  
+SRAM at address  91 is 
+   0    0    0    0  
+SRAM at address  92 is 
+   0    0    0    0  
+SRAM at address  93 is 
+   0    0    0    0  
+SRAM at address  94 is 
+   0    0    0    0  
+SRAM at address  95 is 
+   0    0    0    0  
+SRAM at address  96 is 
+   0    0    0    0  
+SRAM at address  97 is 
+   0    0    0    0  
+SRAM at address  98 is 
+   0    0    0    0  
+SRAM at address  99 is 
+   0    0    0    0  
+SRAM at address 100 is 
+   0    0    0    0  
+SRAM at address 101 is 
+   0    0    0    0  
+SRAM at address 102 is 
+   0    0    0    0  
+SRAM at address 103 is 
+   0    0    0    0  
+SRAM at address 104 is 
+   0    0    0    0  
+SRAM at address 105 is 
+   0    0    0    0  
+SRAM at address 106 is 
+   0    0    0    0  
+SRAM at address 107 is 
+   0    0    0    0  
+SRAM at address 108 is 
+   0    0    0    0  
+SRAM at address 109 is 
+   0    0    0    0  
+SRAM at address 110 is 
+   0    0    0    0  
+SRAM at address 111 is 
+   0    0    0    0  
+SRAM at address 112 is 
+   0    0    0    0  
+SRAM at address 113 is 
+   0    0    0    0  
+SRAM at address 114 is 
+   0    0    0    0  
+SRAM at address 115 is 
+   0    0    0    0  
+SRAM at address 116 is 
+   0    0    0    0  
+SRAM at address 117 is 
+   0    0    0    0  
+SRAM at address 118 is 
+   0    0    0    0  
+SRAM at address 119 is 
+   0    0    0    0  
+SRAM at address 120 is 
+   0    0    0    0  
+SRAM at address 121 is 
+   0    0    0    0  
+SRAM at address 122 is 
+   0    0    0    0  
+SRAM at address 123 is 
+   0    0    0    0  
+SRAM at address 124 is 
+   0    0    0    0  
+SRAM at address 125 is 
+   0    0    0    0  
+SRAM at address 126 is 
+   0    0    0    0  
+SRAM at address 127 is 
+   0    0    0    0  
+Here shows the trans_golden1!!!
+  3561      0      0      0      0      0      0      0 
+
+  2484  -5999      0      0      0      0      0      0 
+
+ 15275  21268   1285      0      0      0      0      0 
+
+  -824 -11870  -8085   1636      0      0      0      0 
+
+-24609  -1847 -17576  30641 -32768      0      0      0 
+
+ 25070  10002 -11645  -9665   3706  21202      0      0 
+
+  4632  -5495 -16543  -2203 -32768  -3175 -21487      0 
+
+  2695 -13417  16472  -5765 -24642  15330  -4092 -14299 
+
+ -3551   -383  -1176   4837   3135   2613 -14762      0 
+
+ 13729 -19173  -5236  -1513 -20484   2019      0      0 
+
+  1002   7611  -3462  13193 -13001      0      0      0 
+
+ -1110  -3205   9022  -2910      0      0      0      0 
+
+  3861  -9262  20007      0      0      0      0      0 
+
+ -3781   3788      0      0      0      0      0      0 
+
+ -2025      0      0      0      0      0      0      0 
+
+|
+Three input groups of matrix
+|
+------------------------
+1 1 1 1 0 1 0 1 
+1 1 1 1 1 1 1 1 
+0 1 0 1 1 1 1 1 
+0 1 0 0 1 0 1 1 
+1 1 0 1 0 0 0 1 
+1 1 1 0 1 1 0 0 
+0 1 0 0 1 1 1 1 
+0 1 1 0 0 0 0 0 
+
+1 1 0 0 0 1 1 0 
+1 1 0 0 0 1 0 1 
+1 0 1 0 1 1 1 0 
+0 0 0 1 0 0 0 0 
+0 0 0 1 0 1 1 0 
+0 1 1 1 0 1 0 0 
+1 1 1 0 1 0 1 1 
+0 1 0 1 0 1 1 0 
+------------------------
+
+------------------------
+1 1 1 1 0 1 0 1 
+1 1 1 1 1 1 1 1 
+0 1 0 1 1 1 1 1 
+0 1 0 0 1 0 1 1 
+1 1 0 1 0 0 0 1 
+1 1 1 0 1 1 0 0 
+0 1 0 0 1 1 1 1 
+0 1 1 0 0 0 0 0 
+
+1 1 0 0 0 1 1 0 
+1 1 0 0 0 1 0 1 
+1 0 1 0 1 1 1 0 
+0 0 0 1 0 0 0 0 
+0 0 0 1 0 1 1 0 
+0 1 1 1 0 1 0 0 
+1 1 1 0 1 0 1 1 
+0 1 0 1 0 1 1 0 
+------------------------
+
+------------------------
+1 1 1 1 0 1 0 1 
+1 1 1 1 1 1 1 1 
+0 1 0 1 1 1 1 1 
+0 1 0 0 1 0 1 1 
+1 1 0 1 0 0 0 1 
+1 1 1 0 1 1 0 0 
+0 1 0 0 1 1 1 1 
+0 1 1 0 0 0 0 0 
+
+1 1 0 0 0 1 1 0 
+1 1 0 0 0 1 0 1 
+1 0 1 0 1 1 1 0 
+0 0 0 1 0 0 0 0 
+0 0 0 1 0 1 1 0 
+0 1 1 1 0 1 0 0 
+1 1 1 0 1 0 1 1 
+0 1 0 1 0 1 1 0 
+------------------------
+
+sram #c0 address:  0 PASS!!
+sram #c0 address:  1 PASS!!
+sram #c0 address:  2 PASS!!
+sram #c0 address:  3 PASS!!
+sram #c0 address:  4 PASS!!
+sram #c0 address:  5 PASS!!
+sram #c0 address:  6 PASS!!
+sram #c0 address:  7 PASS!!
+sram #c0 address:  8 PASS!!
+sram #c0 address:  9 PASS!!
+sram #c0 address: 10 PASS!!
+sram #c0 address: 11 PASS!!
+sram #c0 address: 12 PASS!!
+sram #c0 address: 13 PASS!!
+sram #c0 address: 14 PASS!!
+sram #c1 address:  0 PASS!!
+sram #c1 address:  1 PASS!!
+sram #c1 address:  2 PASS!!
+sram #c1 address:  3 PASS!!
+sram #c1 address:  4 PASS!!
+sram #c1 address:  5 PASS!!
+sram #c1 address:  6 PASS!!
+sram #c1 address:  7 PASS!!
+sram #c1 address:  8 PASS!!
+sram #c1 address:  9 PASS!!
+sram #c1 address: 10 PASS!!
+sram #c1 address: 11 PASS!!
+sram #c1 address: 12 PASS!!
+sram #c1 address: 13 PASS!!
+sram #c1 address: 14 PASS!!
+sram #c1 address:  0 PASS!!
+sram #c1 address:  1 PASS!!
+sram #c1 address:  2 PASS!!
+sram #c1 address:  3 PASS!!
+sram #c1 address:  4 PASS!!
+sram #c1 address:  5 PASS!!
+sram #c1 address:  6 PASS!!
+sram #c1 address:  7 PASS!!
+sram #c1 address:  8 PASS!!
+sram #c1 address:  9 PASS!!
+sram #c1 address: 10 PASS!!
+sram #c1 address: 11 PASS!!
+sram #c1 address: 12 PASS!!
+sram #c1 address: 13 PASS!!
+sram #c1 address: 14 PASS!!
+Total cycle count C after three matrix evaluation =          46.
+sram_16x128b.v:56: warning: task definition for "dis" has an empty port declaration list!
+sram_256x32b.v:55: warning: task definition for "display" has an empty port declaration list!

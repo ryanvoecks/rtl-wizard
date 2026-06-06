@@ -1,0 +1,35 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "abdelazeem201",
+    "name": "systolic_tpu",
+    "variant": "reference",
+    "root": "/workspace/external/systolic_tpu",
+    "rtl_dir": "Pre-Synthesis_Simulation",
+    "rtl_files": [
+      "tpu_top.v",
+      "systolic.v",
+      "systolic_controll.v",
+      "quantize.v",
+      "addr_sel.v",
+      "write_out.v"
+    ],
+    "top_module": "tpu_top",
+    "test_script": "/workspace/common/scripts/systolic_tpu.sh",
+    "tb_timeout_s": 120,
+    "clock_port": "clk",
+    "include_dirs": []
+  },
+  "period_ns": 0.9157,
+  "target_utilization": 60
+}

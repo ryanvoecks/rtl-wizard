@@ -1,0 +1,7 @@
+Warning: Replacing memory \pm_nom_out_r with list of registers. See pm_normalize.v:446
+Warning: Replacing memory \pm_pipe_r2 with list of registers. See pm_normalize.v:436
+Warning: Replacing memory \pm_pipe_r with list of registers. See pm_normalize.v:426
+Warning: Replacing memory \pm_nom_r with list of registers. See pm_normalize.v:403
+Warning: Replacing memory \grp_state_r with list of registers. See pm_normalize.v:457
+Warning: Replacing memory \grp_max_r with list of registers. See pm_normalize.v:455
+Warning: Driver-driver conflict for \tb_bits_valid_r between cell $procdff$6510.Q and constant 1'0 in traceback: Resolved using constant.

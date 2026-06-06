@@ -1,0 +1,423 @@
+--- a/BMU.v
++++ b/BMU.v
+@@ -52,12 +52,44 @@
+ wire signed [3:0] soft_bit0,soft_bit1,soft_bit2,soft_bit3,soft_bit4,soft_bit5; 
+ wire signed [4:0] x_soft_bit0,x_soft_bit1,x_soft_bit2,x_soft_bit3,x_soft_bit4,x_soft_bit5; 
+ 
++reg [23:0] soft_data_r;
++reg soft_data_valid_r;
+ reg signed [WIDTH_BM-1:0] bm_r;
+ reg bm_valid_r;
+-
+-assign bm_o =  bm_r;
+-assign bm_valid_o = bm_valid_r;
++reg signed [WIDTH_BM-1:0] bm_r2;
++reg bm_valid_r2;
++reg signed [WIDTH_BM-1:0] bm_r3;
++reg bm_valid_r3;
++reg signed [WIDTH_BM-1:0] bm_r4;
++reg bm_valid_r4;
++
++assign bm_o =  bm_r4;
++assign bm_valid_o = bm_valid_r4;
+ assign ready_o = ready_r;
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin soft_data_r <= 0; soft_data_valid_r <= 0; end
++  else if(rst_sync_i) begin soft_data_r <= 0; soft_data_valid_r <= 0; end
++  else begin soft_data_r <= soft_data_i; soft_data_valid_r <= soft_data_valid_i; end
++end
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin bm_r2 <= 0; bm_valid_r2 <= 0; end
++  else if(rst_sync_i) begin bm_r2 <= 0; bm_valid_r2 <= 0; end
++  else begin bm_r2 <= bm_r; bm_valid_r2 <= bm_valid_r; end
++end
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin bm_r3 <= 0; bm_valid_r3 <= 0; end
++  else if(rst_sync_i) begin bm_r3 <= 0; bm_valid_r3 <= 0; end
++  else begin bm_r3 <= bm_r2; bm_valid_r3 <= bm_valid_r2; end
++end
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin bm_r4 <= 0; bm_valid_r4 <= 0; end
++  else if(rst_sync_i) begin bm_r4 <= 0; bm_valid_r4 <= 0; end
++  else begin bm_r4 <= bm_r3; bm_valid_r4 <= bm_valid_r3; end
++end
+ //generate initiation control signals' pulse
+ always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i) begin 
+@@ -207,12 +239,12 @@
+ end
+ 
+ // gen the branch metric of the low path
+-assign soft_bit0 =  $signed (soft_data_i[3:0]);
+-assign soft_bit1 =  $signed (soft_data_i[7:4]);
+-assign soft_bit2 =  $signed (soft_data_i[11:8]);
+-assign soft_bit3 =  $signed (soft_data_i[15:12]);
+-assign soft_bit4 =  $signed (soft_data_i[19:16]);
+-assign soft_bit5 =  $signed (soft_data_i[23:20]);
++assign soft_bit0 =  $signed (soft_data_r[3:0]);
++assign soft_bit1 =  $signed (soft_data_r[7:4]);
++assign soft_bit2 =  $signed (soft_data_r[11:8]);
++assign soft_bit3 =  $signed (soft_data_r[15:12]);
++assign soft_bit4 =  $signed (soft_data_r[19:16]);
++assign soft_bit5 =  $signed (soft_data_r[23:20]);
+ 
+ 
+ 
+@@ -233,7 +265,7 @@
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
+     end
+-  else if( soft_data_valid_i ) begin
++  else if( soft_data_valid_r ) begin
+     bm_valid_r <= 1'b1;
+     case( valid_polynomials_i)
+       3'b000 : bm_r <=  x_soft_bit1 + x_soft_bit0; 
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -183,6 +183,19 @@
+ reg signed [WIDTH_BM-1:0] final_max_matric_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
++// Stage-1 pipeline registers (per-group maxima and pm values)
++reg signed [WIDTH_BM-1:0] grp_max_r [7:0];
++reg [5:0] grp_state_r [7:0];
++reg signed [WIDTH_BM-1:0] pm_pipe_r [63:0];
++reg en_pipe_r;
++reg frame_start_pipe_r;
++reg tail_biting_pipe_r;
++reg signed [WIDTH_BM-1:0] max_reg;
++reg signed [WIDTH_BM-1:0] pm_pipe_r2 [63:0];
++reg en_pipe_r2;
++reg frame_start_pipe_r2;
++reg tail_biting_pipe_r2;
++reg signed [WIDTH_BM-1:0] pm_nom_out_r [63:0];
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+ wire [5:0] state_16_0_s, state_16_1_s,  state_16_2_s,  state_16_3_s ; 
+ wire [5:0] state_24_0_s, state_24_1_s,  state_24_2_s,  state_24_3_s ; 
+@@ -223,16 +236,27 @@
+ 
+ wire [5:0] max_state_8_s,  max_state_16_s,max_state_32_s,  max_state_64_s;
+ wire signed [WIDTH_BM-1:0]   nom_matric_8_s,  nom_matric_16_s, nom_matric_32_s,  nom_matric_64_s;
+- 
++// Pipelined max metrics (from grp_max_r stage-1 registers) for pm_nom_r normalization
++wire signed [WIDTH_BM-1:0] pipe_max_2nd_0_s, pipe_max_2nd_1_s, pipe_max_2nd_2_s, pipe_max_2nd_3_s;
++wire signed [WIDTH_BM-1:0] pipe_max_2nd_00_s, pipe_max_2nd_01_s, pipe_max_s;
++
+ assign max_state_8_s = state_8_s;
+ assign max_state_16_s = state_2nd_0_s;
+ assign max_state_32_s = state_2nd_00_s;
+ assign max_state_64_s = max_state_s;
+ 
+-assign nom_matric_8_s = max_matric_8_s;
+-assign nom_matric_16_s = max_matric_2nd_0_s ;
+-assign nom_matric_32_s = max_matric_2nd_00_s;
+-assign nom_matric_64_s = max_matric_s;
++assign pipe_max_2nd_0_s  = grp_max_r[1] > grp_max_r[0] ? grp_max_r[1] : grp_max_r[0];
++assign pipe_max_2nd_1_s  = grp_max_r[3] > grp_max_r[2] ? grp_max_r[3] : grp_max_r[2];
++assign pipe_max_2nd_2_s  = grp_max_r[5] > grp_max_r[4] ? grp_max_r[5] : grp_max_r[4];
++assign pipe_max_2nd_3_s  = grp_max_r[7] > grp_max_r[6] ? grp_max_r[7] : grp_max_r[6];
++assign pipe_max_2nd_00_s = pipe_max_2nd_1_s > pipe_max_2nd_0_s ? pipe_max_2nd_1_s : pipe_max_2nd_0_s;
++assign pipe_max_2nd_01_s = pipe_max_2nd_3_s > pipe_max_2nd_2_s ? pipe_max_2nd_3_s : pipe_max_2nd_2_s;
++assign pipe_max_s        = pipe_max_2nd_01_s > pipe_max_2nd_00_s ? pipe_max_2nd_01_s : pipe_max_2nd_00_s;
++
++assign nom_matric_8_s  = grp_max_r[0];
++assign nom_matric_16_s = pipe_max_2nd_0_s;
++assign nom_matric_32_s = pipe_max_2nd_00_s;
++assign nom_matric_64_s = pipe_max_s;
+     
+ assign pm_i_signed_s[0] = $signed(pm_tmp_0_i);
+ assign pm_i_signed_s[1] = $signed(pm_tmp_1_i);
+@@ -305,108 +329,182 @@
+ assign pm_i_signed_s[62] = $signed(pm_tmp_62_i);
+ assign pm_i_signed_s[63] = $signed(pm_tmp_63_i);    
+ 
+-assign pm_nom_0_o  = pm_nom_r[0];
+-assign pm_nom_1_o  = pm_nom_r[1];
+-assign pm_nom_2_o  = pm_nom_r[2];
+-assign pm_nom_3_o  = pm_nom_r[3];
+-assign pm_nom_4_o  = pm_nom_r[4];
+-assign pm_nom_5_o  = pm_nom_r[5];
+-assign pm_nom_6_o  = pm_nom_r[6];
+-assign pm_nom_7_o  = pm_nom_r[7];
+-assign pm_nom_8_o  = pm_nom_r[8];
+-assign pm_nom_9_o  = pm_nom_r[9];
+-assign pm_nom_10_o = pm_nom_r[10];
+-assign pm_nom_11_o = pm_nom_r[11];
+-assign pm_nom_12_o = pm_nom_r[12];
+-assign pm_nom_13_o = pm_nom_r[13];
+-assign pm_nom_14_o = pm_nom_r[14];
+-assign pm_nom_15_o = pm_nom_r[15];
+-assign pm_nom_16_o = pm_nom_r[16];
+-assign pm_nom_17_o = pm_nom_r[17];
+-assign pm_nom_18_o = pm_nom_r[18];
+-assign pm_nom_19_o = pm_nom_r[19];
+-assign pm_nom_20_o = pm_nom_r[20];
+-assign pm_nom_21_o = pm_nom_r[21];
+-assign pm_nom_22_o = pm_nom_r[22];
+-assign pm_nom_23_o = pm_nom_r[23];
+-assign pm_nom_24_o = pm_nom_r[24];
+-assign pm_nom_25_o = pm_nom_r[25];
+-assign pm_nom_26_o = pm_nom_r[26];
+-assign pm_nom_27_o = pm_nom_r[27];
+-assign pm_nom_28_o = pm_nom_r[28];
+-assign pm_nom_29_o = pm_nom_r[29];
+-assign pm_nom_30_o = pm_nom_r[30];
+-assign pm_nom_31_o = pm_nom_r[31];
+-assign pm_nom_32_o = pm_nom_r[32];
+-assign pm_nom_33_o = pm_nom_r[33];
+-assign pm_nom_34_o = pm_nom_r[34];
+-assign pm_nom_35_o = pm_nom_r[35];
+-assign pm_nom_36_o = pm_nom_r[36];
+-assign pm_nom_37_o = pm_nom_r[37];
+-assign pm_nom_38_o = pm_nom_r[38];
+-assign pm_nom_39_o = pm_nom_r[39];
+-assign pm_nom_40_o = pm_nom_r[40];
+-assign pm_nom_41_o = pm_nom_r[41];
+-assign pm_nom_42_o = pm_nom_r[42];
+-assign pm_nom_43_o = pm_nom_r[43];
+-assign pm_nom_44_o = pm_nom_r[44];
+-assign pm_nom_45_o = pm_nom_r[45];
+-assign pm_nom_46_o = pm_nom_r[46];
+-assign pm_nom_47_o = pm_nom_r[47];
+-assign pm_nom_48_o = pm_nom_r[48];
+-assign pm_nom_49_o = pm_nom_r[49];
+-assign pm_nom_50_o = pm_nom_r[50];
+-assign pm_nom_51_o = pm_nom_r[51];
+-assign pm_nom_52_o = pm_nom_r[52];
+-assign pm_nom_53_o = pm_nom_r[53];
+-assign pm_nom_54_o = pm_nom_r[54];
+-assign pm_nom_55_o = pm_nom_r[55];
+-assign pm_nom_56_o = pm_nom_r[56];
+-assign pm_nom_57_o = pm_nom_r[57];
+-assign pm_nom_58_o = pm_nom_r[58];
+-assign pm_nom_59_o = pm_nom_r[59];
+-assign pm_nom_60_o = pm_nom_r[60];
+-assign pm_nom_61_o = pm_nom_r[61];
+-assign pm_nom_62_o = pm_nom_r[62];
+-assign pm_nom_63_o = pm_nom_r[63]; 
++assign pm_nom_0_o  = pm_nom_out_r[0];
++assign pm_nom_1_o  = pm_nom_out_r[1];
++assign pm_nom_2_o  = pm_nom_out_r[2];
++assign pm_nom_3_o  = pm_nom_out_r[3];
++assign pm_nom_4_o  = pm_nom_out_r[4];
++assign pm_nom_5_o  = pm_nom_out_r[5];
++assign pm_nom_6_o  = pm_nom_out_r[6];
++assign pm_nom_7_o  = pm_nom_out_r[7];
++assign pm_nom_8_o  = pm_nom_out_r[8];
++assign pm_nom_9_o  = pm_nom_out_r[9];
++assign pm_nom_10_o = pm_nom_out_r[10];
++assign pm_nom_11_o = pm_nom_out_r[11];
++assign pm_nom_12_o = pm_nom_out_r[12];
++assign pm_nom_13_o = pm_nom_out_r[13];
++assign pm_nom_14_o = pm_nom_out_r[14];
++assign pm_nom_15_o = pm_nom_out_r[15];
++assign pm_nom_16_o = pm_nom_out_r[16];
++assign pm_nom_17_o = pm_nom_out_r[17];
++assign pm_nom_18_o = pm_nom_out_r[18];
++assign pm_nom_19_o = pm_nom_out_r[19];
++assign pm_nom_20_o = pm_nom_out_r[20];
++assign pm_nom_21_o = pm_nom_out_r[21];
++assign pm_nom_22_o = pm_nom_out_r[22];
++assign pm_nom_23_o = pm_nom_out_r[23];
++assign pm_nom_24_o = pm_nom_out_r[24];
++assign pm_nom_25_o = pm_nom_out_r[25];
++assign pm_nom_26_o = pm_nom_out_r[26];
++assign pm_nom_27_o = pm_nom_out_r[27];
++assign pm_nom_28_o = pm_nom_out_r[28];
++assign pm_nom_29_o = pm_nom_out_r[29];
++assign pm_nom_30_o = pm_nom_out_r[30];
++assign pm_nom_31_o = pm_nom_out_r[31];
++assign pm_nom_32_o = pm_nom_out_r[32];
++assign pm_nom_33_o = pm_nom_out_r[33];
++assign pm_nom_34_o = pm_nom_out_r[34];
++assign pm_nom_35_o = pm_nom_out_r[35];
++assign pm_nom_36_o = pm_nom_out_r[36];
++assign pm_nom_37_o = pm_nom_out_r[37];
++assign pm_nom_38_o = pm_nom_out_r[38];
++assign pm_nom_39_o = pm_nom_out_r[39];
++assign pm_nom_40_o = pm_nom_out_r[40];
++assign pm_nom_41_o = pm_nom_out_r[41];
++assign pm_nom_42_o = pm_nom_out_r[42];
++assign pm_nom_43_o = pm_nom_out_r[43];
++assign pm_nom_44_o = pm_nom_out_r[44];
++assign pm_nom_45_o = pm_nom_out_r[45];
++assign pm_nom_46_o = pm_nom_out_r[46];
++assign pm_nom_47_o = pm_nom_out_r[47];
++assign pm_nom_48_o = pm_nom_out_r[48];
++assign pm_nom_49_o = pm_nom_out_r[49];
++assign pm_nom_50_o = pm_nom_out_r[50];
++assign pm_nom_51_o = pm_nom_out_r[51];
++assign pm_nom_52_o = pm_nom_out_r[52];
++assign pm_nom_53_o = pm_nom_out_r[53];
++assign pm_nom_54_o = pm_nom_out_r[54];
++assign pm_nom_55_o = pm_nom_out_r[55];
++assign pm_nom_56_o = pm_nom_out_r[56];
++assign pm_nom_57_o = pm_nom_out_r[57];
++assign pm_nom_58_o = pm_nom_out_r[58];
++assign pm_nom_59_o = pm_nom_out_r[59];
++assign pm_nom_60_o = pm_nom_out_r[60];
++assign pm_nom_61_o = pm_nom_out_r[61];
++assign pm_nom_62_o = pm_nom_out_r[62];
++assign pm_nom_63_o = pm_nom_out_r[63]; 
+  
+ genvar i;
+ generate
+    for(i=0;i<64;i=i+1)
+    begin:pm_reg
+-     always@(posedge clk_i or negedge rst_an_i) 
+-       if(!rst_an_i) 
+-         pm_nom_r[i] <= 0;    
+-      else if(rst_sync_i) 
+-         pm_nom_r[i] <= 0; 
+-		else if(frame_start_i) begin
+-		   if(tail_biting_en_i ) pm_nom_r[i] <= 0;
++     always@(posedge clk_i or negedge rst_an_i)
++       if(!rst_an_i)
++         pm_nom_r[i] <= 0;
++      else if(rst_sync_i)
++         pm_nom_r[i] <= 0;
++      else if(frame_start_pipe_r2) begin
++         if(tail_biting_pipe_r2) pm_nom_r[i] <= 0;
+          else if(i==0) pm_nom_r[i] <= 0;
+          else pm_nom_r[i] <= Initial_Lower;
+-      end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
+-         
+-     end     
+- 
++      end
++      else if(en_pipe_r2 & pm_update_en_s[i])
++         if((pm_pipe_r2[i]-max_reg)<Initial_Lower)
++            pm_nom_r[i] <= -128;
++         else
++            pm_nom_r[i] <= pm_pipe_r2[i]-max_reg;
++
++     end
++
+ endgenerate
+ 
++// Stage-1 pipeline: register per-group maxima, state indices, and pm values
++genvar j;
++generate
++  for(j=0;j<64;j=j+1) begin:pm_pipe_reg
++    always@(posedge clk_i or negedge rst_an_i)
++      if(!rst_an_i)       pm_pipe_r[j] <= 0;
++      else if(rst_sync_i) pm_pipe_r[j] <= 0;
++      else                pm_pipe_r[j] <= pm_i_signed_s[j];
++  end
++endgenerate
++
++genvar k;
++generate
++  for(k=0;k<64;k=k+1) begin:pm_pipe_reg2
++    always@(posedge clk_i or negedge rst_an_i)
++      if(!rst_an_i)       pm_pipe_r2[k] <= 0;
++      else if(rst_sync_i) pm_pipe_r2[k] <= 0;
++      else                pm_pipe_r2[k] <= pm_pipe_r[k];
++  end
++endgenerate
++
++genvar m;
++generate
++  for(m=0;m<64;m=m+1) begin:pm_nom_out_reg
++    always@(posedge clk_i or negedge rst_an_i)
++      if(!rst_an_i)       pm_nom_out_r[m] <= 0;
++      else if(rst_sync_i) pm_nom_out_r[m] <= 0;
++      else                pm_nom_out_r[m] <= pm_nom_r[m];
++  end
++endgenerate
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin
++    en_pipe_r <= 0; frame_start_pipe_r <= 0; tail_biting_pipe_r <= 0;
++    grp_max_r[0] <= 0; grp_max_r[1] <= 0; grp_max_r[2] <= 0; grp_max_r[3] <= 0;
++    grp_max_r[4] <= 0; grp_max_r[5] <= 0; grp_max_r[6] <= 0; grp_max_r[7] <= 0;
++    grp_state_r[0] <= 0; grp_state_r[1] <= 0; grp_state_r[2] <= 0; grp_state_r[3] <= 0;
++    grp_state_r[4] <= 0; grp_state_r[5] <= 0; grp_state_r[6] <= 0; grp_state_r[7] <= 0;
++  end
++  else if(rst_sync_i) begin
++    en_pipe_r <= 0; frame_start_pipe_r <= 0; tail_biting_pipe_r <= 0;
++    grp_max_r[0] <= 0; grp_max_r[1] <= 0; grp_max_r[2] <= 0; grp_max_r[3] <= 0;
++    grp_max_r[4] <= 0; grp_max_r[5] <= 0; grp_max_r[6] <= 0; grp_max_r[7] <= 0;
++    grp_state_r[0] <= 0; grp_state_r[1] <= 0; grp_state_r[2] <= 0; grp_state_r[3] <= 0;
++    grp_state_r[4] <= 0; grp_state_r[5] <= 0; grp_state_r[6] <= 0; grp_state_r[7] <= 0;
++  end
++  else begin
++    en_pipe_r          <= en_i;
++    frame_start_pipe_r <= frame_start_i;
++    tail_biting_pipe_r <= tail_biting_en_i;
++    grp_max_r[0] <= max_matric_8_s;  grp_state_r[0] <= state_8_s;
++    grp_max_r[1] <= max_matric_16_s; grp_state_r[1] <= state_16_s;
++    grp_max_r[2] <= max_matric_24_s; grp_state_r[2] <= state_24_s;
++    grp_max_r[3] <= max_matric_32_s; grp_state_r[3] <= state_32_s;
++    grp_max_r[4] <= max_matric_40_s; grp_state_r[4] <= state_40_s;
++    grp_max_r[5] <= max_matric_48_s; grp_state_r[5] <= state_48_s;
++    grp_max_r[6] <= max_matric_56_s; grp_state_r[6] <= state_56_s;
++    grp_max_r[7] <= max_matric_64_s; grp_state_r[7] <= state_64_s;
++  end
++end
++
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin
++    max_reg <= 0; en_pipe_r2 <= 0; frame_start_pipe_r2 <= 0; tail_biting_pipe_r2 <= 0;
++  end
++  else if(rst_sync_i) begin
++    max_reg <= 0; en_pipe_r2 <= 0; frame_start_pipe_r2 <= 0; tail_biting_pipe_r2 <= 0;
++  end
++  else begin
++    max_reg            <= final_max_matric_s;
++    en_pipe_r2         <= en_pipe_r;
++    frame_start_pipe_r2 <= frame_start_pipe_r;
++    tail_biting_pipe_r2 <= tail_biting_pipe_r;
++  end
++end
++
+ assign max_state_index_o = max_state_index_r;
+ 
+ always@(posedge clk_i or negedge rst_an_i) begin
+-       if(!rst_an_i) 
+-         max_state_index_r <= 0;      
+-      else if(rst_sync_i) 
+-         max_state_index_r <= 0; 
+-      else if(en_i)  
++       if(!rst_an_i)
++         max_state_index_r <= 0;
++      else if(rst_sync_i)
++         max_state_index_r <= 0;
++      else if(en_i)
+          max_state_index_r <=  final_state_index_s;
+    end
+-   
++
+  always@(*) begin
+    case(register_num_i)
+    2'b00: final_max_matric_s = nom_matric_64_s ;
+@@ -613,14 +711,13 @@
+ //---------------------------------------------------------------------
+ //      select the max metric of second level 
+ //--------------------------------------------------------------------- 
+-    assign state_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  state_16_s : state_8_s  ; 
++    assign state_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  state_16_s : state_8_s  ;
+     assign state_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  state_32_s : state_24_s ;
+     assign state_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  state_48_s : state_40_s ;
+     assign state_2nd_3_s =  max_matric_64_s > max_matric_56_s ?  state_64_s : state_56_s ;
+-    
+-    assign max_matric_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  max_matric_16_s : max_matric_8_s  ; 
+-    assign max_matric_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  max_matric_32_s : max_matric_24_s ; 
+-    assign max_matric_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  max_matric_48_s : max_matric_40_s ; 
++    assign max_matric_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  max_matric_16_s : max_matric_8_s  ;
++    assign max_matric_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  max_matric_32_s : max_matric_24_s ;
++    assign max_matric_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  max_matric_48_s : max_matric_40_s ;
+     assign max_matric_2nd_3_s =  max_matric_64_s > max_matric_56_s ?  max_matric_64_s : max_matric_56_s ; 
+     
+     assign state_2nd_00_s = max_matric_2nd_1_s > max_matric_2nd_0_s ? state_2nd_1_s : state_2nd_0_s;

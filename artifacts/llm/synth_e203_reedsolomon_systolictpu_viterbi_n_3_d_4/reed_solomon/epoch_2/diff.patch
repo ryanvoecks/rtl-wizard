@@ -1,0 +1,208 @@
+--- a/RsDecodeDegree.v
++++ b/RsDecodeDegree.v
+@@ -2,7 +2,7 @@
+ // Module Name : RsDecodeDegree
+ // File Name   : RsDecodeDegree.v
+ // Function    : Rs Decoder Degree Module
+-// 
++//
+ // Revision History:
+ // Date          By           Version    Change Description
+ //===================================================================
+@@ -14,6 +14,8 @@
+ 
+ 
+ module RsDecodeDegree(
++   CLK,
++   RESET,
+    polynom_0,
+    polynom_1,
+    polynom_2,
+@@ -40,6 +42,8 @@
+ );
+ 
+ 
++   input          CLK;
++   input          RESET;
+    input  [7:0]   polynom_0;    // polynom 0
+    input  [7:0]   polynom_1;    // polynom 1
+    input  [7:0]   polynom_2;    // polynom 2
+@@ -67,7 +71,7 @@
+ 
+ 
+    //------------------------------------------------------------------------
+-   //- registers
++   //- stage 0: 2 levels of comparators (step0 + step1), then register
+    //------------------------------------------------------------------------
+ //---------------------------------------------------------------
+ //- step 0
+@@ -107,26 +111,65 @@
+ assign winner3Step1 =( winner7Step0 [4:0] < winner6Step0  [4:0]) ? winner6Step0  [4:0]:  winner7Step0  [4:0];
+ wire [4:0]   winner4Step1;
+ assign winner4Step1 =( winner9Step0 [4:0] < winner8Step0  [4:0]) ? winner8Step0  [4:0]:  winner9Step0  [4:0];
++
+ //---------------------------------------------------------------
+-//- step 2
++//- pipeline register between step1 and step2
++//---------------------------------------------------------------
++reg [4:0] p0Step1R, p1Step1R, p2Step1R, p3Step1R, p4Step1R, p10Step0R;
++always @(posedge CLK or negedge RESET) begin
++   if (~RESET) begin
++      p0Step1R  <= 5'd0;
++      p1Step1R  <= 5'd0;
++      p2Step1R  <= 5'd0;
++      p3Step1R  <= 5'd0;
++      p4Step1R  <= 5'd0;
++      p10Step0R <= 5'd0;
++   end else begin
++      p0Step1R  <= winner0Step1;
++      p1Step1R  <= winner1Step1;
++      p2Step1R  <= winner2Step1;
++      p3Step1R  <= winner3Step1;
++      p4Step1R  <= winner4Step1;
++      p10Step0R <= winner10Step0;
++   end
++end
++
++//---------------------------------------------------------------
++//- step 2 (from step1 registered values)
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step2;
+-assign winner0Step2 =( winner1Step1 [4:0] < winner0Step1  [4:0]) ? winner0Step1  [4:0]:  winner1Step1  [4:0];
++assign winner0Step2 =( p1Step1R [4:0] < p0Step1R  [4:0]) ? p0Step1R  [4:0]:  p1Step1R  [4:0];
+ wire [4:0]   winner1Step2;
+-assign winner1Step2 =( winner3Step1 [4:0] < winner2Step1  [4:0]) ? winner2Step1  [4:0]:  winner3Step1  [4:0];
++assign winner1Step2 =( p3Step1R [4:0] < p2Step1R  [4:0]) ? p2Step1R  [4:0]:  p3Step1R  [4:0];
+ wire [4:0]   winner2Step2;
+-assign winner2Step2 =( winner10Step0 [4:0] < winner4Step1  [4:0]) ? winner4Step1  [4:0]:  winner10Step0  [4:0];
++assign winner2Step2 =( p10Step0R [4:0] < p4Step1R  [4:0]) ? p4Step1R  [4:0]:  p10Step0R  [4:0];
++
+ //---------------------------------------------------------------
+-//- step 3
++//- pipeline register between step2 and step3
++//---------------------------------------------------------------
++reg [4:0] p0Step2R, p1Step2R, p2Step2R;
++always @(posedge CLK or negedge RESET) begin
++   if (~RESET) begin
++      p0Step2R <= 5'd0;
++      p1Step2R <= 5'd0;
++      p2Step2R <= 5'd0;
++   end else begin
++      p0Step2R <= winner0Step2;
++      p1Step2R <= winner1Step2;
++      p2Step2R <= winner2Step2;
++   end
++end
++
++//---------------------------------------------------------------
++//- step 3 (from step2 registered values)
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step3;
+-assign winner0Step3 =( winner1Step2 [4:0] < winner0Step2  [4:0]) ? winner0Step2  [4:0]:  winner1Step2  [4:0];
++assign winner0Step3 =( p1Step2R [4:0] < p0Step2R  [4:0]) ? p0Step2R  [4:0]:  p1Step2R  [4:0];
+ //---------------------------------------------------------------
+ //- step 4
+ //---------------------------------------------------------------
+ wire [4:0]   winner0Step4;
+-assign winner0Step4 =( winner2Step2 [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  winner2Step2  [4:0];
+-//---------------------------------------------------------------
++assign winner0Step4 =( p2Step2R [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  p2Step2R  [4:0];
+ //---------------------------------------------------------------
+ assign degree [4:0] =  winner0Step4 [4:0] ;
+ 
+--- a/RsDecodeEuclide.v
++++ b/RsDecodeEuclide.v
+@@ -493,13 +493,21 @@
+ 
+ 
+    //------------------------------------------------------------------
++   // + enable_r: registered enable to break PI-to-register timing path
++   //------------------------------------------------------------------
++   reg          enable_r;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) enable_r <= 1'b0;
++      else        enable_r <= enable;
++   end
++
+    // + enable_E
+    //------------------------------------------------------------------
+    reg          enable_E;
+-   always @(sync or count or enable or numErasure or euclideSteps) begin
++   always @(sync or count or enable_r or numErasure or euclideSteps) begin
+       if (numErasure[4:0] <= 5'd22) begin
+          if ((sync == 1'b1) || (count[6:0] <= euclideSteps[6:0])) begin
+-            enable_E   = enable;
++            enable_E   = enable_r;
+          end
+          else begin
+             enable_E   = 1'b0;
+@@ -507,7 +515,7 @@
+       end
+       else begin
+          if ((sync == 1'b1) || (count[6:0] <= 7'd3)) begin
+-            enable_E   = enable;
++            enable_E   = enable_r;
+          end
+          else begin
+             enable_E   = 1'b0;
+--- a/RsDecodeTop.v
++++ b/RsDecodeTop.v
+@@ -1149,6 +1149,8 @@
+ 
+    RsDecodeDegree  RsDecodeDegree_1(
+       // Inputs
++      .CLK         (CLK),
++      .RESET       (RESET),
+       .polynom_0   (omegaShiftedReg_0),
+       .polynom_1   (omegaShiftedReg_1),
+       .polynom_2   (omegaShiftedReg_2),
+@@ -1263,6 +1265,8 @@
+    wire [4:0]   degreeLambda;
+    RsDecodeDegree  RsDecodeDegree_2(
+       // Inputs
++      .CLK         (CLK),
++      .RESET       (RESET),
+       .polynom_0   (lambdaReg2_0),
+       .polynom_1   (lambdaReg2_1),
+       .polynom_2   (lambdaReg2_2),
+@@ -1294,17 +1298,27 @@
+    //------------------------------------------------------------------
+    // + degreeOmegaReg
+    // + degreeLambdaReg
++   // Captured one cycle after doneShiftReg to account for pipeline
++   // register inside RsDecodeDegree.
+    //------------------------------------------------------------------
+    reg [4:0]   degreeOmegaReg;
+    reg [4:0]   degreeLambdaReg;
++   reg          doneShiftReg2;
++   reg          doneShiftReg3;
+    always @(posedge CLK or negedge RESET) begin
+       if (~RESET) begin
+          degreeOmegaReg  <= 5'd0;
+          degreeLambdaReg <= 5'd0;
+-      end
+-      else if ((enable == 1'b1) && (doneShiftReg == 1'b1)) begin
+-         degreeOmegaReg  <= degreeOmega;
+-         degreeLambdaReg <= degreeLambda;
++         doneShiftReg2   <= 1'b0;
++         doneShiftReg3   <= 1'b0;
++      end
++      else if (enable == 1'b1) begin
++         doneShiftReg2 <= doneShiftReg;
++         doneShiftReg3 <= doneShiftReg2;
++         if (doneShiftReg3 == 1'b1) begin
++            degreeOmegaReg  <= degreeOmega;
++            degreeLambdaReg <= degreeLambda;
++         end
+       end
+    end
+ 
+@@ -1316,7 +1330,7 @@
+    always @(posedge CLK or negedge RESET) begin
+       if (~RESET) begin
+          doneShiftReg <= 1'b0;
+-      end 
++      end
+       else if (enable == 1'b1) begin
+          doneShiftReg <= doneShift;
+       end
