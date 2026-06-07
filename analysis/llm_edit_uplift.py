@@ -164,13 +164,13 @@ def collect(summary: dict, variance: dict[str, dict[str, float]]) -> dict[str, d
         for i in range(1, len(states)):
             ps, pp = states[i - 1]
             cs, cp = states[i]
-            if None in (ps, pp, cs, cp):
+            if ps is None or pp is None or cs is None or cp is None:
                 continue
             prev_s = fmax_mhz(period, ps)
             prev_p = fmax_mhz(period, pp)
             cur_s = fmax_mhz(period, cs)
             cur_p = fmax_mhz(period, cp)
-            if None in (prev_s, prev_p, cur_s, cur_p):
+            if prev_s is None or prev_p is None or cur_s is None or cur_p is None:
                 continue
 
             synth_ratio = cur_s / prev_s
