@@ -72,9 +72,7 @@ def load_variance(path: Path) -> dict[str, dict[str, float]]:
     return out
 
 
-def collect(
-    summary: dict, variance: dict[str, dict[str, float]]
-) -> dict[str, dict]:
+def collect(summary: dict, variance: dict[str, dict[str, float]]) -> dict[str, dict]:
     baselines = summary["baselines"]
     samples = summary["samples"]
     per_design: dict[str, dict] = {}
@@ -94,7 +92,8 @@ def collect(
         # SAME iter. Skip iters that don't have both stages reported, so
         # the per-stage numbers are always comparable.
         candidates = [
-            (k, row) for k, row in iters_i.items()
+            (k, row)
+            for k, row in iters_i.items()
             if row.get("synth_wns_ns") is not None and row.get("pnr_ws_ns") is not None
         ]
         if not candidates:
@@ -113,15 +112,18 @@ def collect(
         s_n_pct = NOISE_K * v["synth_cv"] * 100
         p_n_pct = NOISE_K * v["pnr_cv"] * 100
 
-        d = per_design.setdefault(name, {
-            "synth_ratios": [],
-            "pnr_ratios": [],
-            "delta_pcts": [],
-            "n_traj": 0,
-            "n_both_gain": 0,
-            "n_synth_gain_pnr_noise": 0,
-            "n_synth_gain_pnr_loss": 0,
-        })
+        d = per_design.setdefault(
+            name,
+            {
+                "synth_ratios": [],
+                "pnr_ratios": [],
+                "delta_pcts": [],
+                "n_traj": 0,
+                "n_both_gain": 0,
+                "n_synth_gain_pnr_noise": 0,
+                "n_synth_gain_pnr_loss": 0,
+            },
+        )
         d["synth_ratios"].append(f_synth_fmax / v["synth_mean"])
         d["pnr_ratios"].append(f_pnr_fmax / v["pnr_mean"])
         d["delta_pcts"].append(s_up_pct - p_up_pct)
@@ -145,19 +147,21 @@ def render(per_design: dict[str, dict]) -> list[dict]:
         n = d["n_traj"]
         if n == 0:
             continue
-        rows.append({
-            "design": name,
-            "n": n,
-            "gm_synth_uplift_pct": (geomean(d["synth_ratios"]) - 1) * 100,
-            "gm_pnr_uplift_pct": (geomean(d["pnr_ratios"]) - 1) * 100,
-            "mean_synth_minus_pnr_pct": sum(d["delta_pcts"]) / n,
-            "n_both_gain": d["n_both_gain"],
-            "n_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"],
-            "n_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"],
-            "frac_both_gain": d["n_both_gain"] / n,
-            "frac_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"] / n,
-            "frac_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"] / n,
-        })
+        rows.append(
+            {
+                "design": name,
+                "n": n,
+                "gm_synth_uplift_pct": (geomean(d["synth_ratios"]) - 1) * 100,
+                "gm_pnr_uplift_pct": (geomean(d["pnr_ratios"]) - 1) * 100,
+                "mean_synth_minus_pnr_pct": sum(d["delta_pcts"]) / n,
+                "n_both_gain": d["n_both_gain"],
+                "n_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"],
+                "n_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"],
+                "frac_both_gain": d["n_both_gain"] / n,
+                "frac_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"] / n,
+                "frac_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"] / n,
+            }
+        )
     return rows
 
 
@@ -178,7 +182,11 @@ def print_table(rows: list[dict]) -> None:
         gs = r["gm_synth_uplift_pct"]
         gp = r["gm_pnr_uplift_pct"]
         md = r["mean_synth_minus_pnr_pct"]
-        b, w, ll = r["n_both_gain"], r["n_synth_gain_pnr_within_noise"], r["n_synth_gain_pnr_loss"]
+        b, w, ll = (
+            r["n_both_gain"],
+            r["n_synth_gain_pnr_within_noise"],
+            r["n_synth_gain_pnr_loss"],
+        )
         print(
             f"{r['design']:<16}  {n:>3}  "
             f"{gs:>+9.2f}%  {gp:>+8.2f}%  {md:>+8.2f}%  "

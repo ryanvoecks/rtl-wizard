@@ -122,9 +122,7 @@ def load_variance(path: Path) -> dict[str, dict[str, float]]:
     return out
 
 
-def collect(
-    summary: dict, variance: dict[str, dict[str, float]]
-) -> dict[str, dict]:
+def collect(summary: dict, variance: dict[str, dict[str, float]]) -> dict[str, dict]:
     baselines = summary["baselines"]
     samples = summary["samples"]
     per_design: dict[str, dict] = {}
@@ -150,15 +148,18 @@ def collect(
             row = iters_i[k]
             states.append((row.get("synth_wns_ns"), row.get("pnr_ws_ns")))
 
-        d = per_design.setdefault(name, {
-            "synth_ratios": [],
-            "pnr_ratios": [],
-            "delta_pcts": [],
-            "n_edits": 0,
-            "n_both_gain": 0,
-            "n_synth_gain_pnr_noise": 0,
-            "n_synth_gain_pnr_loss": 0,
-        })
+        d = per_design.setdefault(
+            name,
+            {
+                "synth_ratios": [],
+                "pnr_ratios": [],
+                "delta_pcts": [],
+                "n_edits": 0,
+                "n_both_gain": 0,
+                "n_synth_gain_pnr_noise": 0,
+                "n_synth_gain_pnr_loss": 0,
+            },
+        )
 
         for i in range(1, len(states)):
             ps, pp = states[i - 1]
@@ -203,20 +204,22 @@ def render(per_design: dict[str, dict]) -> list[dict]:
         if n == 0:
             continue
         rho = spearman(d["synth_ratios"], d["pnr_ratios"])
-        rows.append({
-            "design": name,
-            "n": n,
-            "gm_synth_uplift_pct": (geomean(d["synth_ratios"]) - 1) * 100,
-            "gm_pnr_uplift_pct": (geomean(d["pnr_ratios"]) - 1) * 100,
-            "mean_synth_minus_pnr_pct": sum(d["delta_pcts"]) / n,
-            "spearman_synth_pnr": rho if rho is not None else float("nan"),
-            "n_both_gain": d["n_both_gain"],
-            "n_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"],
-            "n_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"],
-            "frac_both_gain": d["n_both_gain"] / n,
-            "frac_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"] / n,
-            "frac_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"] / n,
-        })
+        rows.append(
+            {
+                "design": name,
+                "n": n,
+                "gm_synth_uplift_pct": (geomean(d["synth_ratios"]) - 1) * 100,
+                "gm_pnr_uplift_pct": (geomean(d["pnr_ratios"]) - 1) * 100,
+                "mean_synth_minus_pnr_pct": sum(d["delta_pcts"]) / n,
+                "spearman_synth_pnr": rho if rho is not None else float("nan"),
+                "n_both_gain": d["n_both_gain"],
+                "n_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"],
+                "n_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"],
+                "frac_both_gain": d["n_both_gain"] / n,
+                "frac_synth_gain_pnr_within_noise": d["n_synth_gain_pnr_noise"] / n,
+                "frac_synth_gain_pnr_loss": d["n_synth_gain_pnr_loss"] / n,
+            }
+        )
     return rows
 
 
@@ -240,7 +243,11 @@ def print_table(rows: list[dict]) -> None:
         gp = r["gm_pnr_uplift_pct"]
         md = r["mean_synth_minus_pnr_pct"]
         rho = r["spearman_synth_pnr"]
-        b, w, ll = r["n_both_gain"], r["n_synth_gain_pnr_within_noise"], r["n_synth_gain_pnr_loss"]
+        b, w, ll = (
+            r["n_both_gain"],
+            r["n_synth_gain_pnr_within_noise"],
+            r["n_synth_gain_pnr_loss"],
+        )
         rho_s = f"{rho:+.3f}" if not math.isnan(rho) else "n/a"
         print(
             f"{r['design']:<16}  {n:>3}  "
