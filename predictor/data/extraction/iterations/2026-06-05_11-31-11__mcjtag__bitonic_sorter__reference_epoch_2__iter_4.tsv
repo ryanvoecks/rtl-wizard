@@ -1,0 +1,7 @@
+# start	end	slack_synth_ns	slack_route_ns
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	-0.529100	-0.495194
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	-0.529100	-0.495360
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	-0.152100	-0.221614
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	data_out[I]	0.144900	-0.180970
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	data_out[I]	0.144900	-0.181762
+data_in[I]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	0.189700	0.179090

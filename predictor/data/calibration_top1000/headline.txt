@@ -1,0 +1,13 @@
+Final β (median-of-medians on synth top-1000 functional, all 12 designs):
+  β[input_only] = +0.232 ns
+  β[output_only] = -0.327 ns
+  β[both] = -0.063 ns
+  β[internal] = -0.032 ns
+
+LOO mean RBO at p=0.9:
+  internal raw : 0.572
+  internal corr: 0.727
+  external raw : 0.572
+  external corr: 0.726
+
+External = corrected-synth top-100 (drawn from the 1000-path functional pool) vs the design's actual route top-100 logical_blocks.
