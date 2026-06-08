@@ -1,0 +1,13 @@
+design,synth_q,synth_n,synth_frac,route_q,route_n,route_frac
+aes,0,100,0.0,8,100,0.08
+bitonic_sorter,0,8,0.0,0,8,0.0
+double_fpu,0,100,0.0,0,100,0.0
+e203,99,100,0.99,0,100,0.0
+jpeg_encoder,0,100,0.0,0,100,0.0
+reed_solomon,0,100,0.0,0,100,0.0
+sha512,5,100,0.05,1,100,0.01
+systolic_tpu,0,88,0.0,0,88,0.0
+uberddr3,0,100,0.0,0,100,0.0
+verilog_axi,0,100,0.0,0,100,0.0
+viterbi,5,100,0.05,30,100,0.3
+wb_dma,15,100,0.15,0,100,0.0
