@@ -1,8 +1,8 @@
-Final β (median-of-medians on 145 iters, design-LOO):
-  β[input_only] = +0.231 ns
-  β[output_only] = -0.332 ns
-  β[both] = -0.069 ns
-  β[internal] = -0.032 ns
+Final beta (median-of-medians on 145 iters, design-LOO):
+  beta[input_only] = +0.231 ns
+  beta[output_only] = -0.332 ns
+  beta[both] = -0.069 ns
+  beta[internal] = -0.032 ns
 
 LOO mean RBO (design-level LOO over 12):
   p=0.6:  raw=0.491  corr=0.594  gain=+0.103

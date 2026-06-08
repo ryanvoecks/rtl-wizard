@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """Re-calibrate the predictor on the synth top-1000 functional dataset.
 
-Reuses the protocol from correction_calibration.py (median-of-medians β with
-β_internal free and β_both derived) but trains on the broader pool produced
+Reuses the protocol from correction_calibration.py (median-of-medians beta
+with beta_internal free and beta_both derived) but trains on the broader pool produced
 by predictor/extract_synth_top1000_func.py: 1000 synth top-functional
 logical blocks per design (skip_async applied at extraction time) with their
 PnR slack looked up via path_slack_lookup.tcl.
 
 For each design, two pools are used:
   - TRAINING pool (1000 paths from the new TSV):
-      per-design per-class median Δ, median-of-medians for β.
+      per-design per-class median delta, median-of-medians for beta.
   - EVALUATION:
       a. internal -- corrected-synth top-K (from the 1000) vs route top-K
          (same 1000 sorted by route slack). Same shape as the previous
@@ -201,7 +201,7 @@ def per_design_class_medians(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def median_of_medians(per_design: pd.DataFrame) -> dict[str, float]:
-    """Returns the global per-class β with β_both derived from additivity."""
+    """Returns the global per-class beta with beta_both derived from additivity."""
 
     def _mom(cls: str) -> float:
         sub = cast(
@@ -317,7 +317,7 @@ def per_design_summary(
     route_topk: dict[str, list[tuple[str, str]]],
     top_k: int,
 ) -> pd.DataFrame:
-    """Per-design 3-stage × 3-p table; "post_async" here equals "raw" because
+    """Per-design 3-stage x 3-p table; "post_async" here equals "raw" because
     the synth pool is functional-only by construction. We still list it for
     parity with the original summary."""
     rows = []
@@ -369,7 +369,7 @@ def main() -> None:
     for d, n in pool_sizes.items():
         print(f"  {d:<16}  {n}")
 
-    print("\nper-design × port_class counts (functional only by construction):")
+    print("\nper-design x port_class counts (functional only by construction):")
     pivot = cast(
         pd.DataFrame,
         df_all.groupby(["design", "port_class"]).size().unstack(fill_value=0),
@@ -379,7 +379,7 @@ def main() -> None:
     per_design = per_design_class_medians(df_all)
     per_design.to_csv(args.out_dir / "per_design_class_medians.csv", index=False)
 
-    print("\nper-design median Δ (ns):")
+    print("\nper-design median delta (ns):")
     show = per_design.pivot(
         index="design", columns="port_class", values="median_delta_ns"
     )
@@ -390,9 +390,9 @@ def main() -> None:
     pd.DataFrame(
         [{"port_class": c, "global_median_ns": v} for c, v in betas_all.items()]
     ).to_csv(args.out_dir / "global_beta.csv", index=False)
-    print("\nglobal β (median-of-medians, β_both derived):")
+    print("\nglobal beta (median-of-medians, beta_both derived):")
     for c, v in betas_all.items():
-        print(f"  β[{c}] = {v:+.3f} ns")
+        print(f"  beta[{c}] = {v:+.3f} ns")
 
     # Load route top-100 reference per design for external RBO
     route_topk = {
@@ -413,11 +413,11 @@ def main() -> None:
         f"  gain external             : {loo_df['gain_external'].mean():+.3f}"
     )
 
-    # Per-design summary at multiple p values (uses all-12 β, not LOO -- LOO
+    # Per-design summary at multiple p values (uses all-12 beta, not LOO -- LOO
     # adjustment is tiny per the spread check below)
     summary = per_design_summary(df_all, betas_all, route_topk, args.top_k)
     summary.to_csv(args.out_dir / "per_design_rbo_summary.csv", index=False)
-    print("\nper-design RBO summary (all-12 β, external = vs TRUE route top-100):")
+    print("\nper-design RBO summary (all-12 beta, external = vs TRUE route top-100):")
     sfmt = summary.copy()
     for c in sfmt.columns:
         if c not in ("design", "n_pool"):
@@ -427,10 +427,10 @@ def main() -> None:
     # Headline text
     lines = []
     lines.append(
-        f"Final β (median-of-medians on synth top-{1000} functional, all 12 designs):"
+        "Final beta (median-of-medians on synth top-1000 functional, all 12 designs):"
     )
     for c in PORT_CLASSES:
-        lines.append(f"  β[{c}] = {betas_all[c]:+.3f} ns")
+        lines.append(f"  beta[{c}] = {betas_all[c]:+.3f} ns")
     lines.append("")
     lines.append(f"LOO mean RBO at p={args.p}:")
     lines.append(f"  internal raw : {loo_df['rbo_internal_raw'].mean():.3f}")

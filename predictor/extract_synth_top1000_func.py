@@ -13,7 +13,7 @@ Runs against each design's baseline cache (`_dummy_baseline` ORFS run):
 
 The hypothesis (from the predictor README): 1000 functional synth blocks
 gives broader coverage of paths that actually become critical post-route,
-so calibrating Δ on this set should produce a more reliable β than the
+so calibrating delta on this set should produce a more reliable beta than the
 top-100 union and avoid the e203 degenerate corner.
 
 Inputs:

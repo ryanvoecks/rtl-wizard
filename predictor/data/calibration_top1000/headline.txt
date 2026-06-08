@@ -1,8 +1,8 @@
-Final β (median-of-medians on synth top-1000 functional, all 12 designs):
-  β[input_only] = +0.232 ns
-  β[output_only] = -0.327 ns
-  β[both] = -0.063 ns
-  β[internal] = -0.032 ns
+Final beta (median-of-medians on synth top-1000 functional, all 12 designs):
+  beta[input_only] = +0.232 ns
+  beta[output_only] = -0.327 ns
+  beta[both] = -0.063 ns
+  beta[internal] = -0.032 ns
 
 LOO mean RBO at p=0.9:
   internal raw : 0.572
