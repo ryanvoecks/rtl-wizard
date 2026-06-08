@@ -22,7 +22,8 @@ Outputs:
   - analysis/plots/path_slack_delta_async_filtered_shifted_vs_slack.png
 
 Usage:
-    uv run --with matplotlib python analysis/plot_path_slack_delta_async_filtered_shifted_vs_slack.py
+    uv run --with matplotlib python \\
+        analysis/plot_path_slack_delta_async_filtered_shifted_vs_slack.py
 """
 
 from __future__ import annotations
@@ -38,6 +39,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from matplotlib.lines import Line2D
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO))
@@ -50,7 +52,11 @@ DATA_DIR = REPO / "analysis" / "data" / "path_slack_union"
 RPT_DIR = REPO / "analysis" / "data" / "logical_blocks"
 CP_DIR = REPO / "analysis" / "data" / "critical_paths"
 OUT_PNG = (
-    REPO / "predictor" / "plots" / "output" / "path_slack_delta_async_filtered_shifted_vs_slack.png"
+    REPO
+    / "predictor"
+    / "plots"
+    / "output"
+    / "path_slack_delta_async_filtered_shifted_vs_slack.png"
 )
 TEXT_COLOR = "#222222"
 
@@ -303,9 +309,12 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
             if not xs:
                 continue
             ax.scatter(
-                xs, ys,
+                xs,
+                ys,
                 color=CAT_COLORS[cat],
-                s=14, alpha=0.8, linewidths=0.0,
+                s=14,
+                alpha=0.8,
+                linewidths=0.0,
             )
 
         ax.axhline(0, color="#888888", linewidth=0.6, zorder=1)
@@ -330,9 +339,14 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
         for r in rows:
             seen.add(r["category"])
     handles = [
-        plt.Line2D(
-            [], [], linestyle="", marker="o", markersize=8,
-            markerfacecolor=CAT_COLORS[c], markeredgecolor="none",
+        Line2D(
+            [],
+            [],
+            linestyle="",
+            marker="o",
+            markersize=8,
+            markerfacecolor=CAT_COLORS[c],
+            markeredgecolor="none",
             label=CAT_LABELS[c],
         )
         for c in CAT_ORDER
@@ -379,9 +393,7 @@ def main() -> None:
             else:
                 start_full, end_full = next(iter(stage_fulls.values()))
                 end_fulls = [v[1] for v in stage_fulls.values()]
-            category = _classify(
-                start_full, end_full, end_fulls, ports, async_starts
-            )
+            category = _classify(start_full, end_full, end_fulls, ports, async_starts)
             if category == CAT_NON_DATA:
                 continue
             shift = CAT_SHIFT_NS.get(category, 0.0)
@@ -401,7 +413,8 @@ def main() -> None:
             )
         if missing_full:
             print(
-                f"warn {name}: {missing_full}/{len(union)} pairs had no full-name match",
+                f"warn {name}: {missing_full}/{len(union)} pairs had no "
+                "full-name match",
                 file=sys.stderr,
             )
         designs.append((name, rows))

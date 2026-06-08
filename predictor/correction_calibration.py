@@ -60,6 +60,7 @@ import argparse
 import re
 import sys
 from pathlib import Path
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -93,8 +94,8 @@ PORT_CLASSES = (CAT_INPUT, CAT_OUTPUT, CAT_BOTH, CAT_INTERNAL)
 # Designs flagged for the Step 1 sanity gate. Both should have high synth
 # async quarantine and low PnR quarantine.
 SANITY_GATE_DESIGNS = ("e203", "wb_dma")
-SYNTH_GATE_MIN = 0.10   # fraction of synth top-100 that must be quarantined
-ROUTE_GATE_MAX = 0.20   # max fraction of route top-100 that may be quarantined
+SYNTH_GATE_MIN = 0.10  # fraction of synth top-100 that must be quarantined
+ROUTE_GATE_MAX = 0.20  # max fraction of route top-100 that may be quarantined
 
 # Bootstrap config
 N_BOOT = 2000
@@ -123,6 +124,7 @@ def _parse_yosys_ports(verilog: Path) -> dict[str, str]:
 def _load_ports(design_name: str) -> dict[str, str]:
     from common.config import ALL_FLOW_TARGETS, EDA_RUNS, RunConfig
     from eda_eval.cache import cache_path
+
     for target in all_targets:
         if target.design.name != design_name:
             continue
@@ -192,7 +194,9 @@ def _read_union(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _read_full_name_map(design: str) -> dict[tuple[str, str], dict[str, tuple[str, str]]]:
+def _read_full_name_map(
+    design: str,
+) -> dict[tuple[str, str], dict[str, tuple[str, str]]]:
     out: dict[tuple[str, str], dict[str, tuple[str, str]]] = {}
     for stage in ("1_synth", "6_final"):
         rpt = RPT_DIR / f"{design}__{stage}.rpt"
@@ -262,7 +266,9 @@ def load_all(designs: list[str]) -> pd.DataFrame:
         # only differs between bits of the same bus.
         records = []
         for _, row in union.iterrows():
-            key = (row["start"], row["end"])
+            start = str(row["start"])
+            end = str(row["end"])
+            key = (start, end)
             stage_fulls = full_map.get(key, {})
             if stage_fulls:
                 start_full, end_full = next(iter(stage_fulls.values()))
@@ -273,14 +279,16 @@ def load_all(designs: list[str]) -> pd.DataFrame:
             # Quarantine if ANY stage's representative endpoint is non-D.
             quarantined = any(_is_async_pin(ef) for ef in end_fulls)
             port_class = _port_class_for(start_full, end_full, ports)
+            slack_synth = float(row["slack_synth_ns"])  # type: ignore[arg-type]
+            slack_route = float(row["slack_route_ns"])  # type: ignore[arg-type]
             records.append(
                 {
                     "design": design,
-                    "start": row["start"],
-                    "end": row["end"],
-                    "slack_synth_ns": row["slack_synth_ns"],
-                    "slack_route_ns": row["slack_route_ns"],
-                    "delta_ns": row["slack_route_ns"] - row["slack_synth_ns"],
+                    "start": start,
+                    "end": end,
+                    "slack_synth_ns": slack_synth,
+                    "slack_route_ns": slack_route,
+                    "delta_ns": slack_route - slack_synth,
                     "end_pin": _endpoint_pin(end_full),
                     "port_class": port_class,
                     "quarantined": quarantined,
@@ -318,7 +326,7 @@ def sanity_gate(q: pd.DataFrame) -> tuple[bool, list[str]]:
     msgs = []
     ok = True
     for d in SANITY_GATE_DESIGNS:
-        row = q[q["design"] == d]
+        row = cast(pd.DataFrame, q[q["design"] == d])
         if row.empty:
             msgs.append(f"{d}: missing")
             ok = False
@@ -369,7 +377,9 @@ def step3_per_design_class(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
     for design in sorted(df["design"].unique()):
         for cls in PORT_CLASSES:
-            sub = df[(df["design"] == design) & (df["port_class"] == cls)]
+            sub = cast(
+                pd.DataFrame, df[(df["design"] == design) & (df["port_class"] == cls)]
+            )
             arr = sub["delta_ns"].to_numpy()
             med, lo, hi = _median_ci(arr, N_BOOT, rng)
             rows.append(
@@ -391,13 +401,21 @@ def step3_global_beta(per_design: pd.DataFrame) -> pd.DataFrame:
     rng = np.random.default_rng(RNG_SEED + 1)
     rows = []
     for cls in PORT_CLASSES:
-        sub = per_design[per_design["port_class"] == cls].dropna(subset=["median_delta_ns"])
+        sub = cast(pd.DataFrame, per_design[per_design["port_class"] == cls]).dropna(
+            subset=["median_delta_ns"]
+        )
         # Exclude design-classes with zero observations.
-        sub = sub[sub["n"] > 0]
+        sub = cast(pd.DataFrame, sub[sub["n"] > 0])
         if sub.empty:
-            rows.append({"port_class": cls, "n_designs": 0,
-                         "global_median_ns": float("nan"),
-                         "ci_lo_ns": float("nan"), "ci_hi_ns": float("nan")})
+            rows.append(
+                {
+                    "port_class": cls,
+                    "n_designs": 0,
+                    "global_median_ns": float("nan"),
+                    "ci_lo_ns": float("nan"),
+                    "ci_hi_ns": float("nan"),
+                }
+            )
             continue
         medians = sub["median_delta_ns"].to_numpy()
         n = medians.size
@@ -426,7 +444,7 @@ def step4_mixed_effects(df: pd.DataFrame) -> dict:
 
     Also fit on normalized response Δ / clock_period.
     """
-    import statsmodels.formula.api as smf
+    import statsmodels.formula.api as smf  # type: ignore[import-untyped,import-not-found]
 
     out = {}
     for response, label in (("delta_ns", "raw"), ("delta_norm", "normalized")):
@@ -436,7 +454,8 @@ def step4_mixed_effects(df: pd.DataFrame) -> dict:
         # Reference category = internal so the coefficients read as
         # "offset relative to internal".
         data["port_class"] = pd.Categorical(
-            data["port_class"], categories=[CAT_INTERNAL, CAT_INPUT, CAT_OUTPUT, CAT_BOTH]
+            data["port_class"],
+            categories=[CAT_INTERNAL, CAT_INPUT, CAT_OUTPUT, CAT_BOTH],
         )
         try:
             model = smf.mixedlm(
@@ -485,16 +504,14 @@ def rbo_ext(s: list, t: list, p: float) -> float:
         weighted_sum += agreement * (p ** (d - 1))
     x_l = x_d
     base = (1 - p) * weighted_sum
-    residual = ((x_l - x_s) / n_t + x_s / n_s) * (p ** n_t)
+    residual = ((x_l - x_s) / n_t + x_s / n_s) * (p**n_t)
     return base + residual
 
 
-def _apply_correction(
-    df_d: pd.DataFrame, betas: dict[str, float]
-) -> pd.DataFrame:
+def _apply_correction(df_d: pd.DataFrame, betas: dict[str, float]) -> pd.DataFrame:
     """Add `slack_synth_corr_ns` = slack_synth_ns + β[port_class]."""
     df_d = df_d.copy()
-    df_d["beta_ns"] = df_d["port_class"].map(betas).fillna(0.0)
+    df_d["beta_ns"] = df_d["port_class"].map(betas).fillna(0.0)  # type: ignore[arg-type]
     df_d["slack_synth_corr_ns"] = df_d["slack_synth_ns"] + df_d["beta_ns"]
     return df_d
 
@@ -517,7 +534,9 @@ def _design_rbo(
     rankings see the right subsets.
     """
     # Synth side: optionally drop async, then apply correction, then rank.
-    synth_pool = df_d_all[~df_d_all["quarantined"]] if filter_synth else df_d_all
+    synth_pool = cast(
+        pd.DataFrame, df_d_all[~df_d_all["quarantined"]] if filter_synth else df_d_all
+    )
     synth_pool = _apply_correction(synth_pool, betas)
     synth_sorted = synth_pool.sort_values("slack_synth_corr_ns")
     # Route side: no filter. Whatever route's top-K is, even if it includes
@@ -548,8 +567,8 @@ def step5_loo_median_of_medians(
     designs = sorted(df_all["design"].unique())
     zero = {c: 0.0 for c in PORT_CLASSES}
     for held in designs:
-        train = per_design[per_design["design"] != held]
-        train = train[train["n"] > 0]
+        train = cast(pd.DataFrame, per_design[per_design["design"] != held])
+        train = cast(pd.DataFrame, train[train["n"] > 0])
 
         # Parametrization: β_input, β_output, β_internal are each estimated as
         # the median of per-design medians on the training fold. β_both is
@@ -559,9 +578,13 @@ def step5_loo_median_of_medians(
         # additively relative to the internal baseline. With one free parameter
         # fewer this is more stable when "both" is sparse (only 5 designs have
         # any paths in that class).
-        def _mom(cls: str) -> float:
-            sub = train[train["port_class"] == cls]
-            return float(np.median(sub["median_delta_ns"].to_numpy())) if not sub.empty else 0.0
+        def _mom(cls: str, train: pd.DataFrame = train) -> float:
+            sub = cast(pd.DataFrame, train[train["port_class"] == cls])
+            return (
+                float(np.median(sub["median_delta_ns"].to_numpy()))
+                if not sub.empty
+                else 0.0
+            )
 
         beta_in = _mom(CAT_INPUT)
         beta_out = _mom(CAT_OUTPUT)
@@ -574,7 +597,7 @@ def step5_loo_median_of_medians(
             CAT_BOTH: beta_both,
         }
 
-        df_h = df_all[df_all["design"] == held]
+        df_h = cast(pd.DataFrame, df_all[df_all["design"] == held])
         rbo_raw = _design_rbo(df_h, zero, top_k, p, filter_synth=False)
         rbo_filt = _design_rbo(df_h, zero, top_k, p, filter_synth=True)
         rbo_corr = _design_rbo(df_h, betas, top_k, p, filter_synth=True)
@@ -600,8 +623,11 @@ def step5_loo_median_of_medians(
 
 
 def _mean_rbo_over_designs(
-    df_all: pd.DataFrame, designs: list[str], betas: dict[str, float],
-    top_k: int, p: float,
+    df_all: pd.DataFrame,
+    designs: list[str],
+    betas: dict[str, float],
+    top_k: int,
+    p: float,
 ) -> float:
     """Mean per-design RBO with synth-side filter on, route-side filter off.
 
@@ -609,16 +635,14 @@ def _mean_rbo_over_designs(
     """
     vals = []
     for d in designs:
-        df_d = df_all[df_all["design"] == d]
+        df_d = cast(pd.DataFrame, df_all[df_all["design"] == d])
         if df_d.empty:
             continue
         vals.append(_design_rbo(df_d, betas, top_k, p, filter_synth=True))
     return float(np.mean(vals)) if vals else 0.0
 
 
-def step6_loo_max_rbo_sweep(
-    df_all: pd.DataFrame, top_k: int, p: float
-) -> pd.DataFrame:
+def step6_loo_max_rbo_sweep(df_all: pd.DataFrame, top_k: int, p: float) -> pd.DataFrame:
     """For each held-out design d, sweep (β_input, β_output) over a 2-D grid;
     for each grid point compute the MEAN RBO across the other 11 designs;
     pick the argmax; apply frozen to d. β_both = β_input + β_output as a
@@ -648,7 +672,7 @@ def step6_loo_max_rbo_sweep(
             CAT_BOTH: b_in + b_out,
             CAT_INTERNAL: 0.0,
         }
-        df_h = df_all[df_all["design"] == held]
+        df_h = cast(pd.DataFrame, df_all[df_all["design"] == held])
         rbo_raw = _design_rbo(df_h, zero, top_k, p, filter_synth=False)
         rbo_filt = _design_rbo(df_h, zero, top_k, p, filter_synth=True)
         rbo_corr = _design_rbo(df_h, betas, top_k, p, filter_synth=True)
@@ -675,9 +699,7 @@ def _fmt_df(df: pd.DataFrame, floatfmt: str = "{:+.3f}") -> str:
     out = df.copy()
     for c in out.columns:
         if out[c].dtype.kind == "f":
-            out[c] = out[c].map(
-                lambda v: "" if pd.isna(v) else floatfmt.format(v)
-            )
+            out[c] = out[c].map(lambda v: "" if pd.isna(v) else floatfmt.format(v))
     return out.to_string(index=False)
 
 
@@ -706,8 +728,10 @@ def main() -> None:
     print(f"\n  loading all designs ({len(designs)} TSVs)...")
     df_all = load_all(designs)
     print(f"  total pairs: {len(df_all)}")
-    print(f"  end_pin distribution among /-bearing endpoints:")
-    pin_counts = df_all[df_all["end_pin"] != ""]["end_pin"].value_counts()
+    print("  end_pin distribution among /-bearing endpoints:")
+    pin_counts = cast(pd.DataFrame, df_all[df_all["end_pin"] != ""])[
+        "end_pin"
+    ].value_counts()
     for pin, n in pin_counts.items():
         print(f"    {pin:>4}: {n}")
 
@@ -731,19 +755,17 @@ def main() -> None:
         # Per protocol, stop rather than silently produce a number.
         sys.exit(1)
 
-    df_func = df_all[~df_all["quarantined"]].copy()
+    df_func = cast(pd.DataFrame, df_all[~df_all["quarantined"]]).copy()
     print(f"\n  retained {len(df_func)} / {len(df_all)} functional pairs")
 
     # --- Step 2 already done in load_all (delta, port_class) ---
     print("\n" + "=" * 78)
     print("STEP 2  Δ and port_class counts (functional pairs only)")
     print("=" * 78)
-    pivot = (
-        df_func.groupby(["design", "port_class"])
-        .size()
-        .unstack(fill_value=0)
-        .reindex(columns=PORT_CLASSES, fill_value=0)
-    )
+    pivot = cast(
+        pd.DataFrame,
+        df_func.groupby(["design", "port_class"]).size().unstack(fill_value=0),
+    ).reindex(columns=PORT_CLASSES, fill_value=0)
     print(pivot.to_string())
 
     # --- Step 3 ---
@@ -787,22 +809,27 @@ def main() -> None:
         me_lines.append(
             f"  slope (slack_synth_ns) coef={slope:+.3f}  p={slope_p:.3g}\n"
         )
-        me_lines.append(
-            f"  GATE A (slope significant at p<0.05?): "
-            f"{'YES -> emit slope term' if slope_p < 0.05 else 'NO -> constant offset only'}\n"
+        slope_gate = (
+            "YES -> emit slope term" if slope_p < 0.05 else "NO -> constant offset only"
         )
+        me_lines.append(f"  GATE A (slope significant at p<0.05?): {slope_gate}\n")
         # Compare design var vs fixed offset magnitude
-        fixed_mag = max(
-            abs(v) for k, v in params.items() if "port_class" in k
-        ) if any("port_class" in k for k in params) else 0.0
+        fixed_mag = (
+            max(abs(v) for k, v in params.items() if "port_class" in k)
+            if any("port_class" in k for k in params)
+            else 0.0
+        )
         design_sd = info["design_var"] ** 0.5
         me_lines.append(
-            f"  design SD = {design_sd:.3f}  vs largest fixed offset = {fixed_mag:.3f}\n"
+            f"  design SD = {design_sd:.3f}  "
+            f"vs largest fixed offset = {fixed_mag:.3f}\n"
         )
-        me_lines.append(
-            f"  GATE B (design SD > fixed offset?): "
-            f"{'YES -> per-design calibration required' if design_sd > fixed_mag else 'NO -> global constant defensible'}\n"
+        design_gate = (
+            "YES -> per-design calibration required"
+            if design_sd > fixed_mag
+            else "NO -> global constant defensible"
         )
+        me_lines.append(f"  GATE B (design SD > fixed offset?): {design_gate}\n")
     me_text = "\n".join(me_lines)
     print(me_text)
     (args.out_dir / "mixed_effects.txt").write_text(me_text)
@@ -814,45 +841,70 @@ def main() -> None:
     loo_med = step5_loo_median_of_medians(df_all, per_design, args.top_k, args.p)
     loo_med.to_csv(args.out_dir / "loo_median_of_medians.csv", index=False)
     print(_fmt_df(loo_med, floatfmt="{:+.3f}"))
+    m_raw = loo_med["rbo_raw"].mean()
+    m_filt = loo_med["rbo_filter_only"].mean()
+    m_corr = loo_med["rbo_corrected"].mean()
+    m_gf = loo_med["gain_filter_over_raw"].mean()
+    m_gcf = loo_med["gain_corr_over_filter"].mean()
+    m_gcr = loo_med["gain_corr_over_raw"].mean()
     print(
-        f"\n  mean LOO RBO (raw, no filter no shift)     : {loo_med['rbo_raw'].mean():.3f}\n"
-        f"  mean LOO RBO (synth-side async filter only): {loo_med['rbo_filter_only'].mean():.3f}\n"
-        f"  mean LOO RBO (filter + correction)         : {loo_med['rbo_corrected'].mean():.3f}\n"
-        f"  mean gain  filter over raw                 : {loo_med['gain_filter_over_raw'].mean():+.3f}\n"
-        f"  mean gain  corr over filter                : {loo_med['gain_corr_over_filter'].mean():+.3f}\n"
-        f"  mean gain  corr over raw                   : {loo_med['gain_corr_over_raw'].mean():+.3f}"
+        f"\n  mean LOO RBO (raw, no filter no shift)     : {m_raw:.3f}\n"
+        f"  mean LOO RBO (synth-side async filter only): {m_filt:.3f}\n"
+        f"  mean LOO RBO (filter + correction)         : {m_corr:.3f}\n"
+        f"  mean gain  filter over raw                 : {m_gf:+.3f}\n"
+        f"  mean gain  corr over filter                : {m_gcf:+.3f}\n"
+        f"  mean gain  corr over raw                   : {m_gcr:+.3f}"
     )
     print("\n  refit β spread across 12 folds:")
-    for c in ("beta_input_ns", "beta_output_ns", "beta_internal_ns", "beta_both_derived_ns"):
+    for c in (
+        "beta_input_ns",
+        "beta_output_ns",
+        "beta_internal_ns",
+        "beta_both_derived_ns",
+    ):
         arr = loo_med[c].to_numpy()
-        std_rel = (arr.std() / abs(arr.mean())) if abs(arr.mean()) > 1e-6 else float("inf")
+        std_rel = (
+            (arr.std() / abs(arr.mean())) if abs(arr.mean()) > 1e-6 else float("inf")
+        )
         print(
             f"    {c:<20}  min={arr.min():+.3f}  max={arr.max():+.3f}  "
             f"std={arr.std():.3f}  std/|mean|={std_rel:.2f}"
         )
-        gate = "stable" if std_rel < 0.20 else "WIDE -- constant may be selection artifact"
+        gate = (
+            "stable" if std_rel < 0.20 else "WIDE -- constant may be selection artifact"
+        )
         print(f"      GATE: {gate}")
 
     # --- Step 6 ---
     print("\n" + "=" * 78)
     print("STEP 6  LOO validation -- max-RBO sweep (cross-validated)")
     print("=" * 78)
-    print("  (this can take a minute; 12 folds * grid of "
-          f"{len(SWEEP_RANGE)}**2 = {len(SWEEP_RANGE)**2} points * 11 train designs each)")
+    n_grid = len(SWEEP_RANGE)
+    print(
+        "  (this can take a minute; 12 folds * grid of "
+        f"{n_grid}**2 = {n_grid**2} points * 11 train designs each)"
+    )
     loo_swp = step6_loo_max_rbo_sweep(df_all, args.top_k, args.p)
     loo_swp.to_csv(args.out_dir / "loo_max_rbo_sweep.csv", index=False)
     print(_fmt_df(loo_swp, floatfmt="{:+.3f}"))
+    s_raw = loo_swp["rbo_raw"].mean()
+    s_filt = loo_swp["rbo_filter_only"].mean()
+    s_corr = loo_swp["rbo_corrected"].mean()
+    s_gcf = loo_swp["gain_corr_over_filter"].mean()
+    s_gcr = loo_swp["gain_corr_over_raw"].mean()
     print(
-        f"\n  mean LOO RBO (raw)                : {loo_swp['rbo_raw'].mean():.3f}\n"
-        f"  mean LOO RBO (filter only)        : {loo_swp['rbo_filter_only'].mean():.3f}\n"
-        f"  mean LOO RBO (filter + sweep β)   : {loo_swp['rbo_corrected'].mean():.3f}\n"
-        f"  mean gain corr over filter        : {loo_swp['gain_corr_over_filter'].mean():+.3f}\n"
-        f"  mean gain corr over raw           : {loo_swp['gain_corr_over_raw'].mean():+.3f}"
+        f"\n  mean LOO RBO (raw)                : {s_raw:.3f}\n"
+        f"  mean LOO RBO (filter only)        : {s_filt:.3f}\n"
+        f"  mean LOO RBO (filter + sweep β)   : {s_corr:.3f}\n"
+        f"  mean gain corr over filter        : {s_gcf:+.3f}\n"
+        f"  mean gain corr over raw           : {s_gcr:+.3f}"
     )
     print("\n  chosen β spread across 12 folds:")
     for c in ("beta_input_ns", "beta_output_ns"):
         arr = loo_swp[c].to_numpy()
-        std_rel = (arr.std() / abs(arr.mean())) if abs(arr.mean()) > 1e-6 else float("inf")
+        std_rel = (
+            (arr.std() / abs(arr.mean())) if abs(arr.mean()) > 1e-6 else float("inf")
+        )
         print(
             f"    {c:<20}  min={arr.min():+.3f}  max={arr.max():+.3f}  "
             f"std={arr.std():.3f}  std/|mean|={std_rel:.2f}"
@@ -862,11 +914,19 @@ def main() -> None:
     print("\n" + "=" * 78)
     print("STEP 7  Final β (all 12) and headline")
     print("=" * 78)
+
     # Median of per-design medians over all 12, with β_both constrained by
     # additivity: β_both = β_input + β_output - β_internal.
     def _mom_all(cls: str) -> float:
-        sub = per_design[(per_design["port_class"] == cls) & (per_design["n"] > 0)]
-        return float(np.median(sub["median_delta_ns"].to_numpy())) if not sub.empty else 0.0
+        sub = cast(
+            pd.DataFrame,
+            per_design[(per_design["port_class"] == cls) & (per_design["n"] > 0)],
+        )
+        return (
+            float(np.median(sub["median_delta_ns"].to_numpy()))
+            if not sub.empty
+            else 0.0
+        )
 
     final_betas_mom = {
         CAT_INPUT: _mom_all(CAT_INPUT),
@@ -884,8 +944,10 @@ def main() -> None:
     for b_in in SWEEP_RANGE:
         for b_out in SWEEP_RANGE:
             betas = {
-                CAT_INPUT: float(b_in), CAT_OUTPUT: float(b_out),
-                CAT_BOTH: float(b_in + b_out), CAT_INTERNAL: 0.0,
+                CAT_INPUT: float(b_in),
+                CAT_OUTPUT: float(b_out),
+                CAT_BOTH: float(b_in + b_out),
+                CAT_INTERNAL: 0.0,
             }
             m = _mean_rbo_over_designs(df_all, designs, betas, args.top_k, args.p)
             if m > best_in_sample[0]:
@@ -928,7 +990,9 @@ def main() -> None:
         # mean of LOO-fold sweep β
         b_in_str = f"{loo_swp['beta_input_ns'].mean():+.3f}"
         b_out_str = f"{loo_swp['beta_output_ns'].mean():+.3f}"
-        b_both_str = f"{(loo_swp['beta_input_ns'] + loo_swp['beta_output_ns']).mean():+.3f}"
+        b_both_str = (
+            f"{(loo_swp['beta_input_ns'] + loo_swp['beta_output_ns']).mean():+.3f}"
+        )
     if ship == "median-of-medians":
         b_int_str = f"{final_betas_mom[CAT_INTERNAL]:+.3f}"
     else:
@@ -952,7 +1016,9 @@ def main() -> None:
     text = "\n".join(headline_text)
     print(text)
     (args.out_dir / "headline.txt").write_text(text + "\n")
-    out_dir_abs = args.out_dir if args.out_dir.is_absolute() else (Path.cwd() / args.out_dir)
+    out_dir_abs = (
+        args.out_dir if args.out_dir.is_absolute() else (Path.cwd() / args.out_dir)
+    )
     try:
         out_label = out_dir_abs.relative_to(REPO)
     except ValueError:

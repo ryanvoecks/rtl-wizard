@@ -54,9 +54,17 @@ REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 from predictor.correction_calibration import (  # noqa: E402
-    CAT_BOTH, CAT_INPUT, CAT_INTERNAL, CAT_OUTPUT, UNION_DIR,
-    _bus_stem_collapsed, _endpoint_pin, _is_async_pin, _load_ports,
-    _port_class_for, _read_full_name_map, _read_union,
+    CAT_BOTH,
+    CAT_INPUT,
+    CAT_INTERNAL,
+    CAT_OUTPUT,
+    UNION_DIR,
+    _endpoint_pin,
+    _is_async_pin,
+    _load_ports,
+    _port_class_for,
+    _read_full_name_map,
+    _read_union,
 )
 
 OUT_DIR = REPO / "predictor" / "data" / "dumps_v2"
@@ -82,7 +90,9 @@ def _process(design: str, out_dir: Path) -> Path | None:
 
     rows = []
     for _, u in union.iterrows():
-        key = (u["start"], u["end"])
+        start = str(u["start"])
+        end = str(u["end"])
+        key = (start, end)
         stage_fulls = full_map.get(key, {})
         if stage_fulls:
             sf, ef = next(iter(stage_fulls.values()))
@@ -93,11 +103,13 @@ def _process(design: str, out_dir: Path) -> Path | None:
         is_async = any(_is_async_pin(e) for e in end_fulls)
         port_cat = _port_class_for(sf, ef, ports)
         beta = BETAS.get(port_cat, 0.0)
+        slack_synth = float(u["slack_synth_ns"])  # type: ignore[arg-type]
+        slack_route = float(u["slack_route_ns"])  # type: ignore[arg-type]
         rows.append(
             {
                 "key": key,
-                "slack_synth_ns": float(u["slack_synth_ns"]),
-                "slack_route_ns": float(u["slack_route_ns"]),
+                "slack_synth_ns": slack_synth,
+                "slack_route_ns": slack_route,
                 "start_full": sf,
                 "end_full": ef,
                 "end_pin": _endpoint_pin(ef),
@@ -105,9 +117,7 @@ def _process(design: str, out_dir: Path) -> Path | None:
                 "async_endpoint": "Y" if is_async else "N",
                 "kept": "N" if is_async else "Y",
                 "beta_ns": 0.0 if is_async else beta,
-                "slack_synth_corr_ns": (
-                    None if is_async else float(u["slack_synth_ns"]) + beta
-                ),
+                "slack_synth_corr_ns": (None if is_async else slack_synth + beta),
             }
         )
 
@@ -130,11 +140,23 @@ def _process(design: str, out_dir: Path) -> Path | None:
 
     out = out_dir / f"{design}.tsv"
     cols = [
-        "rank_synth_corr", "rank_route", "rank_delta",
-        "slack_synth_ns", "beta_ns", "slack_synth_corr_ns", "slack_route_ns",
-        "port_cat", "end_pin", "async_endpoint", "kept",
-        "in_synth_topk", "in_route_topk",
-        "start", "end", "start_full", "end_full",
+        "rank_synth_corr",
+        "rank_route",
+        "rank_delta",
+        "slack_synth_ns",
+        "beta_ns",
+        "slack_synth_corr_ns",
+        "slack_route_ns",
+        "port_cat",
+        "end_pin",
+        "async_endpoint",
+        "kept",
+        "in_synth_topk",
+        "in_route_topk",
+        "start",
+        "end",
+        "start_full",
+        "end_full",
     ]
 
     def _fmt(v) -> str:
