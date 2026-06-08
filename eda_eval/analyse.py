@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-"""Dump the top-N worst logical paths (n-bit reg/IO bus to bus) for a phase dir.
+"""Dump the top-N worst logical paths or blocks for a phase dir.
 
 Thin wrapper around tcl/worst_logical_paths.tcl: it loads a stage database into
 openroad and lets the TCL pick the right interconnect parasitics for that stage
 (the .odb persists none) and do the dedup, so the report has one entry per
-(source-bus, dest-bus) pair, ranked worst-slack first.
+(source, dest) pair, ranked worst-slack first.
+
+`--kind paths`  collapses only bus indices "[N]"; one row per n-bit-bus to
+                n-bit-bus pair.
+`--kind blocks` collapses every numeric run in the instance name as well, so
+                replicated submodules (e.g. `dct_block_0..7`) map to one entry.
 """
 
 from __future__ import annotations
@@ -23,6 +28,9 @@ from eda_eval.extract_metrics import find_unique
 
 # Default config
 TOP_N = 25
+KIND_PATHS = "paths"
+KIND_BLOCKS = "blocks"
+KINDS = (KIND_PATHS, KIND_BLOCKS)
 
 # ORFS flow target -> the db stage it produces, in dependency order.
 STAGE_DBS = {
@@ -81,21 +89,31 @@ def run_openroad(
     stage: str,
     top_module: str,
     out_path: Path,
+    kind: str = KIND_PATHS,
+    include_full: bool = False,
 ) -> None:
-    """Drive openroad to dump the worst logical-path report to out_path.
+    """Drive openroad to dump the worst-logical-{paths,blocks} report.
 
-    `spef` (the stage .spef, if any) and `set_rc` (the platform wire-RC config)
-    are handed to the TCL, which selects the parasitics model for the stage.
+    `include_full=True` emits the 6-column schema (adds start_full / end_full);
+    default is the 4-column schema.
     """
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind {kind!r}, expected one of {KINDS}")
     lines = [f"read_liberty {lib}" for lib in libs]
     lines += [f"read_db {odb}", f"read_sdc {sdc}", f"source {WLP_TCL}"]
-    # The TCL exposes find_worst_logical_paths as a proc; pass its inputs as
-    # arguments rather than smuggling them through the environment.
     spef_arg = _tcl_braces(str(spef)) if spef is not None else "{}"
+    tcl_proc = (
+        "find_worst_logical_blocks"
+        if kind == KIND_BLOCKS
+        else "find_worst_logical_paths"
+    )
+    # Trailing positional args are skip_async, include_full. The synth-time
+    # async quarantine (skip_async=1) is only used by predictor/, not here.
     lines.append(
-        "find_worst_logical_paths "
+        f"{tcl_proc} "
         f"{_tcl_braces(str(out_path))} {top_n} {_tcl_braces(stage)} "
-        f"{spef_arg} {_tcl_braces(str(set_rc))} {_tcl_braces(top_module)}"
+        f"{spef_arg} {_tcl_braces(str(set_rc))} {_tcl_braces(top_module)} "
+        f"0 {1 if include_full else 0}"
     )
     proc = subprocess.run(
         ["openroad", "-no_init", "-exit"],
@@ -108,24 +126,38 @@ def run_openroad(
         raise RuntimeError("openroad logical-path extraction failed")
 
 
+_REPORT_COLS_4 = ["rank", "worst_slack_ns", "start", "end"]
+_REPORT_COLS_6 = _REPORT_COLS_4 + ["start_full", "end_full"]
+
+
 def _read_report(path: Path) -> pd.DataFrame:
-    """Parse the TCL-written report (tab-separated, `#`-prefixed headers) into a
-    DataFrame with columns rank / worst_slack_ns / start / end."""
-    return pd.read_csv(
-        path,
-        sep="\t",
-        comment="#",
-        header=None,
-        names=["rank", "worst_slack_ns", "start", "end"],
-    )
+    """Parse the TCL-written rpt. Schema (4 or 6 cols) is sniffed from the
+    first data row so the same reader handles both."""
+    n_cols = 4
+    for raw in path.read_text().splitlines():
+        if not raw or raw.startswith("#"):
+            continue
+        n_cols = 6 if len(raw.split("\t")) >= 6 else 4
+        break
+    names = _REPORT_COLS_6 if n_cols == 6 else _REPORT_COLS_4
+    return pd.read_csv(path, sep="\t", comment="#", header=None, names=names)
 
 
 def analyse(
-    run: RunConfig, *, top_n: int = TOP_N, stage: str | None = None
+    run: RunConfig,
+    *,
+    top_n: int = TOP_N,
+    stage: str | None = None,
+    kind: str = KIND_PATHS,
+    include_full: bool = False,
 ) -> pd.DataFrame:
-    """Run STA on the phase dir, write the worst-logical-paths report, and
-    return it as a DataFrame. `stage` (a db name in STAGE_DBS) overrides the
-    stage; when None it is the latest stage produced by RunConfig.flow_targets."""
+    """Run STA on the phase dir and return the worst-logical-{paths,blocks} rpt.
+
+    `stage` overrides the latest produced stage; `kind` picks bus-index dedup
+    ("paths") vs full numeric dedup ("blocks"); `include_full` opts into the
+    6-column rpt format (default is the 4-column schema)."""
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind {kind!r}, expected one of {KINDS}")
     design = run.synth_target.design
     top_module = design.top_module
     platform = run.synth_target.cfg.platform
@@ -143,10 +175,13 @@ def analyse(
     reports_dir = phase_dir / "reports" / platform / top_module / "base"
     reports_dir.mkdir(parents=True, exist_ok=True)
 
-    out_path = reports_dir / f"worst_logical_paths.{stage}.rpt"
+    out_path = reports_dir / f"worst_logical_{kind}.{stage}.rpt"
     # Generate thread-safe partial files for concurrent writes
     staging = out_path.with_name(f"{out_path.name}.{secrets.token_hex(8)}.partial")
-    run_openroad(odb, sdc, spef, set_rc, libs, top_n, stage, top_module, staging)
+    run_openroad(
+        odb, sdc, spef, set_rc, libs, top_n, stage, top_module, staging,
+        kind, include_full,
+    )
     staging.replace(out_path)
     return _read_report(out_path)
 
@@ -161,11 +196,25 @@ def main() -> None:
         default=None,
         help="database stage to analyse; defaults to latest",
     )
+    parser.add_argument(
+        "--kind",
+        choices=list(KINDS),
+        default=KIND_PATHS,
+        help="logical-path dedup level (default: paths)",
+    )
+    parser.add_argument(
+        "--include-full",
+        action="store_true",
+        help="add start_full / end_full columns (6-col rpt instead of 4-col)",
+    )
     args = parser.parse_args()
 
     phase_dir = args.phase_dir.resolve()
     run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
-    df = analyse(run, top_n=args.top_n, stage=args.stage)
+    df = analyse(
+        run, top_n=args.top_n, stage=args.stage, kind=args.kind,
+        include_full=args.include_full,
+    )
     # Long hierarchical names would otherwise be truncated to 50 chars.
     with pd.option_context(
         "display.max_rows", None, "display.max_colwidth", None, "display.width", None
