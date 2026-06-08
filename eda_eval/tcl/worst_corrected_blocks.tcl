@@ -157,9 +157,9 @@ proc find_top_corrected_blocks {out_path top_n stage spef set_rc top_module
         puts $fh "# skip_async\t$skip_async"
         puts $fh "# iterations\t$iterations"
         puts $fh "# n_pulled\t$n_pulled"
-        puts $fh "# rank\tcorr_slack_ns\tsynth_slack_ns\tport_class\tstart\tend"
+        puts $fh "# rank\tworst_slack_ns\tsynth_slack_ns\tport_class\tstart\tend"
     } else {
-        puts $fh "# rank\tcorr_slack_ns\tstart\tend"
+        puts $fh "# rank\tworst_slack_ns\tstart\tend"
     }
     set rank 0
     foreach entry $top_list {

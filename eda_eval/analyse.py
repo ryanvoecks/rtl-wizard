@@ -156,9 +156,9 @@ def run_openroad(
 
 _REPORT_COLS_4 = ["rank", "worst_slack_ns", "start", "end"]
 _REPORT_COLS_6 = _REPORT_COLS_4 + ["start_full", "end_full"]
-_REPORT_COLS_CORRECTED_MIN = ["rank", "corr_slack_ns", "start", "end"]
+_REPORT_COLS_CORRECTED_MIN = _REPORT_COLS_4
 _REPORT_COLS_CORRECTED_DEBUG = [
-    "rank", "corr_slack_ns", "synth_slack_ns", "port_class", "start", "end",
+    "rank", "worst_slack_ns", "synth_slack_ns", "port_class", "start", "end",
 ]
 
 
