@@ -158,7 +158,12 @@ _REPORT_COLS_4 = ["rank", "worst_slack_ns", "start", "end"]
 _REPORT_COLS_6 = _REPORT_COLS_4 + ["start_full", "end_full"]
 _REPORT_COLS_CORRECTED_MIN = _REPORT_COLS_4
 _REPORT_COLS_CORRECTED_DEBUG = [
-    "rank", "worst_slack_ns", "synth_slack_ns", "port_class", "start", "end",
+    "rank",
+    "worst_slack_ns",
+    "synth_slack_ns",
+    "port_class",
+    "start",
+    "end",
 ]
 
 
@@ -169,7 +174,8 @@ def _read_report(
     from the first data row; the corrected schemas are opted into explicitly."""
     if apply_correction:
         names = (
-            _REPORT_COLS_CORRECTED_DEBUG if include_debug
+            _REPORT_COLS_CORRECTED_DEBUG
+            if include_debug
             else _REPORT_COLS_CORRECTED_MIN
         )
         return pd.read_csv(path, sep="\t", comment="#", header=None, names=names)
