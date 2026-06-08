@@ -81,13 +81,31 @@ CAT_COLORS = {
     CAT_NON_DATA: "#f1c40f",
 }
 CAT_LABELS = {
-    CAT_INPUT: "input at start",
-    CAT_OUTPUT: "output at end",
-    CAT_BOTH: "input AND output",
+    CAT_INPUT: "input",
+    CAT_OUTPUT: "output",
+    CAT_BOTH: "both",
     CAT_NEITHER: "internal",
-    CAT_NON_DATA: "async endpoint or shared driver",
+    CAT_NON_DATA: "async",
 }
+# Draw order: grey first so coloured points overlay it.
 CAT_ORDER = (CAT_NEITHER, CAT_INPUT, CAT_OUTPUT, CAT_BOTH, CAT_NON_DATA)
+LEGEND_ORDER = (CAT_INPUT, CAT_OUTPUT, CAT_BOTH, CAT_NON_DATA, CAT_NEITHER)
+
+# Display names for panel titles, mirrors analysis/plot_best_sample_uplift.py.
+DESIGN_DISPLAY: dict[str, str] = {
+    "aes": "AES block cipher",
+    "verilog_axi": "AXI crossbar",
+    "bitonic_sorter": "Bitonic sorter",
+    "uberddr3": "DDR3 controller",
+    "double_fpu": "Double FPU",
+    "e203": "e203 CPU",
+    "jpeg_encoder": "JPEG encoder",
+    "reed_solomon": "RS encoder/decoder",
+    "sha512": "SHA-512 hash core",
+    "systolic_tpu": "TPU systolic array",
+    "viterbi": "Viterbi decoder",
+    "wb_dma": "WB DMA bridge",
+}
 
 _PORT_DECL = re.compile(r"^\s*(input|output|inout)\s+(?:\[[^\]]+\]\s+)?(\w+)\s*;")
 _BUS_INDEX_TAIL = re.compile(r"\[[A-Z0-9]+\]$")
@@ -273,7 +291,7 @@ def _set_rc() -> None:
             "ytick.major.size": 3,
             "xtick.major.width": 0.9,
             "ytick.major.width": 0.9,
-            "legend.fontsize": 11,
+            "legend.fontsize": 14,
             "figure.dpi": 150,
             "savefig.dpi": 300,
             "savefig.bbox": "tight",
@@ -287,7 +305,7 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     n = len(designs)
-    ncols = 3
+    ncols = 4
     nrows = math.ceil(n / ncols)
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(ncols * 3.8, nrows * 2.7), sharey=False
@@ -311,7 +329,8 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
             )
 
         ax.axhline(0, color="#888888", linewidth=0.6, zorder=1)
-        ax.set_title(name)
+        ax.axvline(0, color="#888888", linewidth=0.6, zorder=1)
+        ax.set_title(DESIGN_DISPLAY.get(name, name))
         ax.grid(linestyle="-", linewidth=0.4, color="#d6d6d6", alpha=0.9, zorder=0)
         ax.set_axisbelow(True)
         for side in ("top", "right"):
@@ -333,11 +352,11 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
             seen.add(r["category"])
     handles = [
         plt.Line2D(
-            [], [], linestyle="", marker="o", markersize=8,
+            [], [], linestyle="", marker="o", markersize=10,
             markerfacecolor=CAT_COLORS[c], markeredgecolor="none",
             label=CAT_LABELS[c],
         )
-        for c in CAT_ORDER
+        for c in LEGEND_ORDER
         if c in seen
     ]
     fig.legend(
@@ -348,6 +367,7 @@ def _plot(designs: list[tuple[str, list[dict]]], out_path: Path) -> None:
         bbox_to_anchor=(0.5, -0.02),
     )
 
+    fig.align_ylabels(axes)
     fig.tight_layout(rect=(0, 0.03, 1, 1))
     fig.savefig(out_path, bbox_inches="tight")
     print(f"Wrote {out_path}")
@@ -404,6 +424,8 @@ def main() -> None:
     if not designs:
         print("no per-design TSVs found", file=sys.stderr)
         sys.exit(1)
+
+    designs.sort(key=lambda nr: DESIGN_DISPLAY.get(nr[0], nr[0]).lower())
 
     print(f"Plotting {len(designs)} designs")
     _plot(designs, args.out)
