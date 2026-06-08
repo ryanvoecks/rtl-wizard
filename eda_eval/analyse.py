@@ -179,8 +179,17 @@ def analyse(
     # Generate thread-safe partial files for concurrent writes
     staging = out_path.with_name(f"{out_path.name}.{secrets.token_hex(8)}.partial")
     run_openroad(
-        odb, sdc, spef, set_rc, libs, top_n, stage, top_module, staging,
-        kind, include_full,
+        odb,
+        sdc,
+        spef,
+        set_rc,
+        libs,
+        top_n,
+        stage,
+        top_module,
+        staging,
+        kind,
+        include_full,
     )
     staging.replace(out_path)
     return _read_report(out_path)
@@ -212,7 +221,10 @@ def main() -> None:
     phase_dir = args.phase_dir.resolve()
     run = replace(RunConfig.load(phase_dir / RunConfig.FILENAME), output_dir=phase_dir)
     df = analyse(
-        run, top_n=args.top_n, stage=args.stage, kind=args.kind,
+        run,
+        top_n=args.top_n,
+        stage=args.stage,
+        kind=args.kind,
         include_full=args.include_full,
     )
     # Long hierarchical names would otherwise be truncated to 50 chars.

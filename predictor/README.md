@@ -3,16 +3,16 @@
 Post-synth logical-blocks ranking predictor for post-route timing closure.
 Calibrated on 12 designs with cross-validated headline reported.
 
-## Final correction (median-of-medians, β_internal free, β_both derived)
+## Final correction (median-of-medians, beta_internal free, beta_both derived)
 
-| port_class | β (ns) | how |
+| port_class | beta (ns) | how |
 |---|---|---|
-| `input_only`  | **+0.226** | median of per-design medians of Δ |
-| `output_only` | **-0.323** | median of per-design medians of Δ |
-| `internal`    | **-0.050** | median of per-design medians of Δ |
-| `both`        | **-0.047** | derived: β_input + β_output - β_internal |
+| `input_only`  | **+0.226** | median of per-design medians of delta |
+| `output_only` | **-0.323** | median of per-design medians of delta |
+| `internal`    | **-0.050** | median of per-design medians of delta |
+| `both`        | **-0.047** | derived: beta_input + beta_output - beta_internal |
 
-Δ = `slack_route_ns - slack_synth_ns` per logical block.
+delta = `slack_route_ns - slack_synth_ns` per logical block.
 
 ## Inference recipe
 
@@ -27,7 +27,7 @@ Calibrated on 12 designs with cross-validated headline reported.
    - `output_only`  -- endpoint is a top-level output/inout port, startpoint is not an input port
    - `both`         -- both
    - `internal`     -- neither
-4. Compute `slack_synth_corr_ns = slack_synth_ns + β[port_class]`.
+4. Compute `slack_synth_corr_ns = slack_synth_ns + beta[port_class]`.
 5. Rank by `slack_synth_corr_ns` ascending (worst first); top-K is the
    corrected synth prediction.
 
@@ -43,37 +43,37 @@ designs (LOO mean is within 0.01 of in-sample for this estimator):
 | **+ I/O correction (this predictor)**   | **0.652** | **0.738** | **0.786** |
 
 LOO mean RBO at p=0.9 = 0.736, vs in-sample 0.738 -- the cross-validated
-penalty is negligible because β_input and β_output are stable across folds
-(std/|mean| ≤ 0.01).
+penalty is negligible because beta_input and beta_output are stable across folds
+(std/|mean| <= 0.01).
 
 ## Repo layout
 
 ```
 predictor/
-├── README.md                              -- this file
-├── correction_calibration.py              -- 8-step protocol: filter, classify, fit, LOO, sweep
-├── correction_per_design_summary.py       -- per-design RBO summary table (p ∈ {0.6, 0.9, 0.96})
-├── dump_topk_corrected_v2.py              -- per-design debug TSV of the corrected ranking
-├── plots/
-│   ├── plot_path_slack_delta_by_pin.py
-│   ├── plot_path_slack_delta_by_pin_vs_slack.py
-│   ├── plot_path_slack_delta_async_origin_vs_slack.py
-│   ├── plot_path_slack_delta_async_filtered_vs_slack.py
-│   ├── plot_path_slack_delta_async_filtered_shifted_vs_slack.py
-│   └── output/                            -- PNGs (gitignored by repo root .gitignore)
-└── data/
-    ├── calibration/                       -- correction_calibration outputs at p=0.9
-    │   ├── quarantine.csv
-    │   ├── per_design_class_medians.csv
-    │   ├── global_beta.csv
-    │   ├── mixed_effects.txt
-    │   ├── loo_median_of_medians.csv
-    │   ├── loo_max_rbo_sweep.csv
-    │   ├── headline.txt
-    │   └── per_design_rbo_summary.csv     -- 3-stage × 3-p RBO table
-    ├── calibration_p06/                   -- same protocol re-run at p=0.6
-    └── dumps_v2/                          -- per-design corrected-synth dumps
-        └── verilog_axi.tsv
++-- README.md                              -- this file
++-- correction_calibration.py              -- 8-step protocol: filter, classify, fit, LOO, sweep
++-- correction_per_design_summary.py       -- per-design RBO summary table (p in {0.6, 0.9, 0.96})
++-- dump_topk_corrected_v2.py              -- per-design debug TSV of the corrected ranking
++-- plots/
+|   +-- plot_path_slack_delta_by_pin.py
+|   +-- plot_path_slack_delta_by_pin_vs_slack.py
+|   +-- plot_path_slack_delta_async_origin_vs_slack.py
+|   +-- plot_path_slack_delta_async_filtered_vs_slack.py
+|   +-- plot_path_slack_delta_async_filtered_shifted_vs_slack.py
+|   `-- output/                            -- PNGs (gitignored by repo root .gitignore)
+`-- data/
+    +-- calibration/                       -- correction_calibration outputs at p=0.9
+    |   +-- quarantine.csv
+    |   +-- per_design_class_medians.csv
+    |   +-- global_beta.csv
+    |   +-- mixed_effects.txt
+    |   +-- loo_median_of_medians.csv
+    |   +-- loo_max_rbo_sweep.csv
+    |   +-- headline.txt
+    |   `-- per_design_rbo_summary.csv     -- 3-stage x 3-p RBO table
+    +-- calibration_p06/                   -- same protocol re-run at p=0.6
+    `-- dumps_v2/                          -- per-design corrected-synth dumps
+        `-- verilog_axi.tsv
 ```
 
 ## Reproducing
@@ -83,7 +83,7 @@ predictor/
 uv run --with pandas --with numpy --with statsmodels --with scipy \
     python predictor/correction_calibration.py
 
-# Per-design summary at p ∈ {0.6, 0.9, 0.96}
+# Per-design summary at p in {0.6, 0.9, 0.96}
 uv run --with pandas --with numpy --with statsmodels --with scipy \
     python predictor/correction_per_design_summary.py
 
@@ -99,7 +99,7 @@ uv run --with matplotlib python predictor/plots/plot_path_slack_delta_async_filt
 
 - **Older variants kept under `analysis/`**: `llm_topk_rbo_corrected.py`,
   `llm_topk_rbo_corrected_union.py`, `dump_topk_corrected_synth.py`,
-  `dump_topk_corrected_union.py`. These used the prior ±0.3 eyeballed β
+  `dump_topk_corrected_union.py`. These used the prior +/-0.3 eyeballed beta
   and/or the shared-driver async-detection rule (now superseded by the
   endpoint-pin-only rule). They're retained as development history but
   shouldn't be used for new work.
@@ -114,7 +114,7 @@ uv run --with matplotlib python predictor/plots/plot_path_slack_delta_async_filt
 - **Async detection by pin-name suffix, not liberty.** Liberty parsing is
   not wired up in this repo; the pin-name fallback is the protocol's
   documented fallback and is sufficient for nangate45 + yosys.
-- **Internal paths can't be re-ranked within their class.** β_internal is a
+- **Internal paths can't be re-ranked within their class.** beta_internal is a
   uniform offset and doesn't change rank order within the internal class.
   Designs whose worst paths are internal-to-internal with routing-variance
   scatter (verilog_axi crossbar, uberddr3 high-fanout `lane[I]` driver) hit

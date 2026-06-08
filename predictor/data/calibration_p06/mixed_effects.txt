@@ -1,23 +1,23 @@
 
---- response = Δ (raw) ---
+--- response = delta (raw) ---
 
                        Mixed Linear Model Regression Results
 ===================================================================================
 Model:                       MixedLM          Dependent Variable:          delta_ns
-No. Observations:            1341             Method:                      REML    
-No. Groups:                  12               Scale:                       0.0105  
-Min. group size:             8                Log-Likelihood:              inf     
-Max. group size:             163              Converged:                   Yes     
-Mean group size:             111.8                                                 
+No. Observations:            1341             Method:                      REML
+No. Groups:                  12               Scale:                       0.0105
+Min. group size:             8                Log-Likelihood:              inf
+Max. group size:             163              Converged:                   Yes
+Mean group size:             111.8
 -----------------------------------------------------------------------------------
-                             Coef.   Std.Err.     z    P>|z|    [0.025     0.975]  
+                             Coef.   Std.Err.     z    P>|z|    [0.025     0.975]
 -----------------------------------------------------------------------------------
 Intercept                    -0.000 459305.777  -0.000 1.000 -900222.781 900222.781
 C(port_class)[T.input_only]   0.275      0.007  38.672 0.000       0.261      0.289
 C(port_class)[T.output_only] -0.196      0.010 -18.762 0.000      -0.217     -0.176
 C(port_class)[T.both]        -0.020      0.016  -1.281 0.200      -0.052      0.011
 slack_synth_ns               -0.343      0.011 -32.013 0.000      -0.364     -0.322
-Group Var                     0.000                                                
+Group Var                     0.000
 ===================================================================================
 
 
@@ -32,16 +32,16 @@ Group Var                     0.000
   GATE B (design SD > fixed offset?): NO -> global constant defensible
 
 
---- response = Δ (normalized) ---
+--- response = delta (normalized) ---
 
                  Mixed Linear Model Regression Results
 ========================================================================
 Model:                  MixedLM      Dependent Variable:      delta_norm
-No. Observations:       1341         Method:                  REML      
-No. Groups:             12           Scale:                   0.0103    
-Min. group size:        8            Log-Likelihood:          1127.9729 
-Max. group size:        163          Converged:               Yes       
-Mean group size:        111.8                                           
+No. Observations:       1341         Method:                  REML
+No. Groups:             12           Scale:                   0.0103
+Min. group size:        8            Log-Likelihood:          1127.9729
+Max. group size:        163          Converged:               Yes
+Mean group size:        111.8
 ------------------------------------------------------------------------
                              Coef.  Std.Err.    z    P>|z| [0.025 0.975]
 ------------------------------------------------------------------------
@@ -50,7 +50,7 @@ C(port_class)[T.input_only]   0.332    0.007  47.286 0.000  0.319  0.346
 C(port_class)[T.output_only] -0.229    0.010 -22.211 0.000 -0.249 -0.208
 C(port_class)[T.both]        -0.064    0.016  -4.063 0.000 -0.095 -0.033
 slack_synth_ns               -0.250    0.011 -23.767 0.000 -0.271 -0.229
-Group Var                     0.003    0.015                            
+Group Var                     0.003    0.015
 ========================================================================
 
 

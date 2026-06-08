@@ -7,20 +7,20 @@ agreement with PnR, following the protocol in `docs/correction_protocol.md`
   1. Async/test quarantine -- endpoint-pin-name fallback (no liberty parsing
      in this repo). Sanity gate: e203 and wb_dma must show large synth
      quarantine fraction and near-zero route.
-  2. Δ = slack_route_ns - slack_synth_ns; classify path port role into
+  2. delta = slack_route_ns - slack_synth_ns; classify path port role into
      {input_only, output_only, both, internal}.
-  3. Per-design per-class median Δ + bootstrap CI (paths within design --
+  3. Per-design per-class median delta + bootstrap CI (paths within design --
      true seeds are unavailable, CI is acknowledged optimistic). Global
-     β per class = median of per-design medians; bootstrap by resampling
+     beta per class = median of per-design medians; bootstrap by resampling
      designs.
-  4. Mixed-effects model:  Δ ~ C(port_class) + slack_synth + (1 | design).
-     Also fit on Δ / clock_period. Print fixed effects, design random-effect
+  4. Mixed-effects model:  delta ~ C(port_class) + slack_synth + (1 | design).
+     Also fit on delta / clock_period. Print fixed effects, design random-effect
      variance, and decision gates for "slope significant?" /
      "design random-effect dominates?".
-  5. Leave-one-out validation. For each held-out design, refit β on the
+  5. Leave-one-out validation. For each held-out design, refit beta on the
      other 11 (median-of-medians from Step 3) and apply frozen. Report 12
-     held-out RBO values and the spread of refit β values.
-  6. Cross-validated max-RBO β: per LOO fold, sweep (β_input, β_output)
+     held-out RBO values and the spread of refit beta values.
+  6. Cross-validated max-RBO beta: per LOO fold, sweep (beta_input, beta_output)
      over a grid, pick the point maximizing MEAN training-fold RBO, apply
      to held-out, report.
   7. (Adapted -- we have 12 designs total, no separate held-out 4-set.) LOO
@@ -372,7 +372,7 @@ def _median_ci(
 
 
 def step3_per_design_class(df: pd.DataFrame) -> pd.DataFrame:
-    """Per (design, port_class) median Δ + bootstrap CI."""
+    """Per (design, port_class) median delta + bootstrap CI."""
     rng = np.random.default_rng(RNG_SEED)
     rows = []
     for design in sorted(df["design"].unique()):
@@ -396,7 +396,7 @@ def step3_per_design_class(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def step3_global_beta(per_design: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate per-design medians into a global β per class (median of
+    """Aggregate per-design medians into a global beta per class (median of
     medians). CI by resampling whole designs."""
     rng = np.random.default_rng(RNG_SEED + 1)
     rows = []
@@ -440,9 +440,9 @@ def step3_global_beta(per_design: pd.DataFrame) -> pd.DataFrame:
 
 
 def step4_mixed_effects(df: pd.DataFrame) -> dict:
-    """Δ ~ port_class + slack_synth + (1 | design), training designs only.
+    """delta ~ port_class + slack_synth + (1 | design), training designs only.
 
-    Also fit on normalized response Δ / clock_period.
+    Also fit on normalized response delta / clock_period.
     """
     import statsmodels.formula.api as smf  # type: ignore[import-untyped,import-not-found]
 
@@ -509,7 +509,7 @@ def rbo_ext(s: list, t: list, p: float) -> float:
 
 
 def _apply_correction(df_d: pd.DataFrame, betas: dict[str, float]) -> pd.DataFrame:
-    """Add `slack_synth_corr_ns` = slack_synth_ns + β[port_class]."""
+    """Add `slack_synth_corr_ns` = slack_synth_ns + beta[port_class]."""
     df_d = df_d.copy()
     df_d["beta_ns"] = df_d["port_class"].map(betas).fillna(0.0)  # type: ignore[arg-type]
     df_d["slack_synth_corr_ns"] = df_d["slack_synth_ns"] + df_d["beta_ns"]
@@ -548,20 +548,20 @@ def _design_rbo(
     return rbo_ext(synth_keys[:n_eval], route_keys[:n_eval], p)
 
 
-# --- Step 5: LOO with median-of-medians β ------------------------------------
+# --- Step 5: LOO with median-of-medians beta ------------------------------------
 
 
 def step5_loo_median_of_medians(
     df_all: pd.DataFrame, per_design: pd.DataFrame, top_k: int, p: float
 ) -> pd.DataFrame:
-    """For each held-out design d, recompute global β from the other 11
+    """For each held-out design d, recompute global beta from the other 11
     (median of those 11 per-class medians), apply frozen to d, compute RBO.
 
     Three baselines per fold (route side is never filtered):
-      raw          -- no synth filter, β = 0 (matches the original
+      raw          -- no synth filter, beta = 0 (matches the original
                       llm_topk_rbo intent, modulo union pool / p=0.9)
-      filter_only  -- synth-side async quarantine on, β = 0
-      corrected    -- synth-side async quarantine on, trained β applied
+      filter_only  -- synth-side async quarantine on, beta = 0
+      corrected    -- synth-side async quarantine on, trained beta applied
     """
     rows = []
     designs = sorted(df_all["design"].unique())
@@ -570,10 +570,10 @@ def step5_loo_median_of_medians(
         train = cast(pd.DataFrame, per_design[per_design["design"] != held])
         train = cast(pd.DataFrame, train[train["n"] > 0])
 
-        # Parametrization: β_input, β_output, β_internal are each estimated as
-        # the median of per-design medians on the training fold. β_both is
+        # Parametrization: beta_input, beta_output, beta_internal are each estimated as
+        # the median of per-design medians on the training fold. beta_both is
         # constrained by additivity over the internal baseline:
-        #     β_both = β_input + β_output - β_internal
+        #     beta_both = beta_input + beta_output - beta_internal
         # i.e. assume the input-incidence and output-incidence offsets compose
         # additively relative to the internal baseline. With one free parameter
         # fewer this is more stable when "both" is sparse (only 5 designs have
@@ -631,7 +631,7 @@ def _mean_rbo_over_designs(
 ) -> float:
     """Mean per-design RBO with synth-side filter on, route-side filter off.
 
-    Sweeping over β to maximise this mirrors the inference-time pipeline.
+    Sweeping over beta to maximise this mirrors the inference-time pipeline.
     """
     vals = []
     for d in designs:
@@ -643,10 +643,10 @@ def _mean_rbo_over_designs(
 
 
 def step6_loo_max_rbo_sweep(df_all: pd.DataFrame, top_k: int, p: float) -> pd.DataFrame:
-    """For each held-out design d, sweep (β_input, β_output) over a 2-D grid;
+    """For each held-out design d, sweep (beta_input, beta_output) over a 2-D grid;
     for each grid point compute the MEAN RBO across the other 11 designs;
-    pick the argmax; apply frozen to d. β_both = β_input + β_output as a
-    constraint (additivity); β_internal = 0.
+    pick the argmax; apply frozen to d. beta_both = beta_input + beta_output as a
+    constraint (additivity); beta_internal = 0.
     """
     rows = []
     designs = sorted(df_all["design"].unique())
@@ -760,7 +760,7 @@ def main() -> None:
 
     # --- Step 2 already done in load_all (delta, port_class) ---
     print("\n" + "=" * 78)
-    print("STEP 2  Δ and port_class counts (functional pairs only)")
+    print("STEP 2  delta and port_class counts (functional pairs only)")
     print("=" * 78)
     pivot = cast(
         pd.DataFrame,
@@ -770,17 +770,19 @@ def main() -> None:
 
     # --- Step 3 ---
     print("\n" + "=" * 78)
-    print("STEP 3  Per-design per-class median Δ (ns) + bootstrap 95% CI")
+    print("STEP 3  Per-design per-class median delta (ns) + bootstrap 95% CI")
     print("=" * 78)
     per_design = step3_per_design_class(df_func)
     per_design.to_csv(args.out_dir / "per_design_class_medians.csv", index=False)
     show = per_design.pivot(
         index="design", columns="port_class", values="median_delta_ns"
     ).reindex(columns=PORT_CLASSES)
-    print("\n  per-design median Δ (ns):")
+    print("\n  per-design median delta (ns):")
     print(_fmt_df(show.reset_index(), floatfmt="{:+.3f}"))
 
-    print("\n  global β = median of per-design medians (with design-resample 95% CI):")
+    print(
+        "\n  global beta = median of per-design medians (with design-resample 95% CI):"
+    )
     global_beta = step3_global_beta(per_design)
     global_beta.to_csv(args.out_dir / "global_beta.csv", index=False)
     print(_fmt_df(global_beta, floatfmt="{:+.3f}"))
@@ -792,7 +794,7 @@ def main() -> None:
     mix = step4_mixed_effects(df_func)
     me_lines = []
     for label, info in mix.items():
-        me_lines.append(f"\n--- response = Δ ({label}) ---\n")
+        me_lines.append(f"\n--- response = delta ({label}) ---\n")
         if "error" in info:
             me_lines.append(f"FIT FAILED: {info['error']}\n")
             continue
@@ -836,7 +838,7 @@ def main() -> None:
 
     # --- Step 5 ---
     print("\n" + "=" * 78)
-    print("STEP 5  LOO validation -- median-of-medians β")
+    print("STEP 5  LOO validation -- median-of-medians beta")
     print("=" * 78)
     loo_med = step5_loo_median_of_medians(df_all, per_design, args.top_k, args.p)
     loo_med.to_csv(args.out_dir / "loo_median_of_medians.csv", index=False)
@@ -855,7 +857,7 @@ def main() -> None:
         f"  mean gain  corr over filter                : {m_gcf:+.3f}\n"
         f"  mean gain  corr over raw                   : {m_gcr:+.3f}"
     )
-    print("\n  refit β spread across 12 folds:")
+    print("\n  refit beta spread across 12 folds:")
     for c in (
         "beta_input_ns",
         "beta_output_ns",
@@ -895,11 +897,11 @@ def main() -> None:
     print(
         f"\n  mean LOO RBO (raw)                : {s_raw:.3f}\n"
         f"  mean LOO RBO (filter only)        : {s_filt:.3f}\n"
-        f"  mean LOO RBO (filter + sweep β)   : {s_corr:.3f}\n"
+        f"  mean LOO RBO (filter + sweep beta)   : {s_corr:.3f}\n"
         f"  mean gain corr over filter        : {s_gcf:+.3f}\n"
         f"  mean gain corr over raw           : {s_gcr:+.3f}"
     )
-    print("\n  chosen β spread across 12 folds:")
+    print("\n  chosen beta spread across 12 folds:")
     for c in ("beta_input_ns", "beta_output_ns"):
         arr = loo_swp[c].to_numpy()
         std_rel = (
@@ -912,11 +914,11 @@ def main() -> None:
 
     # --- Step 7 (adapted) ---
     print("\n" + "=" * 78)
-    print("STEP 7  Final β (all 12) and headline")
+    print("STEP 7  Final beta (all 12) and headline")
     print("=" * 78)
 
-    # Median of per-design medians over all 12, with β_both constrained by
-    # additivity: β_both = β_input + β_output - β_internal.
+    # Median of per-design medians over all 12, with beta_both constrained by
+    # additivity: beta_both = beta_input + beta_output - beta_internal.
     def _mom_all(cls: str) -> float:
         sub = cast(
             pd.DataFrame,
@@ -954,22 +956,27 @@ def main() -> None:
                 best_in_sample = (m, float(b_in), float(b_out))
 
     headline_text = []
-    headline_text.append("Final β (median-of-medians over all 12 designs):")
+    headline_text.append("Final beta (median-of-medians over all 12 designs):")
     for c in PORT_CLASSES:
-        headline_text.append(f"  β[{c}] = {final_betas_mom[c]:+.3f} ns")
+        headline_text.append(f"  beta[{c}] = {final_betas_mom[c]:+.3f} ns")
     headline_text.append("")
+    bi = best_in_sample
     headline_text.append(
-        f"Final β (in-sample argmax over all 12 designs, for reference only):\n"
-        f"  β_input = {best_in_sample[1]:+.3f}  β_output = {best_in_sample[2]:+.3f}  "
-        f"in-sample mean RBO = {best_in_sample[0]:.3f}"
+        "Final beta (in-sample argmax over all 12 designs, for reference only):\n"
+        f"  beta_input = {bi[1]:+.3f}  beta_output = {bi[2]:+.3f}  "
+        f"in-sample mean RBO = {bi[0]:.3f}"
     )
     headline_text.append("")
+    m_raw_h = loo_med["rbo_raw"].mean()
+    m_filt_h = loo_med["rbo_filter_only"].mean()
+    m_corr_h = loo_med["rbo_corrected"].mean()
+    s_corr_h = loo_swp["rbo_corrected"].mean()
     headline_text.append(
-        f"Cross-validated headline (LOO mean RBO over 12 held-out folds):\n"
-        f"  raw (no filter, no correction)  : {loo_med['rbo_raw'].mean():.3f}\n"
-        f"  filter only (synth-side, β = 0) : {loo_med['rbo_filter_only'].mean():.3f}\n"
-        f"  filter + med-of-medians β       : {loo_med['rbo_corrected'].mean():.3f}\n"
-        f"  filter + max-RBO sweep β        : {loo_swp['rbo_corrected'].mean():.3f}"
+        "Cross-validated headline (LOO mean RBO over 12 held-out folds):\n"
+        f"  raw (no filter, no correction)     : {m_raw_h:.3f}\n"
+        f"  filter only (synth-side, beta = 0) : {m_filt_h:.3f}\n"
+        f"  filter + med-of-medians beta       : {m_corr_h:.3f}\n"
+        f"  filter + max-RBO sweep beta        : {s_corr_h:.3f}"
     )
     headline_text.append("")
     # Choose winner
@@ -987,7 +994,7 @@ def main() -> None:
         b_out_str = f"{final_betas_mom[CAT_OUTPUT]:+.3f}"
         b_both_str = f"{final_betas_mom[CAT_BOTH]:+.3f}"
     else:
-        # mean of LOO-fold sweep β
+        # mean of LOO-fold sweep beta
         b_in_str = f"{loo_swp['beta_input_ns'].mean():+.3f}"
         b_out_str = f"{loo_swp['beta_output_ns'].mean():+.3f}"
         b_both_str = (
@@ -1001,10 +1008,11 @@ def main() -> None:
         "THESIS:\n"
         "  On post-synth logical_blocks, after quarantining async/test endpoints,\n"
         "  applying a per-port-class additive correction to synth slack of\n"
-        f"    β[input_only]  = {b_in_str} ns\n"
-        f"    β[output_only] = {b_out_str} ns\n"
-        f"    β[internal]    = {b_int_str} ns\n"
-        f"    β[both]        = {b_both_str} ns  (derived: β_in + β_out - β_int)\n"
+        f"    beta[input_only]  = {b_in_str} ns\n"
+        f"    beta[output_only] = {b_out_str} ns\n"
+        f"    beta[internal]    = {b_int_str} ns\n"
+        f"    beta[both]        = {b_both_str} ns  "
+        "(derived: beta_in + beta_out - beta_int)\n"
         f"  raises mean held-out top-100 RBO (p=0.9) from "
         f"{loo_med['rbo_raw'].mean():.3f} (raw) "
         f"to {loo_med['rbo_filter_only'].mean():.3f} (filter only) "

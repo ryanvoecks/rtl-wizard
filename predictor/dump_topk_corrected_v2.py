@@ -3,16 +3,16 @@
 `correction_calibration.py` and `correction_per_design_summary.py`.
 
 What's "v2":
-  - β from median-of-medians with β_internal estimated and β_both derived:
-      β_input    = +0.226
-      β_output   = -0.323
-      β_internal = -0.050
-      β_both     = β_input + β_output - β_internal = -0.047
+  - beta from median-of-medians with beta_internal estimated and beta_both derived:
+      beta_input    = +0.226
+      beta_output   = -0.323
+      beta_internal = -0.050
+      beta_both     = beta_input + beta_output - beta_internal = -0.047
   - async quarantine uses endpoint pin name only (no shared-driver rule).
   - quarantine applied to SYNTH side only; route ranking is unfiltered.
 
 Per row, in corrected-synth rank order:
-  rank_synth_corr  -- rank under (synth_slack + β[port_class]) over kept synth pool
+  rank_synth_corr  -- rank under (synth_slack + beta[port_class]) over kept synth pool
   rank_route       -- rank under raw route slack over the FULL union (no filter)
   rank_delta       -- rank_route - rank_synth_corr (positive = synth says worse
                       than route does; negative = synth says better)

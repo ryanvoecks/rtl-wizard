@@ -6,8 +6,8 @@ under three configurations:
   - raw            -- no filter, no correction
   - post_async     -- synth-side async/test endpoint quarantine (filter only)
   - post_io        -- async filter + median-of-medians I/O correction
-                      (β_input=+0.226, β_output=-0.323, β_internal=-0.050,
-                       β_both=-0.047 derived as β_in+β_out-β_int)
+                      (beta_input=+0.226, beta_output=-0.323, beta_internal=-0.050,
+                       beta_both=-0.047 derived as beta_in+beta_out-beta_int)
 at p in {0.6, 0.9}. The route side is unfiltered everywhere -- it is the
 ground truth -- so the quarantine and correction only ever change the
 synth-side ranking.
@@ -50,10 +50,10 @@ from predictor.correction_calibration import (  # noqa: E402
 OUT_CSV = REPO / "predictor" / "data" / "calibration" / "per_design_rbo_summary.csv"
 TOP_K = 100
 
-# Median-of-medians β with β_internal free and β_both derived via additivity.
-# Frozen from the all-12 calibration run; in-sample (one set of β for every
+# Median-of-medians beta with beta_internal free and beta_both derived via additivity.
+# Frozen from the all-12 calibration run; in-sample (one set of beta for every
 # design row -- a per-design LOO refit would barely change anything since
-# β_input and β_output are stable to 3 sig figs across folds).
+# beta_input and beta_output are stable to 3 sig figs across folds).
 BETAS = {
     CAT_INPUT: +0.226,
     CAT_OUTPUT: -0.323,
@@ -100,7 +100,7 @@ def main() -> None:
     for c in fmt.columns:
         if c != "design":
             fmt[c] = fmt[c].map(lambda v: f"{v:.3f}")
-    print(f"β used: {BETAS}\n")
+    print(f"beta used: {BETAS}\n")
     print(fmt.to_string(index=False))
     try:
         rel = OUT_CSV.relative_to(REPO)
