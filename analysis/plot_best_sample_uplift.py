@@ -26,6 +26,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from matplotlib.lines import Line2D
 
 REPO = Path(__file__).resolve().parents[1]
 SUMMARY_JSON = REPO / "tmp" / "summary.json"
@@ -56,18 +57,18 @@ TYPE_ORDER = ("Datapath", "Mixed", "Control", "Interconnect")
 # A distinct colour per design, paired so panel colours never repeat.
 # Hand-picked from tab20 / Set1 to keep neighbours visually separable.
 DESIGN_COLORS: dict[str, str] = {
-    "aes": "#1f77b4",            # blue
+    "aes": "#1f77b4",  # blue
     "bitonic_sorter": "#ff7f0e",  # orange
-    "double_fpu": "#2ca02c",      # green
-    "reed_solomon": "#d62728",    # red
-    "sha512": "#9467bd",          # purple
-    "systolic_tpu": "#8c564b",    # brown
-    "e203": "#17becf",            # teal
-    "jpeg_encoder": "#bcbd22",    # olive
-    "viterbi": "#e377c2",         # pink
-    "uberddr3": "#7f7f7f",        # grey
-    "wb_dma": "#ff9896",          # salmon
-    "verilog_axi": "#393b79",     # navy
+    "double_fpu": "#2ca02c",  # green
+    "reed_solomon": "#d62728",  # red
+    "sha512": "#9467bd",  # purple
+    "systolic_tpu": "#8c564b",  # brown
+    "e203": "#17becf",  # teal
+    "jpeg_encoder": "#bcbd22",  # olive
+    "viterbi": "#e377c2",  # pink
+    "uberddr3": "#7f7f7f",  # grey
+    "wb_dma": "#ff9896",  # salmon
+    "verilog_axi": "#393b79",  # navy
 }
 
 
@@ -111,9 +112,7 @@ def _set_rc() -> None:
     )
 
 
-def _pick_best_sample(
-    samples: dict, baselines: dict
-) -> dict[str, dict]:
+def _pick_best_sample(samples: dict, baselines: dict) -> dict[str, dict]:
     """For each design, return the (epoch's) per-iter metric series whose
     peak synth fmax is highest."""
     by_design: dict[str, list[tuple[float, dict, dict]]] = {}
@@ -127,9 +126,7 @@ def _pick_best_sample(
             continue
 
         iters_i = {int(k): row for k, row in iters.items()}
-        synth_fs = [
-            fmax_mhz(period, r.get("synth_wns_ns")) for r in iters_i.values()
-        ]
+        synth_fs = [fmax_mhz(period, r.get("synth_wns_ns")) for r in iters_i.values()]
         peaks = [f for f in synth_fs if f is not None]
         if not peaks:
             continue
@@ -143,7 +140,9 @@ def _pick_best_sample(
     return out
 
 
-def _series(b: dict, iters_i: dict[int, dict], stage: str) -> tuple[list[int], list[float]]:
+def _series(
+    b: dict, iters_i: dict[int, dict], stage: str
+) -> tuple[list[int], list[float]]:
     """Build (x, y_pct) lists for one stage in {'synth', 'pnr'}.
 
     x: edit round (0 = baseline through NUM_ROUNDS), y: pct uplift vs
@@ -196,20 +195,34 @@ def _plot(per_design: dict[str, dict], out_path: Path) -> None:
             x_s, y_s = _series(b, iters_i, "synth")
             x_p, y_p = _series(b, iters_i, "pnr")
             ax.plot(
-                x_s, y_s, color=c, linestyle="-", linewidth=1.8,
-                marker="o", markersize=4.0, zorder=3,
+                x_s,
+                y_s,
+                color=c,
+                linestyle="-",
+                linewidth=1.8,
+                marker="o",
+                markersize=4.0,
+                zorder=3,
             )
             ax.plot(
-                x_p, y_p, color=c, linestyle="--", linewidth=1.6,
-                marker="o", markersize=3.4, zorder=3,
+                x_p,
+                y_p,
+                color=c,
+                linestyle="--",
+                linewidth=1.6,
+                marker="o",
+                markersize=3.4,
+                zorder=3,
             )
             legend_handles.append(
-                plt.Line2D([], [], color=c, linestyle="-", linewidth=2.0, label=display)
+                Line2D([], [], color=c, linestyle="-", linewidth=2.0, label=display)
             )
 
         ax.axhline(0, color="#888888", linewidth=0.6, zorder=1)
         ax.set_title(dtype, color=TEXT_COLOR, pad=6)
-        ax.grid(axis="y", linestyle="-", linewidth=0.4, color="#d0d0d0", alpha=0.9, zorder=1)
+        ax.grid(
+            axis="y", linestyle="-", linewidth=0.4, color="#d0d0d0", alpha=0.9, zorder=1
+        )
         ax.set_axisbelow(True)
         for side in ("top", "right"):
             ax.spines[side].set_visible(False)
@@ -231,8 +244,10 @@ def _plot(per_design: dict[str, dict], out_path: Path) -> None:
 
     # Style/stage legend at the figure level (line-style key).
     style_handles = [
-        plt.Line2D([], [], color=TEXT_COLOR, linestyle="-", linewidth=2.0, label="synth"),
-        plt.Line2D([], [], color=TEXT_COLOR, linestyle="--", linewidth=1.7, label="post-route"),
+        Line2D([], [], color=TEXT_COLOR, linestyle="-", linewidth=2.0, label="synth"),
+        Line2D(
+            [], [], color=TEXT_COLOR, linestyle="--", linewidth=1.7, label="post-route"
+        ),
     ]
     fig.legend(
         handles=style_handles,
