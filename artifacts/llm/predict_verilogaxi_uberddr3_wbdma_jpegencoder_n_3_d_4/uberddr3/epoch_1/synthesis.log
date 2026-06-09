@@ -1,0 +1,18 @@
+Warning: Replacing memory \o_wb_data_q with list of registers. See ddr3_controller.v:2100
+Warning: Replacing memory \delay_before_read_counter_d with list of registers. See ddr3_controller.v:1973, ddr3_controller.v:1762
+Warning: Replacing memory \delay_before_write_counter_d with list of registers. See ddr3_controller.v:1969, ddr3_controller.v:1761
+Warning: Replacing memory \delay_before_activate_counter_d with list of registers. See ddr3_controller.v:1760
+Warning: Replacing memory \delay_before_precharge_counter_d with list of registers. See ddr3_controller.v:1759
+Warning: Replacing memory \unaligned_dm with list of registers. See ddr3_controller.v:1003
+Warning: Replacing memory \unaligned_data with list of registers. See ddr3_controller.v:1002
+Warning: Replacing memory \cmd_d with list of registers. See ddr3_controller.v:1714, ddr3_controller.v:715
+Warning: Replacing memory \shift_reg_read_pipe_d with list of registers. See ddr3_controller.v:1766, ddr3_controller.v:710
+Warning: Replacing memory \shift_reg_read_pipe_q with list of registers. See ddr3_controller.v:2103, ddr3_controller.v:709
+Warning: Replacing memory \delay_before_read_counter_q with list of registers. See ddr3_controller.v:1010, ddr3_controller.v:705
+Warning: Replacing memory \delay_before_write_counter_q with list of registers. See ddr3_controller.v:1009, ddr3_controller.v:704
+Warning: Replacing memory \delay_before_activate_counter_q with list of registers. See ddr3_controller.v:1008, ddr3_controller.v:703
+Warning: Replacing memory \delay_before_precharge_counter_q with list of registers. See ddr3_controller.v:1007, ddr3_controller.v:702
+Warning: Replacing memory \stage2_dm with list of registers. See ddr3_controller.v:1020, ddr3_controller.v:698
+Warning: Replacing memory \stage2_data with list of registers. See ddr3_controller.v:1019, ddr3_controller.v:697
+Warning: Replacing memory \bank_active_row_d with list of registers. See ddr3_controller.v:1967, ddr3_controller.v:1710, ddr3_controller.v:693
+Warning: Replacing memory \bank_active_row_q with list of registers. See ddr3_controller.v:1015, ddr3_controller.v:692

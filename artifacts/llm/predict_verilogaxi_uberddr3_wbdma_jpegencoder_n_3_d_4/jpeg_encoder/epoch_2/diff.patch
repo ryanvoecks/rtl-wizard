@@ -1,0 +1,122 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -109,7 +109,7 @@
+ 	//
+ 	// variables
+ 	//
+-	reg go, dgo, ddgo, ddcnt, dddcnt;
++	reg go, dgo, ddgo, ddcnt, dddcnt, ddddcnt, dddddcnt, ddddddcnt;
+ 	reg [di_width:1] ddin;
+ 
+ 	//
+@@ -138,9 +138,12 @@
+ 		  ddgo   <= #1 1'b0;
+ 		  ddin   <= #1 0;
+ 
+-	      douten <= #1 1'b0;
+-	      ddcnt  <= #1 1'b1;
+-	      dddcnt <= #1 1'b1;
++	      douten    <= #1 1'b0;
++	      ddcnt     <= #1 1'b1;
++	      dddcnt    <= #1 1'b1;
++	      ddddcnt   <= #1 1'b1;
++	      dddddcnt  <= #1 1'b1;
++	      ddddddcnt <= #1 1'b1;
+ 	  end
+ 	  else if (ena)
+ 	  begin
+@@ -149,10 +152,13 @@
+ 	      ddgo   <= #1 dgo;
+ 	      ddin   <= #1 din;
+ 
+-	      ddcnt  <= #1 dcnt;
+-	      dddcnt <= #1 ddcnt;
+-
+-	      douten <= #1 ddcnt & ~dddcnt;
++	      ddcnt     <= #1 dcnt;
++	      dddcnt    <= #1 ddcnt;
++	      ddddcnt   <= #1 dddcnt;
++	      dddddcnt  <= #1 ddddcnt;
++	      ddddddcnt <= #1 dddddcnt;
++
++	      douten <= #1 dddddcnt & ~ddddddcnt;
+ 	  end
+ 
+ 	// Hookup DCT units
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -81,30 +81,65 @@
+ 	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
+-
+-	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
++	// Stage 1 pipeline registers (narrow widths)
++	reg  [dwidth-1:0]   din_reg;
++	reg  [cwidth-1:0]   coef_reg;
++	reg                 dclr_reg;
++	// Stage 2a: four 11×2 partial products (quarter-width din — minimal adder tree)
++	//   din[7:4] = din[7:6]*4 + din[5:4]  =>  coef*din[7:4] = pa*4 + pb
++	//   din[3:0] is kept as 11×4 (already well-timed) and passed through
++	reg signed [cwidth+1:0] pa;      // coef × din[7:6]  (11×2 signed×signed → 12b)
++	reg signed [cwidth+2:0] pb;      // coef × din[5:4]  (11×3 signed×unsigned → 13b)
++	reg signed [cwidth+4:0] pp_lo;   // coef × din[3:0]  (11×4 signed×unsigned → 15b)
++	reg                     dclr_2a;
++	// Stage 2b: combine pa/pb → pp_hi; pass pp_lo through
++	reg signed [cwidth+3:0] pp_hi;   // (pa<<2) + pb = coef*din[7:4]  (14b)
++	reg signed [cwidth+4:0] pp_lo_r; // registered copy of pp_lo for alignment
++	reg                     dclr_pp;
++	reg  [mwidth -1:0] mult_res;
+ 	wire [rwidth -1:0] ext_mult_res;
+ 
+ 
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// Stage 1: capture narrow inputs
++	always @(posedge clk)
++	  if(ena) begin
++	    din_reg  <= #1 din;
++	    coef_reg <= #1 coef;
++	    dclr_reg <= #1 dclr;
++	  end
++
++	// Stage 2a: 11×2 partial products for upper nibble + 11×4 for lower nibble
++	always @(posedge clk)
++	  if(ena) begin
++	    pa      <= #1 $signed(coef_reg) * $signed(din_reg[dwidth-1:dwidth-2]);
++	    pb      <= #1 $signed(coef_reg) * $signed({1'b0, din_reg[dwidth-3:dwidth/2]});
++	    pp_lo   <= #1 $signed(coef_reg) * $signed({1'b0, din_reg[dwidth/2-1:0]});
++	    dclr_2a <= #1 dclr_reg;
++	  end
++
++	// Stage 2b: fast adder combines pa/pb → pp_hi; register pp_lo for alignment
++	always @(posedge clk)
++	  if(ena) begin
++	    pp_hi   <= #1 (pa <<< 2) + pb;
++	    pp_lo_r <= #1 pp_lo;
++	    dclr_pp <= #1 dclr_2a;
++	  end
++
++	// Stage 3: combine pp_hi and pp_lo_r with shift-add (only an adder)
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	    mult_res <= #1 (pp_hi <<< (dwidth/2)) + pp_lo_r;
+ 
+ 	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
+ 
+ 	// generate adder structure
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(dclr)
++	    if(dclr_pp)
+ 	      result <= #1 ext_mult_res;
+ 	    else
+ 	      result <= #1 ext_mult_res + result;
