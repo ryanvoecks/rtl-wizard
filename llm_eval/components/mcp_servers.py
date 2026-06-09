@@ -9,6 +9,7 @@ instance. The network transport is handled separately by `mcp_connect.py`.
 """
 
 import asyncio
+import shutil
 import tempfile
 from dataclasses import replace
 from pathlib import Path
@@ -19,7 +20,7 @@ from mcp.server.transport_security import TransportSecuritySettings
 
 from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
 from components.claude_env import ClaudeEnv, build_diff_from_env
-from components.scorers import _create_copy, evaluate_synthesis, evaluate_testbench
+from components.scorers import _design_copy, evaluate_synthesis, evaluate_testbench
 from eda_eval.analyse import analyse
 from eda_eval.run import run_job
 
@@ -40,28 +41,39 @@ def _format_check(label: str, rc: int, log: str) -> str:
 def _synth_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame:
     """Apply `diff` to a copy of the design root, drive the ORFS synth flow
     into a fresh tempdir, then run analyse and return its logical-paths
-    report as a DataFrame (ranked worst-slack first)."""
+    report as a DataFrame (ranked worst-slack first). Both the design copy and
+    the ORFS output dir are removed before returning so repeated tool calls
+    don't fill the host disk."""
 
     # Create a modified target for the agent's RTL
-    patched_root = _create_copy(synth_target.design, diff)
-    patched_design = replace(synth_target.design, root=patched_root)
-    patched_target = replace(synth_target, design=patched_design)
+    with _design_copy(synth_target.design, diff) as patched_root:
+        patched_design = replace(synth_target.design, root=patched_root)
+        patched_target = replace(synth_target, design=patched_design)
 
-    # Run synthesis
-    output_dir = Path(tempfile.mkdtemp())
-    run = RunConfig(
-        synth_target=patched_target,
-        output_dir=output_dir,
-        flow_targets=SYNTH_FLOW_TARGETS,
-        num_threads=1,
-    )
-    rc = run_job(run)
-    if rc != 0:
-        log_path = output_dir / "flow.log"
-        log = log_path.read_text() if log_path.is_file() else ""
-        raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
+        # Run synthesis into a fresh tempdir. run_job replaces output_dir with
+        # a symlink into the content-addressed EDA cache.
+        output_dir = Path(tempfile.mkdtemp())
+        try:
+            run = RunConfig(
+                synth_target=patched_target,
+                output_dir=output_dir,
+                flow_targets=SYNTH_FLOW_TARGETS,
+                num_threads=1,
+            )
+            rc = run_job(run)
+            if rc != 0:
+                log_path = output_dir / "flow.log"
+                log = log_path.read_text() if log_path.is_file() else ""
+                raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
 
-    return analyse(run, apply_correction=True)
+            return analyse(run, apply_correction=True)
+        finally:
+            # Drop just the symlink (or the dir, if run_job failed before
+            # linking); never the cache entry it points at.
+            if output_dir.is_symlink():
+                output_dir.unlink()
+            else:
+                shutil.rmtree(output_dir, ignore_errors=True)
 
 
 def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
