@@ -1,0 +1,157 @@
+--- a/sha512_core.v
++++ b/sha512_core.v
+@@ -147,6 +147,9 @@
+   reg [63 : 0] t2;
+ 
+   wire [63 : 0] k_data;
++  wire [63 : 0] k_data_next;
++  reg  [63 : 0] k_reg;
++  reg  [63 : 0] hk_reg;
+ 
+   reg           w_init;
+   reg           w_next;
+@@ -169,6 +172,12 @@
+                                       .addr(round_ctr_reg),
+                                       .K(k_data)
+                                      );
++
++  // k_data_next gives K[round_ctr_new]: K[0] on reset, K[N+1] on increment.
++  sha512_k_constants k_constants_next_inst(
++                                           .addr(round_ctr_new),
++                                           .K(k_data_next)
++                                          );
+ 
+ 
+   sha512_h_constants h_constants_inst(
+@@ -238,6 +247,8 @@
+           ready_reg           <= 1'b1;
+           digest_valid_reg    <= 1'b0;
+           round_ctr_reg       <= 7'h0;
++          k_reg               <= 64'h0;
++          hk_reg              <= 64'h0;
+           sha512_ctrl_reg     <= CTRL_IDLE;
+         end
+ 
+@@ -245,14 +256,16 @@
+         begin
+           if (a_h_we)
+             begin
+-              a_reg <= a_new;
+-              b_reg <= b_new;
+-              c_reg <= c_new;
+-              d_reg <= d_new;
+-              e_reg <= e_new;
+-              f_reg <= f_new;
+-              g_reg <= g_new;
+-              h_reg <= h_new;
++              a_reg  <= a_new;
++              b_reg  <= b_new;
++              c_reg  <= c_new;
++              d_reg  <= d_new;
++              e_reg  <= e_new;
++              f_reg  <= f_new;
++              g_reg  <= g_new;
++              h_reg  <= h_new;
++              // Pre-sum h and k for next round: T1 only needs 4 operands.
++              hk_reg <= h_new + k_data_next;
+             end
+ 
+           if (H_we)
+@@ -268,7 +281,11 @@
+             end
+ 
+           if (round_ctr_we)
+-            round_ctr_reg <= round_ctr_new;
++            begin
++              round_ctr_reg <= round_ctr_new;
++              // Pre-register K[round_ctr_new] so T1 reads a FF, not the ROM output.
++              k_reg <= k_data_next;
++            end
+ 
+           if (work_factor_ctr_we)
+             work_factor_ctr_reg <= work_factor_ctr_new;
+@@ -346,7 +363,7 @@
+ 
+       ch = (e_reg & f_reg) ^ ((~e_reg) & g_reg);
+ 
+-      t1 = h_reg + sum1 + ch + k_data + w_data;
++      t1 = hk_reg + sum1 + ch + w_data;
+     end // t1_logic
+ 
+ 
+--- a/sha512_w_mem.v
++++ b/sha512_w_mem.v
+@@ -77,18 +77,23 @@
+   reg [6 : 0] w_ctr_new;
+   reg         w_ctr_we;
+ 
++  reg [63 : 0] w_next_reg;
++
+ 
+   //----------------------------------------------------------------
+   // Wires.
+   //----------------------------------------------------------------
+   reg [63 : 0] w_tmp;
+   reg [63 : 0] w_new;
++  reg [63 : 0] w_lookahead;
+ 
+ 
+   //----------------------------------------------------------------
+   // Concurrent connectivity for ports etc.
+   //----------------------------------------------------------------
+-  assign w = w_tmp;
++  // w_next_reg is always pre-loaded one cycle ahead, so w is purely
++  // a flip-flop output with no combinational path into T1/a_reg.
++  assign w = w_next_reg;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -106,10 +111,25 @@
+           for (i = 0; i < 16; i = i + 1)
+             w_mem[i] <= 64'h0;
+ 
+-          w_ctr_reg <= 7'h0;
++          w_ctr_reg  <= 7'h0;
++          w_next_reg <= 64'h0;
+         end
+       else
+         begin
++          // Pre-register W for the NEXT round so w output is always a FF,
++          // eliminating all combinational paths from w_mem/w_ctr into T1.
++          if (init)
++            w_next_reg <= block[1023 : 960]; // W[0] for round 0
++          else if (next)
++            begin
++              if (w_ctr_reg < 7'h0f)
++                w_next_reg <= w_mem[w_ctr_reg[3 : 0] + 1'b1]; // W[N+1] direct
++              else if (w_ctr_reg == 7'h0f)
++                w_next_reg <= w_new;       // W[16] from unshifted window
++              else
++                w_next_reg <= w_lookahead; // W[N+1] lookahead from current window
++            end
++
+           if (w_mem_we)
+             begin
+               w_mem[00] <= w_mem00_new;
+@@ -199,6 +219,21 @@
+ 
+       w_new = w_0 + d0 + w_9 + d1;
+ 
++      // Lookahead: W[N+1] computed from current window (indices 1,2,10,15).
++      // When the window hasn't shifted yet this equals W[N+1] as needed
++      // by the next round, allowing w_next_reg to be loaded one cycle early.
++      begin : lookahead_block
++        reg [63 : 0] la_d0;
++        reg [63 : 0] la_d1;
++        la_d0 = {w_mem[2][0],     w_mem[2][63 : 1]} ^
++                {w_mem[2][7 : 0], w_mem[2][63 : 8]} ^
++                {7'b0000000,      w_mem[2][63 : 7]};
++        la_d1 = {w_mem[15][18 : 0], w_mem[15][63 : 19]} ^
++                {w_mem[15][60 : 0], w_mem[15][63 : 61]} ^
++                {6'b000000,         w_mem[15][63 : 6]};
++        w_lookahead = w_mem[1] + la_d0 + w_mem[10] + la_d1;
++      end
++
+       if (init)
+         begin
+           w_mem00_new = block[1023 : 960];

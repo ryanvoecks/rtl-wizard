@@ -1,0 +1,173 @@
+--- a/sha512_core.v
++++ b/sha512_core.v
+@@ -147,6 +147,7 @@
+   reg [63 : 0] t2;
+ 
+   wire [63 : 0] k_data;
++  reg  [63 : 0] k_data_reg;
+ 
+   reg           w_init;
+   reg           w_next;
+@@ -166,7 +167,7 @@
+   // Module instantiantions.
+   //----------------------------------------------------------------
+   sha512_k_constants k_constants_inst(
+-                                      .addr(round_ctr_reg),
++                                      .addr(round_ctr_new),
+                                       .K(k_data)
+                                      );
+ 
+@@ -238,6 +239,7 @@
+           ready_reg           <= 1'b1;
+           digest_valid_reg    <= 1'b0;
+           round_ctr_reg       <= 7'h0;
++          k_data_reg          <= 64'h0;
+           sha512_ctrl_reg     <= CTRL_IDLE;
+         end
+ 
+@@ -281,6 +283,8 @@
+ 
+           if (sha512_ctrl_we)
+             sha512_ctrl_reg <= sha512_ctrl_new;
++
++          k_data_reg <= k_data;
+         end
+     end // reg_update
+ 
+@@ -346,7 +350,7 @@
+ 
+       ch = (e_reg & f_reg) ^ ((~e_reg) & g_reg);
+ 
+-      t1 = h_reg + sum1 + ch + k_data + w_data;
++      t1 = h_reg + sum1 + ch + k_data_reg + w_data;
+     end // t1_logic
+ 
+ 
+--- a/sha512_w_mem.v
++++ b/sha512_w_mem.v
+@@ -77,18 +77,22 @@
+   reg [6 : 0] w_ctr_new;
+   reg         w_ctr_we;
+ 
++  reg [63 : 0] w_pre_reg;
++
+ 
+   //----------------------------------------------------------------
+   // Wires.
+   //----------------------------------------------------------------
+-  reg [63 : 0] w_tmp;
+   reg [63 : 0] w_new;
++  reg [63 : 0] w_new_pre;
++  reg [63 : 0] w_direct_pre;
++  reg [63 : 0] w_pre;
+ 
+ 
+   //----------------------------------------------------------------
+   // Concurrent connectivity for ports etc.
+   //----------------------------------------------------------------
+-  assign w = w_tmp;
++  assign w = w_pre_reg;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -106,7 +110,8 @@
+           for (i = 0; i < 16; i = i + 1)
+             w_mem[i] <= 64'h0;
+ 
+-          w_ctr_reg <= 7'h0;
++          w_ctr_reg  <= 7'h0;
++          w_pre_reg  <= 64'h0;
+         end
+       else
+         begin
+@@ -132,23 +137,12 @@
+ 
+           if (w_ctr_we)
+               w_ctr_reg <= w_ctr_new;
++
++          w_pre_reg <= w_pre;
+         end
+     end // reg_update
+ 
+ 
+-  //----------------------------------------------------------------
+-  // select_w
+-  //
+-  // Mux for the external read operation. This is where we exract
+-  // the W variable.
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : select_w
+-      if (w_ctr_reg < 16)
+-        w_tmp = w_mem[w_ctr_reg[3 : 0]];
+-      else
+-        w_tmp = w_new;
+-    end // select_w
+ 
+ 
+   //----------------------------------------------------------------
+@@ -165,6 +159,8 @@
+       reg [63 : 0] w_14;
+       reg [63 : 0] d0;
+       reg [63 : 0] d1;
++      reg [63 : 0] d0_next;
++      reg [63 : 0] d1_next;
+ 
+       w_mem00_new = 64'h0;
+       w_mem01_new = 64'h0;
+@@ -199,6 +195,17 @@
+ 
+       w_new = w_0 + d0 + w_9 + d1;
+ 
++      d0_next = {w_mem[2][0],       w_mem[2][63 : 1]} ^
++                {w_mem[2][7 : 0],   w_mem[2][63 : 8]} ^
++                {7'b0000000,        w_mem[2][63 : 7]};
++      d1_next = {w_mem[15][18 : 0], w_mem[15][63 : 19]} ^
++                {w_mem[15][60 : 0], w_mem[15][63 : 61]} ^
++                {6'b000000,         w_mem[15][63 : 6]};
++      if (w_ctr_reg < 16)
++        w_new_pre = w_new;
++      else
++        w_new_pre = w_mem[1] + d0_next + w_mem[10] + d1_next;
++
+       if (init)
+         begin
+           w_mem00_new = block[1023 : 960];
+@@ -240,6 +247,37 @@
+           w_mem15_new = w_new;
+           w_mem_we    = 1;
+         end
++
++      // Pre-fetch w_mem[w_ctr_new] for the next cycle (rounds 0-15).
++      // Placed after init/next assignments so w_mem_XX_new hold final values.
++      if (w_mem_we)
++        case (w_ctr_new[3 : 0])
++          4'h0: w_direct_pre = w_mem00_new;
++          4'h1: w_direct_pre = w_mem01_new;
++          4'h2: w_direct_pre = w_mem02_new;
++          4'h3: w_direct_pre = w_mem03_new;
++          4'h4: w_direct_pre = w_mem04_new;
++          4'h5: w_direct_pre = w_mem05_new;
++          4'h6: w_direct_pre = w_mem06_new;
++          4'h7: w_direct_pre = w_mem07_new;
++          4'h8: w_direct_pre = w_mem08_new;
++          4'h9: w_direct_pre = w_mem09_new;
++          4'ha: w_direct_pre = w_mem10_new;
++          4'hb: w_direct_pre = w_mem11_new;
++          4'hc: w_direct_pre = w_mem12_new;
++          4'hd: w_direct_pre = w_mem13_new;
++          4'he: w_direct_pre = w_mem14_new;
++          default: w_direct_pre = w_mem15_new;
++        endcase
++      else
++        w_direct_pre = w_mem[w_ctr_new[3 : 0]];
++
++      // Merge the select into pre-registration so w_ctr comparison is
++      // register-to-register rather than on the critical consuming path.
++      if (w_ctr_new < 16)
++        w_pre = w_direct_pre;
++      else
++        w_pre = w_new_pre;
+     end // w_mem_update_logic
+ 
+ 

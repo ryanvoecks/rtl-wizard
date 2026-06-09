@@ -1,0 +1,35 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -55,11 +55,30 @@
+ 
+ wire LESS;
+ 
++localparam HALF    = DATA_WIDTH / 2;
++localparam QUARTER = DATA_WIDTH / 4;
++localparam EIGHTH  = DATA_WIDTH / 8;
++
+ generate
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		// 4-way split: four QUARTER-wide comparisons in parallel, merged in 2 levels
++		wire hi2_lt = $unsigned(A[DATA_WIDTH-1         -: QUARTER]) < $unsigned(B[DATA_WIDTH-1         -: QUARTER]);
++		wire hi2_eq =           A[DATA_WIDTH-1         -: QUARTER]  ==           B[DATA_WIDTH-1         -: QUARTER];
++		wire hi1_lt = $unsigned(A[DATA_WIDTH-QUARTER-1 -: QUARTER]) < $unsigned(B[DATA_WIDTH-QUARTER-1 -: QUARTER]);
++		wire hi1_eq =           A[DATA_WIDTH-QUARTER-1 -: QUARTER]  ==           B[DATA_WIDTH-QUARTER-1 -: QUARTER];
++		wire lo1_lt = $unsigned(A[HALF-1               -: QUARTER]) < $unsigned(B[HALF-1               -: QUARTER]);
++		wire lo1_eq =           A[HALF-1               -: QUARTER]  ==           B[HALF-1               -: QUARTER];
++		wire lo0_lt = $unsigned(A[QUARTER-1            -: QUARTER]) < $unsigned(B[QUARTER-1            -: QUARTER]);
++		wire hi_lt  = hi2_lt | (hi2_eq & hi1_lt);
++		wire hi_eq  = hi2_eq & hi1_eq;
++		wire lo_lt  = lo1_lt | (lo1_eq & lo0_lt);
++		assign LESS = hi_lt | (hi_eq & lo_lt);
+ 	end else begin
+-		assign LESS = $signed(A) < $signed(B);
++		// sign bits differ: negative is less; sign bits equal: compare magnitude
++		wire sign_a  = A[DATA_WIDTH-1];
++		wire sign_b  = B[DATA_WIDTH-1];
++		wire mag_lt  = $unsigned(A[DATA_WIDTH-2:0]) < $unsigned(B[DATA_WIDTH-2:0]);
++		assign LESS  = (sign_a & ~sign_b) | ((sign_a ~^ sign_b) & mag_lt);
+ 	end
+ 	
+ 	if (POLARITY == 0) begin

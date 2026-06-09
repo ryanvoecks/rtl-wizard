@@ -1,0 +1,121 @@
+--- a/fpu_double.v
++++ b/fpu_double.v
+@@ -188,7 +188,7 @@
+ 	case (fpu_op_reg)
+ 	3'b000:		count_cycles <= 20;
+ 	3'b001:		count_cycles <= 21;
+-	3'b010:		count_cycles <= 24;
++	3'b010:		count_cycles <= 25;
+ 	3'b011:		count_cycles <= 71; 
+ 	default:	count_cycles <= 0;
+ 	endcase
+--- a/fpu_mul.v
++++ b/fpu_mul.v
+@@ -70,16 +70,25 @@
+ reg  exponent_et_zero;
+ reg   [52:0] mul_a;
+ reg   [52:0] mul_b;
++reg		[28:0] pa_lo;
++reg		[22:0] pa_hi_lo; reg [22:0] pa_hi_hi; reg [28:0] pa_hi;
++reg		[28:0] pb_lo;
++reg		[22:0] pb_hi_lo; reg [22:0] pb_hi_hi; reg [28:0] pb_hi;
++reg		[28:0] pc_lo;
++reg		[22:0] pc_hi_lo; reg [22:0] pc_hi_hi; reg [28:0] pc_hi;
+ reg		[40:0] product_a;
+ reg		[40:0] product_b;
+ reg		[40:0] product_c;
+ reg		[25:0] product_d;
++reg		[24:0] pe_lo; reg [25:0] pe_hi;
++reg		[24:0] pf_lo; reg [25:0] pf_hi;
++reg		[26:0] pg_lo; reg [27:0] pg_hi;
+ reg		[33:0] product_e;
+ reg		[33:0] product_f;
+ reg		[35:0] product_g;
+-reg		[28:0] product_h;
+-reg		[28:0] product_i;
+-reg		[30:0] product_j;
++reg		[22:0] ph_lo; reg [22:0] ph_hi; reg [28:0] product_h;
++reg		[22:0] pi_lo; reg [22:0] pi_hi; reg [28:0] product_i;
++reg		[24:0] pj_lo; reg [24:0] pj_hi; reg [30:0] product_j;
+ reg		[41:0] sum_0;
+ reg		[35:0] sum_1;
+ reg		[41:0] sum_2;
+@@ -122,8 +131,14 @@
+ 		exponent_3 <= 0;
+ 		exponent_4 <= 0;
+ 		exponent_et_zero <= 0;
+-		mul_a <= 0; 
++		mul_a <= 0;
+ 		mul_b <= 0;
++		pa_lo <= 0; pa_hi_lo <= 0; pa_hi_hi <= 0; pa_hi <= 0;
++		pb_lo <= 0; pb_hi_lo <= 0; pb_hi_hi <= 0; pb_hi <= 0;
++		pc_lo <= 0; pc_hi_lo <= 0; pc_hi_hi <= 0; pc_hi <= 0;
++		pe_lo <= 0; pe_hi <= 0;
++		pf_lo <= 0; pf_hi <= 0;
++		pg_lo <= 0; pg_hi <= 0;
+ 		product_a <= 0;
+ 		product_b <= 0;
+ 		product_c <= 0;
+@@ -131,9 +146,9 @@
+ 		product_e <= 0;
+ 		product_f <= 0;
+ 		product_g <= 0;
+-		product_h <= 0;
+-		product_i <= 0;
+-		product_j <= 0;
++		ph_lo <= 0; ph_hi <= 0; product_h <= 0;
++		pi_lo <= 0; pi_hi <= 0; product_i <= 0;
++		pj_lo <= 0; pj_hi <= 0; product_j <= 0;
+ 		sum_0 <= 0;
+ 		sum_1 <= 0;
+ 		sum_2 <= 0;
+@@ -176,16 +191,40 @@
+ 		exponent_et_zero <= exponent_4 == 0;
+ 		mul_a <= { a_is_norm, mantissa_a };
+ 		mul_b <= { b_is_norm, mantissa_b };
+-		product_a <= mul_a[23:0] * mul_b[16:0];
+-		product_b <= mul_a[23:0] * mul_b[33:17];
+-		product_c <= mul_a[23:0] * mul_b[50:34];
++		pa_lo <= mul_a[11:0] * mul_b[16:0];
++		pa_hi_lo <= mul_a[17:12] * mul_b[16:0];
++		pa_hi_hi <= mul_a[23:18] * mul_b[16:0];
++		pa_hi <= {{6{1'b0}}, pa_hi_lo} + {pa_hi_hi, 6'b0};
++		pb_lo <= mul_a[11:0] * mul_b[33:17];
++		pb_hi_lo <= mul_a[17:12] * mul_b[33:17];
++		pb_hi_hi <= mul_a[23:18] * mul_b[33:17];
++		pb_hi <= {{6{1'b0}}, pb_hi_lo} + {pb_hi_hi, 6'b0};
++		pc_lo <= mul_a[11:0] * mul_b[50:34];
++		pc_hi_lo <= mul_a[17:12] * mul_b[50:34];
++		pc_hi_hi <= mul_a[23:18] * mul_b[50:34];
++		pc_hi <= {{6{1'b0}}, pc_hi_lo} + {pc_hi_hi, 6'b0};
++		product_a <= {{12{1'b0}}, pa_lo} + {pa_hi, 12'b0};
++		product_b <= {{12{1'b0}}, pb_lo} + {pb_hi, 12'b0};
++		product_c <= {{12{1'b0}}, pc_lo} + {pc_hi, 12'b0};
+ 		product_d <= mul_a[23:0] * mul_b[52:51];
+-		product_e <= mul_a[40:24] * mul_b[16:0];
+-		product_f <= mul_a[40:24] * mul_b[33:17];
+-		product_g <= mul_a[40:24] * mul_b[52:34];
+-		product_h <= mul_a[52:41] * mul_b[16:0];
+-		product_i <= mul_a[52:41] * mul_b[33:17];
+-		product_j <= mul_a[52:41] * mul_b[52:34];
++		pe_lo <= mul_a[31:24] * mul_b[16:0];
++		pe_hi <= mul_a[40:32] * mul_b[16:0];
++		pf_lo <= mul_a[31:24] * mul_b[33:17];
++		pf_hi <= mul_a[40:32] * mul_b[33:17];
++		pg_lo <= mul_a[31:24] * mul_b[52:34];
++		pg_hi <= mul_a[40:32] * mul_b[52:34];
++		product_e <= {{9{1'b0}}, pe_lo} + {pe_hi, 8'b0};
++		product_f <= {{9{1'b0}}, pf_lo} + {pf_hi, 8'b0};
++		product_g <= {{8{1'b0}}, pg_lo} + {pg_hi, 8'b0};
++		ph_lo <= mul_a[46:41] * mul_b[16:0];
++		ph_hi <= mul_a[52:47] * mul_b[16:0];
++		product_h <= {{6{1'b0}}, ph_lo} + {ph_hi, 6'b0};
++		pi_lo <= mul_a[46:41] * mul_b[33:17];
++		pi_hi <= mul_a[52:47] * mul_b[33:17];
++		product_i <= {{6{1'b0}}, pi_lo} + {pi_hi, 6'b0};
++		pj_lo <= mul_a[46:41] * mul_b[52:34];
++		pj_hi <= mul_a[52:47] * mul_b[52:34];
++		product_j <= {{6{1'b0}}, pj_lo} + {pj_hi, 6'b0};
+ 		sum_0 <= product_a[40:17] + product_b;
+ 		sum_1 <= sum_0[41:7] + product_e;
+ 		sum_2 <= sum_1[35:10] + product_c;
