@@ -1,0 +1,266 @@
+--- a/tpu_top.v
++++ b/tpu_top.v
+@@ -55,6 +55,86 @@
+ //----ststolic_controll parameter---
+ wire sram_write_enable;
+ wire [1:0] data_set;
++wire tpu_done_internal;
++
++// Pipeline stage 1: align with MAC pipeline in systolic
++reg [5:0] matrix_index_d1;
++reg [1:0] data_set_d1;
++reg sram_write_enable_d1;
++reg tpu_done_d1;
++
++// Pipeline stage 2: register ori_data; stage 3: register quantized_data
++// stage 4: pre-rotate quantized_data to remove variable-mux from write_out critical path
++reg signed [ARRAY_SIZE*ORI_WIDTH-1:0] ori_data_reg;
++reg [5:0] matrix_index_d2;
++reg [1:0] data_set_d2;
++reg sram_write_enable_d2;
++reg tpu_done_d2;
++
++reg signed [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] quantized_data_reg;
++reg [5:0] matrix_index_d3;
++reg [1:0] data_set_d3;
++reg sram_write_enable_d3;
++reg tpu_done_d3;
++
++// quantized_data_d4: aligned copy of quantized_data_reg for write_out direct-lane accesses
++// quantized_data_rot: pre-rotated by (matrix_index_d3+1)%ARRAY_SIZE, for write_out variable-shift accesses
++reg signed [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] quantized_data_d4;
++reg signed [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] quantized_data_rot;
++reg [5:0] matrix_index_d4;
++reg [1:0] data_set_d4;
++reg sram_write_enable_d4;
++reg tpu_done_d4;
++
++integer rot_k;
++
++always @(posedge clk) begin
++	if (~srstn) begin
++		matrix_index_d1      <= 0;
++		data_set_d1          <= 0;
++		sram_write_enable_d1 <= 0;
++		tpu_done_d1          <= 0;
++		ori_data_reg         <= 0;
++		matrix_index_d2      <= 0;
++		data_set_d2          <= 0;
++		sram_write_enable_d2 <= 0;
++		tpu_done_d2          <= 0;
++		quantized_data_reg   <= 0;
++		matrix_index_d3      <= 0;
++		data_set_d3          <= 0;
++		sram_write_enable_d3 <= 0;
++		tpu_done_d3          <= 0;
++		quantized_data_d4    <= 0;
++		quantized_data_rot   <= 0;
++		matrix_index_d4      <= 0;
++		data_set_d4          <= 0;
++		sram_write_enable_d4 <= 0;
++		tpu_done_d4          <= 0;
++	end else begin
++		matrix_index_d1      <= matrix_index;
++		data_set_d1          <= data_set;
++		sram_write_enable_d1 <= sram_write_enable;
++		tpu_done_d1          <= tpu_done_internal;
++		ori_data_reg         <= ori_data;
++		matrix_index_d2      <= matrix_index_d1;
++		data_set_d2          <= data_set_d1;
++		sram_write_enable_d2 <= sram_write_enable_d1;
++		tpu_done_d2          <= tpu_done_d1;
++		quantized_data_reg   <= quantized_data;
++		matrix_index_d3      <= matrix_index_d2;
++		data_set_d3          <= data_set_d2;
++		sram_write_enable_d3 <= sram_write_enable_d2;
++		tpu_done_d3          <= tpu_done_d2;
++		quantized_data_d4    <= quantized_data_reg;
++		matrix_index_d4      <= matrix_index_d3;
++		data_set_d4          <= data_set_d3;
++		sram_write_enable_d4 <= sram_write_enable_d3;
++		tpu_done_d4          <= tpu_done_d3;
++		for (rot_k = 0; rot_k < ARRAY_SIZE; rot_k = rot_k + 1)
++			quantized_data_rot[rot_k*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] <=
++				quantized_data_reg[((rot_k + matrix_index_d3 + 1) % ARRAY_SIZE) * OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
++	end
++end
+ 
+ //----write_out parameter----
+ // nothing XD
+@@ -85,7 +165,7 @@
+ ) quantize
+ (
+ 	//input
+-	.ori_data(ori_data),
++	.ori_data(ori_data_reg),
+ 
+ 	//output
+ 	.quantized_data(quantized_data)	
+@@ -110,8 +190,8 @@
+ 	.sram_rdata_d0(sram_rdata_d0),
+ 	.sram_rdata_d1(sram_rdata_d1),
+ 
+-	.matrix_index(matrix_index),
+-	
++	.matrix_index(matrix_index_d1),
++
+ 	//output
+ 	.mul_outcome(ori_data)
+ );
+@@ -133,7 +213,7 @@
+ 	.cycle_num(cycle_num),
+ 	.matrix_index(matrix_index),
+ 	.data_set(data_set),
+-	.tpu_done(tpu_done)
++	.tpu_done(tpu_done_internal)
+ );
+ 
+ //----write_out module----
+@@ -145,10 +225,11 @@
+ 	//input
+ 	.clk(clk), 
+ 	.srstn(srstn),
+-	.sram_write_enable(sram_write_enable),
+-	.data_set(data_set),
+-	.matrix_index(matrix_index),
+-	.quantized_data(quantized_data),
++	.sram_write_enable(sram_write_enable_d4),
++	.data_set(data_set_d4),
++	.matrix_index(matrix_index_d4),
++	.quantized_data(quantized_data_d4),
++	.quantized_data_rot(quantized_data_rot),
+ 
+ 	//output
+ 	.sram_write_enable_a0(sram_write_enable_a0),
+@@ -164,5 +245,7 @@
+ 	.sram_waddr_c(sram_waddr_c)
+ );
+ 
++assign tpu_done = tpu_done_d4;
++
+ endmodule
+ 
+--- a/systolic.v
++++ b/systolic.v
+@@ -27,12 +27,15 @@
+ localparam PARALLEL_START = ARRAY_SIZE+ARRAY_SIZE+1;
+ localparam OUTCOME_WIDTH = DATA_WIDTH+DATA_WIDTH+5;
+ 
+-reg signed [OUTCOME_WIDTH-1:0] matrix_mul_2D [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1]; 		
+-reg signed [OUTCOME_WIDTH-1:0] matrix_mul_2D_nx [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1]; 		
++reg signed [OUTCOME_WIDTH-1:0] matrix_mul_2D [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1];
++reg signed [OUTCOME_WIDTH-1:0] matrix_mul_2D_nx [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1];
+ reg signed [DATA_WIDTH-1:0] data_queue [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1];
+ reg signed [DATA_WIDTH-1:0] weight_queue [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1];
+ 
+-reg signed [DATA_WIDTH+DATA_WIDTH-1:0] mul_result;
++// Pipeline stage 1: registered products
++reg signed [DATA_WIDTH+DATA_WIDTH-1:0] mul_product [0:ARRAY_SIZE-1] [0:ARRAY_SIZE-1];
++reg [8:0] cycle_num_d1;
++reg alu_start_d1;
+ 
+ reg [5:0] upper_bound;
+ reg [5:0] lower_bound;
+@@ -75,6 +78,25 @@
+ 	end
+ end
+ 
++// Pipeline stage 1: register multiply products
++always@(posedge clk) begin
++	if(~srstn) begin
++		cycle_num_d1 <= 0;
++		alu_start_d1 <= 0;
++		for(i=0; i<ARRAY_SIZE; i=i+1)
++			for(j=0; j<ARRAY_SIZE; j=j+1)
++				mul_product[i][j] <= 0;
++	end
++	else begin
++		cycle_num_d1 <= cycle_num;
++		alu_start_d1 <= alu_start;
++		if(alu_start)
++			for(i=0; i<ARRAY_SIZE; i=i+1)
++				for(j=0; j<ARRAY_SIZE; j=j+1)
++					mul_product[i][j] <= weight_queue[i][j] * data_queue[i][j];
++	end
++end
++
+ //-------multiplication unit------------
+ always@(posedge clk) begin
+ 	if(~srstn) begin
+@@ -90,31 +112,26 @@
+ end
+ 
+ always@(*) begin
+-	if(alu_start) begin			//based on the mul_row_num, decode how many row operations need to do
++	if(alu_start_d1) begin
+ 		for(i=0; i<ARRAY_SIZE; i=i+1) begin
+ 			for(j=0; j<ARRAY_SIZE; j=j+1) begin
+-				//multiplication and adding
+-				if( (cycle_num>=FIRST_OUT && (i+j)==(cycle_num-FIRST_OUT)%16) || (cycle_num >=PARALLEL_START && (i+j)==(cycle_num-PARALLEL_START)%16) ) begin
+-					mul_result = weight_queue[i][j] * data_queue[i][j];
+-					matrix_mul_2D_nx[i][j] =  { {5{mul_result[15]}} , mul_result };
++				if( (cycle_num_d1>=FIRST_OUT && (i+j)==(cycle_num_d1-FIRST_OUT)%16) || (cycle_num_d1>=PARALLEL_START && (i+j)==(cycle_num_d1-PARALLEL_START)%16) ) begin
++					matrix_mul_2D_nx[i][j] = { {5{mul_product[i][j][15]}} , mul_product[i][j] };
+ 				end
+-				else if( cycle_num>=1 && i+j<=(cycle_num-1) ) begin
+-					mul_result = weight_queue[i][j] * data_queue[i][j];
+-					matrix_mul_2D_nx[i][j] = matrix_mul_2D[i][j] + { {5{mul_result[15]}} , mul_result };
++				else if( cycle_num_d1>=1 && i+j<=(cycle_num_d1-1) ) begin
++					matrix_mul_2D_nx[i][j] = matrix_mul_2D[i][j] + { {5{mul_product[i][j][15]}} , mul_product[i][j] };
+ 				end
+ 				else begin
+-				 	mul_result = 0;	
+ 					matrix_mul_2D_nx[i][j] = matrix_mul_2D[i][j];
+ 				end
+ 			end
+ 		end
+ 	end
+ 	else begin
+-		mul_result = 0;
+-		for(i=0; i<ARRAY_SIZE; i=i+1) 
+-			for(j=0; j<ARRAY_SIZE; j=j+1) 
++		for(i=0; i<ARRAY_SIZE; i=i+1)
++			for(j=0; j<ARRAY_SIZE; j=j+1)
+ 				matrix_mul_2D_nx[i][j] = matrix_mul_2D[i][j];
+-	end		
++	end
+ end
+ 
+ //------output data: mul_outcome(indexed by matrix_index)------
+--- a/write_out.v
++++ b/write_out.v
+@@ -13,6 +13,7 @@
+ 	input [5:0] matrix_index,
+ 
+ 	input signed [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] quantized_data,
++	input signed [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] quantized_data_rot,
+ 	
+ 	output reg sram_write_enable_a0,
+ 	output reg [ARRAY_SIZE*OUTPUT_DATA_WIDTH-1:0] sram_wdata_a,
+@@ -93,7 +94,7 @@
+ 					sram_write_enable_a0_nx = 0;
+ 				 	for(i=0; i<ARRAY_SIZE; i=i+1) begin
+ 						if(i < 15-matrix_index)
+-							sram_wdata_a_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data[(i+1+(matrix_index-ARRAY_SIZE))*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
++							sram_wdata_a_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data_rot[i*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
+ 						else
+ 							sram_wdata_a_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = 0;
+ 					end
+@@ -145,7 +146,7 @@
+ 					sram_write_enable_b0_nx = 0;
+ 					for(i=0; i<ARRAY_SIZE; i=i+1) begin
+ 						if(i < ARRAY_SIZE-matrix_index-1)
+-							sram_wdata_b_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data[(i+1+matrix_index)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
++							sram_wdata_b_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data_rot[i*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
+ 						else
+ 							sram_wdata_b_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = 0;
+ 					end
+@@ -194,7 +195,7 @@
+ 					sram_write_enable_c0_nx = 0;
+ 					for(i=0; i<ARRAY_SIZE; i=i+1) begin
+ 						if(i < 15-matrix_index)
+-							sram_wdata_c_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data[(i+1+(matrix_index-ARRAY_SIZE))*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
++							sram_wdata_c_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = quantized_data_rot[i*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH];
+ 						else
+ 							sram_wdata_c_nx[(MAX_INDEX-i)*OUTPUT_DATA_WIDTH +: OUTPUT_DATA_WIDTH] = 0;
+ 					end	

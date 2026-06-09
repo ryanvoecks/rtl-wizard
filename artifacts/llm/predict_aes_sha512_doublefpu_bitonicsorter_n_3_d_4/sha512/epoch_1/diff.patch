@@ -1,0 +1,219 @@
+--- a/sha512.v
++++ b/sha512.v
+@@ -240,16 +240,32 @@
+       work_factor_we     = 1'h0;
+       work_factor_num_we = 1'h0;
+       block_we           = 1'h0;
+-      tmp_read_data      = 32'h0;
+       tmp_error          = 1'h0;
+ 
+       block_addr = address[4 : 0] - ADDR_BLOCK0[4 : 0];
++
++      // Read data is always decoded combinationally (cs/we gating removed
++      // from read path; the bus master only samples read_data on valid reads).
++      if (address[7 : 4] == 4'h4)
++        tmp_read_data = digest_reg[{~address[3 : 0], 5'b0} +: 32];
++      else if ((address[7 : 4] == 4'h1) || (address[7 : 4] == 4'h2))
++        tmp_read_data = block_reg[address[4 : 0]];
++      else
++        case (address)
++          ADDR_NAME0:        tmp_read_data = CORE_NAME0;
++          ADDR_NAME1:        tmp_read_data = CORE_NAME1;
++          ADDR_VERSION:      tmp_read_data = CORE_VERSION;
++          ADDR_CTRL:         tmp_read_data = {24'h0, work_factor_reg, 3'b0, mode_reg, next_reg, init_reg};
++          ADDR_STATUS:       tmp_read_data = {30'h0, digest_valid_reg, ready_reg};
++          ADDR_WORK_FACTOR_NUM: tmp_read_data = work_factor_num_reg;
++          default:           tmp_read_data = 32'h0;
++        endcase
+ 
+       if (cs)
+         begin
+           if (we)
+             begin
+-              if ((address >= ADDR_BLOCK0) && (address <= ADDR_BLOCK31))
++              if ((address[7 : 4] == 4'h1) || (address[7 : 4] == 4'h2))
+                 block_we = 1'h1;
+ 
+               case (address)
+@@ -267,43 +283,23 @@
+                   work_factor_num_we = 1'h1;
+ 
+                 default:
+-                    tmp_error = 1'h1;
+-              endcase // case (address)
+-            end // if (we)
+-
++                  tmp_error = 1'h1;
++              endcase
++            end
+           else
+             begin
+-              if ((address >= ADDR_DIGEST0) && (address <= ADDR_DIGEST15))
+-                tmp_read_data = digest_reg[(15 - (address - ADDR_DIGEST0)) * 32 +: 32];
+-
+-              if ((address >= ADDR_BLOCK0) && (address <= ADDR_BLOCK31))
+-                tmp_read_data = block_reg[address[4 : 0]];
+-
+               case (address)
+-                ADDR_NAME0:
+-                  tmp_read_data = CORE_NAME0;
+-
+-                ADDR_NAME1:
+-                  tmp_read_data = CORE_NAME1;
+-
+-                ADDR_VERSION:
+-                  tmp_read_data = CORE_VERSION;
+-
+-                ADDR_CTRL:
+-                  tmp_read_data = {24'h0, work_factor_reg, 3'b0, mode_reg, next_reg, init_reg};
+-
+-                ADDR_STATUS:
+-                  tmp_read_data = {30'h0, digest_valid_reg, ready_reg};
+-
+-                ADDR_WORK_FACTOR_NUM:
+-                  tmp_read_data = work_factor_num_reg;
+-
++                ADDR_NAME0, ADDR_NAME1, ADDR_VERSION,
++                ADDR_CTRL, ADDR_STATUS, ADDR_WORK_FACTOR_NUM: ;
+                 default:
+-                  tmp_error = 1'h1;
+-              endcase // case (address)
++                  if (address[7 : 4] != 4'h4 &&
++                      address[7 : 4] != 4'h1 &&
++                      address[7 : 4] != 4'h2)
++                    tmp_error = 1'h1;
++              endcase
+             end
+         end
+-    end // addr_decoder
++    end // api_logic
+ endmodule // sha512
+ 
+ //======================================================================
+--- a/sha512_core.v
++++ b/sha512_core.v
+@@ -147,6 +147,7 @@
+   reg [63 : 0] t2;
+ 
+   wire [63 : 0] k_data;
++  reg  [63 : 0] k_data_reg;
+ 
+   reg           w_init;
+   reg           w_next;
+@@ -166,7 +167,7 @@
+   // Module instantiantions.
+   //----------------------------------------------------------------
+   sha512_k_constants k_constants_inst(
+-                                      .addr(round_ctr_reg),
++                                      .addr(round_ctr_new),
+                                       .K(k_data)
+                                      );
+ 
+@@ -281,6 +282,8 @@
+ 
+           if (sha512_ctrl_we)
+             sha512_ctrl_reg <= sha512_ctrl_new;
++
++          k_data_reg <= k_data;
+         end
+     end // reg_update
+ 
+@@ -346,7 +349,7 @@
+ 
+       ch = (e_reg & f_reg) ^ ((~e_reg) & g_reg);
+ 
+-      t1 = h_reg + sum1 + ch + k_data + w_data;
++      t1 = h_reg + sum1 + ch + k_data_reg + w_data;
+     end // t1_logic
+ 
+ 
+--- a/sha512_w_mem.v
++++ b/sha512_w_mem.v
+@@ -73,10 +73,6 @@
+   reg [63 : 0] w_mem15_new;
+   reg          w_mem_we;
+ 
+-  reg [6 : 0] w_ctr_reg;
+-  reg [6 : 0] w_ctr_new;
+-  reg         w_ctr_we;
+-
+ 
+   //----------------------------------------------------------------
+   // Wires.
+@@ -105,8 +101,6 @@
+         begin
+           for (i = 0; i < 16; i = i + 1)
+             w_mem[i] <= 64'h0;
+-
+-          w_ctr_reg <= 7'h0;
+         end
+       else
+         begin
+@@ -129,9 +123,6 @@
+               w_mem[14] <= w_mem14_new;
+               w_mem[15] <= w_mem15_new;
+             end
+-
+-          if (w_ctr_we)
+-              w_ctr_reg <= w_ctr_new;
+         end
+     end // reg_update
+ 
+@@ -139,15 +130,11 @@
+   //----------------------------------------------------------------
+   // select_w
+   //
+-  // Mux for the external read operation. This is where we exract
+-  // the W variable.
++  // W is always the head of the sliding window.
+   //----------------------------------------------------------------
+   always @*
+     begin : select_w
+-      if (w_ctr_reg < 16)
+-        w_tmp = w_mem[w_ctr_reg[3 : 0]];
+-      else
+-        w_tmp = w_new;
++      w_tmp = w_mem[0];
+     end // select_w
+ 
+ 
+@@ -220,7 +207,7 @@
+           w_mem_we    = 1;
+         end
+ 
+-      if (next && (w_ctr_reg > 15))
++      if (next)
+         begin
+           w_mem00_new = w_mem[01];
+           w_mem01_new = w_mem[02];
+@@ -242,30 +229,6 @@
+         end
+     end // w_mem_update_logic
+ 
+-
+-  //----------------------------------------------------------------
+-  // w_ctr
+-  // W schedule adress counter. Counts from 0x10 to 0x3f and
+-  // is used to expand the block into words.
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : w_ctr
+-      w_ctr_new = 7'h0;
+-      w_ctr_we  = 1'h0;
+-
+-      if (init)
+-        begin
+-          w_ctr_new = 7'h00;
+-          w_ctr_we  = 1'h1;
+-        end
+-
+-      if (next)
+-        begin
+-          w_ctr_new = w_ctr_reg + 7'h01;
+-          w_ctr_we  = 1'h1;
+-        end
+-    end // w_ctr
+-
+ endmodule // sha512_w_mem
+ 
+ //======================================================================

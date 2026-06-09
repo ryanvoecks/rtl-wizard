@@ -1,0 +1,1 @@
+viterbi: 5/5 testcase decode outputs match goldens (case1 also matches path-metric golden)

@@ -1,0 +1,132 @@
+--- a/fpu_double.v
++++ b/fpu_double.v
+@@ -188,7 +188,7 @@
+ 	case (fpu_op_reg)
+ 	3'b000:		count_cycles <= 20;
+ 	3'b001:		count_cycles <= 21;
+-	3'b010:		count_cycles <= 24;
++	3'b010:		count_cycles <= 27;
+ 	3'b011:		count_cycles <= 71; 
+ 	default:	count_cycles <= 0;
+ 	endcase
+--- a/fpu_mul.v
++++ b/fpu_mul.v
+@@ -70,6 +70,36 @@
+ reg  exponent_et_zero;
+ reg   [52:0] mul_a;
+ reg   [52:0] mul_b;
++reg   [5:0]  mul_a_lo_lo_r;
++reg   [5:0]  mul_a_lo_hi_r;
++reg   [5:0]  mul_a_hi_lo_r;
++reg   [5:0]  mul_a_hi_hi_r;
++reg   [8:0]  mul_a_mid_lo_r;
++reg   [7:0]  mul_a_mid_hi_r;
++reg   [5:0]  mul_a_top_lo_r;
++reg   [5:0]  mul_a_top_hi_r;
++reg   [16:0] mul_b_r0;
++reg   [16:0] mul_b_r1;
++reg   [16:0] mul_b_r2;
++reg   [1:0]  mul_b_r3;
++reg   [18:0] mul_b_r4;
++reg   [22:0] pa_ll; reg   [22:0] pa_lh; reg   [22:0] pa_hl; reg   [22:0] pa_hh;
++reg   [22:0] pb_ll; reg   [22:0] pb_lh; reg   [22:0] pb_hl; reg   [22:0] pb_hh;
++reg   [22:0] pc_ll; reg   [22:0] pc_lh; reg   [22:0] pc_hl; reg   [22:0] pc_hh;
++reg   [7:0]  pd_ll; reg   [7:0]  pd_lh; reg   [7:0]  pd_hl; reg   [7:0]  pd_hh;
++reg   [22:0] ph_ll; reg   [22:0] ph_lh;
++reg   [22:0] pi_ll; reg   [22:0] pi_lh;
++reg   [24:0] pj_ll; reg   [24:0] pj_lh;
++reg   [28:0] pa_lo; reg   [28:0] pa_hi;
++reg   [28:0] pb_lo; reg   [28:0] pb_hi;
++reg   [28:0] pc_lo; reg   [28:0] pc_hi;
++reg   [13:0] pd_lo; reg   [13:0] pd_hi;
++reg   [25:0] pe_lo;
++reg   [24:0] pe_hi;
++reg   [25:0] pf_lo;
++reg   [24:0] pf_hi;
++reg   [27:0] pg_lo;
++reg   [26:0] pg_hi;
+ reg		[40:0] product_a;
+ reg		[40:0] product_b;
+ reg		[40:0] product_c;
+@@ -122,8 +152,25 @@
+ 		exponent_3 <= 0;
+ 		exponent_4 <= 0;
+ 		exponent_et_zero <= 0;
+-		mul_a <= 0; 
++		mul_a <= 0;
+ 		mul_b <= 0;
++		mul_a_lo_lo_r <= 0; mul_a_lo_hi_r <= 0;
++		mul_a_hi_lo_r <= 0; mul_a_hi_hi_r <= 0;
++		mul_a_mid_lo_r <= 0; mul_a_mid_hi_r <= 0;
++		mul_a_top_lo_r <= 0; mul_a_top_hi_r <= 0;
++		mul_b_r0 <= 0; mul_b_r1 <= 0; mul_b_r2 <= 0; mul_b_r3 <= 0; mul_b_r4 <= 0;
++		pa_ll<=0; pa_lh<=0; pa_hl<=0; pa_hh<=0;
++		pb_ll<=0; pb_lh<=0; pb_hl<=0; pb_hh<=0;
++		pc_ll<=0; pc_lh<=0; pc_hl<=0; pc_hh<=0;
++		pd_ll<=0; pd_lh<=0; pd_hl<=0; pd_hh<=0;
++		ph_ll<=0; ph_lh<=0; pi_ll<=0; pi_lh<=0; pj_ll<=0; pj_lh<=0;
++		pa_lo <= 0; pa_hi <= 0;
++		pb_lo <= 0; pb_hi <= 0;
++		pc_lo <= 0; pc_hi <= 0;
++		pd_lo <= 0; pd_hi <= 0;
++		pe_lo <= 0; pe_hi <= 0;
++		pf_lo <= 0; pf_hi <= 0;
++		pg_lo <= 0; pg_hi <= 0;
+ 		product_a <= 0;
+ 		product_b <= 0;
+ 		product_c <= 0;
+@@ -176,16 +223,44 @@
+ 		exponent_et_zero <= exponent_4 == 0;
+ 		mul_a <= { a_is_norm, mantissa_a };
+ 		mul_b <= { b_is_norm, mantissa_b };
+-		product_a <= mul_a[23:0] * mul_b[16:0];
+-		product_b <= mul_a[23:0] * mul_b[33:17];
+-		product_c <= mul_a[23:0] * mul_b[50:34];
+-		product_d <= mul_a[23:0] * mul_b[52:51];
+-		product_e <= mul_a[40:24] * mul_b[16:0];
+-		product_f <= mul_a[40:24] * mul_b[33:17];
+-		product_g <= mul_a[40:24] * mul_b[52:34];
+-		product_h <= mul_a[52:41] * mul_b[16:0];
+-		product_i <= mul_a[52:41] * mul_b[33:17];
+-		product_j <= mul_a[52:41] * mul_b[52:34];
++		// Stage A: register 6-bit slices of mul_a and mul_b
++		mul_a_lo_lo_r <= mul_a[5:0];   mul_a_lo_hi_r <= mul_a[11:6];
++		mul_a_hi_lo_r <= mul_a[17:12]; mul_a_hi_hi_r <= mul_a[23:18];
++		mul_a_mid_lo_r <= mul_a[32:24]; mul_a_mid_hi_r <= mul_a[40:33];
++		mul_a_top_lo_r <= mul_a[46:41]; mul_a_top_hi_r <= mul_a[52:47];
++		mul_b_r0 <= mul_b[16:0]; mul_b_r1 <= mul_b[33:17]; mul_b_r2 <= mul_b[50:34];
++		mul_b_r3 <= mul_b[52:51]; mul_b_r4 <= mul_b[52:34];
++		// Stage B: 6-bit x 17/19-bit partial products
++		pa_ll <= mul_a_lo_lo_r * mul_b_r0; pa_lh <= mul_a_lo_hi_r * mul_b_r0;
++		pa_hl <= mul_a_hi_lo_r * mul_b_r0; pa_hh <= mul_a_hi_hi_r * mul_b_r0;
++		pb_ll <= mul_a_lo_lo_r * mul_b_r1; pb_lh <= mul_a_lo_hi_r * mul_b_r1;
++		pb_hl <= mul_a_hi_lo_r * mul_b_r1; pb_hh <= mul_a_hi_hi_r * mul_b_r1;
++		pc_ll <= mul_a_lo_lo_r * mul_b_r2; pc_lh <= mul_a_lo_hi_r * mul_b_r2;
++		pc_hl <= mul_a_hi_lo_r * mul_b_r2; pc_hh <= mul_a_hi_hi_r * mul_b_r2;
++		pd_ll <= mul_a_lo_lo_r * mul_b_r3; pd_lh <= mul_a_lo_hi_r * mul_b_r3;
++		pd_hl <= mul_a_hi_lo_r * mul_b_r3; pd_hh <= mul_a_hi_hi_r * mul_b_r3;
++		ph_ll <= mul_a_top_lo_r * mul_b_r0; ph_lh <= mul_a_top_hi_r * mul_b_r0;
++		pi_ll <= mul_a_top_lo_r * mul_b_r1; pi_lh <= mul_a_top_hi_r * mul_b_r1;
++		pj_ll <= mul_a_top_lo_r * mul_b_r4; pj_lh <= mul_a_top_hi_r * mul_b_r4;
++		pe_lo <= mul_a_mid_lo_r * mul_b_r0; pe_hi <= mul_a_mid_hi_r * mul_b_r0;
++		pf_lo <= mul_a_mid_lo_r * mul_b_r1; pf_hi <= mul_a_mid_hi_r * mul_b_r1;
++		pg_lo <= mul_a_mid_lo_r * mul_b_r4; pg_hi <= mul_a_mid_hi_r * mul_b_r4;
++		// Stage B2: combine 6-bit pairs into 12-bit-equivalent partial products
++		pa_lo <= pa_lh * 64 + pa_ll; pa_hi <= pa_hh * 64 + pa_hl;
++		pb_lo <= pb_lh * 64 + pb_ll; pb_hi <= pb_hh * 64 + pb_hl;
++		pc_lo <= pc_lh * 64 + pc_ll; pc_hi <= pc_hh * 64 + pc_hl;
++		pd_lo <= pd_lh * 64 + pd_ll; pd_hi <= pd_hh * 64 + pd_hl;
++		product_h <= ph_lh * 64 + ph_ll;
++		product_i <= pi_lh * 64 + pi_ll;
++		product_j <= pj_lh * 64 + pj_ll;
++		product_e <= pe_hi * 512 + pe_lo;
++		product_f <= pf_hi * 512 + pf_lo;
++		product_g <= pg_hi * 512 + pg_lo;
++		// Stage B3: combine into final 24-bit-equivalent products
++		product_a <= pa_hi * 4096 + pa_lo;
++		product_b <= pb_hi * 4096 + pb_lo;
++		product_c <= pc_hi * 4096 + pc_lo;
++		product_d <= pd_hi * 4096 + pd_lo;
+ 		sum_0 <= product_a[40:17] + product_b;
+ 		sum_1 <= sum_0[41:7] + product_e;
+ 		sum_2 <= sum_1[35:10] + product_c;

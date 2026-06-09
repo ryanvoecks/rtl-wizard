@@ -1,0 +1,47 @@
+--- a/wb_dma_wb_mast.v
++++ b/wb_dma_wb_mast.v
+@@ -158,7 +158,7 @@
+ 	mast_cyc <= #1 mast_go;
+ 
+ always @(posedge clk)
+-	mast_stb <= #1 mast_go & !mast_wait; 
++	mast_stb <= #1 mast_go & !mast_wait;
+ 
+ assign mast_drdy = wb_ack_i;
+ assign mast_err  = wb_err_i;
+--- a/wb_dma_de.v
++++ b/wb_dma_de.v
+@@ -198,6 +198,7 @@
+ reg	[10:0]	/* synopsys enum state */ state, next_state;
+ // synopsys state_vector state
+ 
++reg	[31:0]	csr_r;
+ reg	[31:0]	mast0_adr, mast1_adr;
+ 
+ reg	[29:0]	adr0_cnt, adr1_cnt;
+@@ -239,6 +240,7 @@
+ reg	[1:0]	ptr_adr_low;
+ reg		m0_go;
+ reg		m0_we;
++reg		m0_we_r;
+ reg		ptr_set;
+ 
+ // Aliases
+@@ -418,9 +420,15 @@
+ always @(posedge clk)
+ 	rd_ack_r <= #1 read_r;
+ 
++always @(posedge clk)
++	csr_r <= #1 csr;
++
++always @(posedge clk)
++	m0_we_r <= #1 m0_we;
++
+ // Data Path
+-assign mast0_dout = m0_we ? {20'h0, tsz_cnt} : csr[2] ? mast1_din : mast0_din;
+-assign mast1_dout = csr[2] ? mast1_din : mast0_din;
++assign mast0_dout = m0_we_r ? {20'h0, tsz_cnt} : csr_r[2] ? mast1_din : mast0_din;
++assign mast1_dout = csr_r[2] ? mast1_din : mast0_din;
+ 
+ // Address Path
+ always @(posedge clk)

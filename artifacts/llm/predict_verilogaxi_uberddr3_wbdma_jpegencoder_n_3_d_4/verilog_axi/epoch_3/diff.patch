@@ -1,0 +1,182 @@
+--- a/rtl/axi_crossbar_addr.v
++++ b/rtl/axi_crossbar_addr.v
+@@ -110,6 +110,21 @@
+ );
+ 
+ parameter CL_S_COUNT = $clog2(S_COUNT);
++
++// Pipeline register for completion signals to break the long
++// combinational path: grant_encoded_reg -> barrel-shift mux -> s_cpl_id -> thread_count_reg.
++reg [ID_WIDTH-1:0] s_cpl_id_q;
++reg                s_cpl_valid_q;
++
++always @(posedge clk) begin
++    if (rst) begin
++        s_cpl_valid_q <= 1'b0;
++        s_cpl_id_q    <= {ID_WIDTH{1'b0}};
++    end else begin
++        s_cpl_valid_q <= s_cpl_valid;
++        s_cpl_id_q    <= s_cpl_id;
++    end
++end
+ parameter CL_M_COUNT = $clog2(M_COUNT);
+ 
+ parameter S_INT_THREADS = S_THREADS > S_ACCEPT ? S_ACCEPT : S_THREADS;
+@@ -230,10 +245,12 @@
+ end
+ 
+ localparam [2:0]
+-    STATE_IDLE = 3'd0,
+-    STATE_DECODE = 3'd1;
++    STATE_IDLE   = 3'd0,
++    STATE_ADDR   = 3'd1,
++    STATE_DECODE = 3'd2;
+ 
+ reg [2:0] state_reg = STATE_IDLE, state_next;
++reg match_reg = 1'b0;
+ 
+ reg s_axi_aready_reg = 0, s_axi_aready_next;
+ 
+@@ -288,7 +305,7 @@
+         assign thread_active[n] = thread_count_reg[n] != 0;
+         assign thread_match[n] = thread_active[n] && thread_id_reg[n] == s_axi_aid;
+         assign thread_match_dest[n] = thread_match[n] && thread_m_reg[n] == m_select_next && (M_REGIONS < 2 || thread_region_reg[n] == m_axi_aregion_next);
+-        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id;
++        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id_q;
+         assign thread_trans_start[n] = (thread_match[n] || (!thread_active[n] && !thread_match && !(thread_trans_start & ({S_INT_THREADS{1'b1}} >> (S_INT_THREADS-n))))) && trans_start;
+         assign thread_trans_complete[n] = thread_cpl_match[n] && trans_complete;
+ 
+@@ -330,7 +347,8 @@
+ 
+     case (state_reg)
+         STATE_IDLE: begin
+-            // idle state, store values
++            // Decode address and register result; thread checks happen in STATE_ADDR
++            // to break the long combinatorial path: addr -> decode -> thread_count_reg.
+             s_axi_aready_next = 1'b0;
+ 
+             if (s_axi_avalid && !s_axi_aready) begin
+@@ -344,31 +362,34 @@
+                         end
+                     end
+                 end
+-
+-                if (match) begin
+-                    // address decode successful
+-                    if (!trans_limit && (thread_match_dest || (!(&thread_active) && !thread_match))) begin
+-                        // transaction limit not reached
+-                        m_axi_avalid_next = 1'b1;
+-                        m_decerr_next = 1'b0;
+-                        m_wc_valid_next = WC_OUTPUT;
+-                        m_rc_valid_next = 1'b0;
+-                        trans_start = 1'b1;
+-                        state_next = STATE_DECODE;
+-                    end else begin
+-                        // transaction limit reached; block in idle
+-                        state_next = STATE_IDLE;
+-                    end
++                state_next = STATE_ADDR;
++            end else begin
++                state_next = STATE_IDLE;
++            end
++        end
++        STATE_ADDR: begin
++            // Use registered m_select_reg (decoded in STATE_IDLE) for thread admission.
++            // m_select_next defaults to m_select_reg so thread_match_dest sees registered value.
++            if (match_reg) begin
++                // address decode successful
++                if (!trans_limit && (thread_match_dest || (!(&thread_active) && !thread_match))) begin
++                    m_axi_avalid_next = 1'b1;
++                    m_decerr_next = 1'b0;
++                    m_wc_valid_next = WC_OUTPUT;
++                    m_rc_valid_next = 1'b0;
++                    trans_start = 1'b1;
++                    state_next = STATE_DECODE;
+                 end else begin
+-                    // decode error
+-                    m_axi_avalid_next = 1'b0;
+-                    m_decerr_next = 1'b1;
+-                    m_wc_valid_next = WC_OUTPUT;
+-                    m_rc_valid_next = 1'b1;
+-                    state_next = STATE_DECODE;
++                    // transaction limit reached or ordering conflict; wait
++                    state_next = STATE_ADDR;
+                 end
+             end else begin
+-                state_next = STATE_IDLE;
++                // decode error
++                m_axi_avalid_next = 1'b0;
++                m_decerr_next = 1'b1;
++                m_wc_valid_next = WC_OUTPUT;
++                m_rc_valid_next = 1'b1;
++                state_next = STATE_DECODE;
+             end
+         end
+         STATE_DECODE: begin
+@@ -382,7 +403,7 @@
+     endcase
+ 
+     // manage completions
+-    trans_complete = s_cpl_valid;
++    trans_complete = s_cpl_valid_q;
+ end
+ 
+ always @(posedge clk) begin
+@@ -410,6 +431,7 @@
+ 
+     m_axi_aregion_reg <= m_axi_aregion_next;
+     m_select_reg <= m_select_next;
++    match_reg <= match;
+     m_decerr_reg <= m_decerr_next;
+ end
+ 
+--- a/rtl/axi_crossbar_wr.v
++++ b/rtl/axi_crossbar_wr.v
+@@ -510,6 +510,10 @@
+         reg [CL_S_COUNT-1:0] w_select_reg = 0, w_select_next;
+         reg w_select_valid_reg = 1'b0, w_select_valid_next;
+         reg w_select_new_reg = 1'b0, w_select_new_next;
++        // Pre-registered one-hot decode of w_select_reg to shorten
++        // the critical path: old path went w_select_reg -> decoder -> int_axi_wready.
++        // New path: w_select_onehot_reg (already decoded) -> AND -> int_axi_wready.
++        reg [S_COUNT-1:0] w_select_onehot_reg = {S_COUNT{1'b0}};
+ 
+         wire [S_COUNT-1:0] a_request;
+         wire [S_COUNT-1:0] a_acknowledge;
+@@ -566,7 +570,7 @@
+         wire                   s_axi_wvalid_mux  = int_axi_wvalid[w_select_reg*M_COUNT+n] && w_select_valid_reg;
+         wire                   s_axi_wready_mux;
+ 
+-        assign int_axi_wready[n*S_COUNT +: S_COUNT] = (w_select_valid_reg && s_axi_wready_mux) << w_select_reg;
++        assign int_axi_wready[n*S_COUNT +: S_COUNT] = {S_COUNT{w_select_valid_reg && s_axi_wready_mux}} & w_select_onehot_reg;
+ 
+         // write data routing
+         always @* begin
+@@ -591,6 +595,7 @@
+             end
+ 
+             w_select_reg <= w_select_next;
++            w_select_onehot_reg <= ({{(S_COUNT-1){1'b0}}, 1'b1} << w_select_next);
+         end
+ 
+         // write response forwarding
+--- a/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
++++ b/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
+@@ -228,7 +228,7 @@
+     parameter M07_SECURE = 0,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S00_AW_REG_TYPE = 0,
++    parameter S00_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S00_W_REG_TYPE = 0,
+@@ -237,7 +237,7 @@
+     parameter S00_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S00_AR_REG_TYPE = 0,
++    parameter S00_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S00_R_REG_TYPE = 2,

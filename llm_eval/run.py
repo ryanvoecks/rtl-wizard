@@ -54,7 +54,7 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
-    run_dir = LLM_RESULTS / "synth_e203_reedsolomon_systolictpu_viterbi_n_3_d_4"
+    run_dir = LLM_RESULTS / "predict_e203_reedsolomon_systolictpu_viterbi_n_3_d_4"
     run_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {run_dir}", flush=True)
 

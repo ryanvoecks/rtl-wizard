@@ -1,0 +1,53 @@
+--- a/wb_dma_wb_mast.v
++++ b/wb_dma_wb_mast.v
+@@ -134,9 +134,11 @@
+ // Pass-Through Interface
+ //
+ 
+-assign {wb_data_o, wb_addr_o, wb_sel_o, wb_we_o, wb_cyc_o, wb_stb_o} =
+-	pt_sel ? mast_pt_in :
+-	{mast_din, mast_adr, mast_be, mast_we_r, mast_cyc, mast_stb};
++// pt_sel=1 implies wb_cyc_i=1 (mast_pt_in[1]=1), so OR replaces mux for cyc_o
++assign wb_cyc_o = pt_sel | mast_cyc;
++assign {wb_data_o, wb_addr_o, wb_sel_o, wb_we_o, wb_stb_o} =
++	pt_sel ? {mast_pt_in[70:2], mast_pt_in[0]} :
++	{mast_din, mast_adr, mast_be, mast_we_r, mast_stb};
+ 
+ assign mast_pt_out = {wb_data_i, wb_ack_i, wb_err_i, wb_rty_i};
+ 
+--- a/wb_dma_de.v
++++ b/wb_dma_de.v
+@@ -198,6 +198,8 @@
+ reg	[10:0]	/* synopsys enum state */ state, next_state;
+ // synopsys state_vector state
+ 
++reg	[1:0]	csr_mode_r;	// registered csr[2:1]: stable once de_start fires
++
+ reg	[31:0]	mast0_adr, mast1_adr;
+ 
+ reg	[29:0]	adr0_cnt, adr1_cnt;
+@@ -239,6 +241,7 @@
+ reg	[1:0]	ptr_adr_low;
+ reg		m0_go;
+ reg		m0_we;
++reg		m0_we_r;
+ reg		ptr_set;
+ 
+ // Aliases
+@@ -419,8 +422,14 @@
+ 	rd_ack_r <= #1 read_r;
+ 
+ // Data Path
+-assign mast0_dout = m0_we ? {20'h0, tsz_cnt} : csr[2] ? mast1_din : mast0_din;
+-assign mast1_dout = csr[2] ? mast1_din : mast0_din;
++always @(posedge clk)
++	csr_mode_r <= #1 csr[2:1];
++
++always @(posedge clk)
++	m0_we_r <= #1 m0_we;
++
++assign mast0_dout = m0_we_r ? {20'h0, tsz_cnt} : csr_mode_r[1] ? mast1_din : mast0_din;
++assign mast1_dout = csr_mode_r[1] ? mast1_din : mast0_din;
+ 
+ // Address Path
+ always @(posedge clk)

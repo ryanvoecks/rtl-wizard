@@ -1,0 +1,121 @@
+--- a/fpu_mul.v
++++ b/fpu_mul.v
+@@ -97,8 +97,28 @@
+ reg   [105:0] product_5;
+ reg   [105:0] product_6;
+ reg		product_lsb; // if there are any 1's in the remainder
+-wire  [55:0] product_7 =  { 1'b0, product_6[105:52], product_lsb }; 
+-reg  [11:0] exponent_5;		
++wire  [55:0] product_7 =  { 1'b0, product_6[105:52], product_lsb };
++reg  [11:0] exponent_5;
++// Pre-sliced operands registered one cycle before mul_a/mul_b,
++// enabling 12x17 partial products instead of 24x17 (critical-path split).
++reg [11:0] ma_lo12, ma_hi12;
++reg [8:0]  ma_mid9;
++reg [7:0]  ma_mid8;
++reg [16:0] mb_lo17, mb_mid17, mb_hi17;
++reg [28:0] pre_a_lo, pre_a_hi;
++reg [28:0] pre_b_lo, pre_b_hi;
++reg [28:0] pre_c_lo, pre_c_hi;
++reg [25:0] pre_e_lo, pre_f_lo;
++reg [24:0] pre_e_hi, pre_f_hi;
++reg [25:0] pre_g_lo;
++reg [24:0] pre_g_hi;
++reg [5:0]  ma_top6;
++reg [4:0]  ma_top5;
++reg [17:0] mb_top18;
++reg [22:0] pre_h_lo, pre_i_lo;
++reg [21:0] pre_h_hi, pre_i_hi;
++reg [23:0] pre_j_lo;
++reg [22:0] pre_j_hi;
+ 
+ always @(posedge clk) 
+ begin
+@@ -153,6 +173,19 @@
+ 		product_lsb <= 0;
+ 		exponent_5 <= 0;
+ 		product_shift_2 <= 0;
++		ma_lo12 <= 0; ma_hi12 <= 0;
++		ma_mid9 <= 0; ma_mid8 <= 0;
++		mb_lo17 <= 0; mb_mid17 <= 0; mb_hi17 <= 0;
++		pre_a_lo <= 0; pre_a_hi <= 0;
++		pre_b_lo <= 0; pre_b_hi <= 0;
++		pre_c_lo <= 0; pre_c_hi <= 0;
++		pre_e_lo <= 0; pre_e_hi <= 0;
++		pre_f_lo <= 0; pre_f_hi <= 0;
++		pre_g_lo <= 0; pre_g_hi <= 0;
++		ma_top6 <= 0; ma_top5 <= 0; mb_top18 <= 0;
++		pre_h_lo <= 0; pre_h_hi <= 0;
++		pre_i_lo <= 0; pre_i_hi <= 0;
++		pre_j_lo <= 0; pre_j_hi <= 0;
+ 	end
+ 	else if (enable) begin
+ 		sign <= opa[63] ^ opb[63];
+@@ -160,6 +193,16 @@
+ 		mantissa_b <= opb[51:0];
+ 		exponent_a <= opa[62:52];
+ 		exponent_b <= opb[62:52];
++		ma_lo12 <= opa[11:0];
++		ma_hi12 <= opa[23:12];
++		ma_mid9 <= opa[32:24];
++		ma_mid8 <= opa[40:33];
++		ma_top6 <= opa[46:41];
++		ma_top5 <= opa[51:47];
++		mb_top18 <= opb[51:34];
++		mb_lo17 <= opb[16:0];
++		mb_mid17 <= opb[33:17];
++		mb_hi17 <= opb[50:34];
+ 		a_is_norm <= |exponent_a;
+ 		b_is_norm <= |exponent_b;
+ 		a_is_zero <= !(|opa[62:0]); 
+@@ -176,16 +219,41 @@
+ 		exponent_et_zero <= exponent_4 == 0;
+ 		mul_a <= { a_is_norm, mantissa_a };
+ 		mul_b <= { b_is_norm, mantissa_b };
+-		product_a <= mul_a[23:0] * mul_b[16:0];
+-		product_b <= mul_a[23:0] * mul_b[33:17];
+-		product_c <= mul_a[23:0] * mul_b[50:34];
++		pre_a_lo <= ma_lo12 * mb_lo17;
++		pre_a_hi <= ma_hi12 * mb_lo17;
++		pre_b_lo <= ma_lo12 * mb_mid17;
++		pre_b_hi <= ma_hi12 * mb_mid17;
++		pre_c_lo <= ma_lo12 * mb_hi17;
++		pre_c_hi <= ma_hi12 * mb_hi17;
++		pre_e_lo <= ma_mid9 * mb_lo17;
++		pre_e_hi <= ma_mid8 * mb_lo17;
++		pre_f_lo <= ma_mid9 * mb_mid17;
++		pre_f_hi <= ma_mid8 * mb_mid17;
++		pre_g_lo <= ma_mid9 * mb_hi17;
++		pre_g_hi <= ma_mid8 * mb_hi17;
++		pre_h_lo <= ma_top6 * mb_lo17;
++		pre_h_hi <= ma_top5 * mb_lo17;
++		pre_i_lo <= ma_top6 * mb_mid17;
++		pre_i_hi <= ma_top5 * mb_mid17;
++		pre_j_lo <= ma_top6 * mb_top18;
++		pre_j_hi <= ma_top5 * mb_top18;
++		product_a <= pre_a_lo + {pre_a_hi, 12'b0};
++		product_b <= pre_b_lo + {pre_b_hi, 12'b0};
++		product_c <= pre_c_lo + {pre_c_hi, 12'b0};
++		product_e <= pre_e_lo + {pre_e_hi, 9'b0};
++		product_f <= pre_f_lo + {pre_f_hi, 9'b0};
+ 		product_d <= mul_a[23:0] * mul_b[52:51];
+-		product_e <= mul_a[40:24] * mul_b[16:0];
+-		product_f <= mul_a[40:24] * mul_b[33:17];
+-		product_g <= mul_a[40:24] * mul_b[52:34];
+-		product_h <= mul_a[52:41] * mul_b[16:0];
+-		product_i <= mul_a[52:41] * mul_b[33:17];
+-		product_j <= mul_a[52:41] * mul_b[52:34];
++		product_g <= pre_g_lo + {pre_g_hi, 9'b0}
++		           + (mul_b[52] ? {mul_a[40:24], 18'b0} : 36'b0)
++		           + (mul_b[51] ? {mul_a[40:24], 17'b0} : 36'b0);
++		product_h <= pre_h_lo + {pre_h_hi, 6'b0}
++		           + (mul_a[52] ? {mul_b[16:0], 11'b0} : 28'b0);
++		product_i <= pre_i_lo + {pre_i_hi, 6'b0}
++		           + (mul_a[52] ? {mul_b[33:17], 11'b0} : 28'b0);
++		product_j <= pre_j_lo + {pre_j_hi, 6'b0}
++		           + (mul_a[52] ? {mb_top18, 11'b0} : 29'b0)
++		           + (mul_b[52] ? {{ma_top5, ma_top6}, 18'b0} : 29'b0)
++		           + (mul_a[52] & mul_b[52] ? 31'h20000000 : 31'b0);
+ 		sum_0 <= product_a[40:17] + product_b;
+ 		sum_1 <= sum_0[41:7] + product_e;
+ 		sum_2 <= sum_1[35:10] + product_c;

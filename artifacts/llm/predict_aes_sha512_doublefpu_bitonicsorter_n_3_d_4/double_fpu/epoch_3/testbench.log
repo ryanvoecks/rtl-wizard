@@ -1,0 +1,238 @@
+make: Entering directory '/workspace/tmp/scratch/tmp319l35ti/double_fpu/obj_dir'
+ccache g++ -Os  -I.  -MMD -I/usr/local/share/verilator/include -I/usr/local/share/verilator/include/vltstd -DVERILATOR=1 -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TIMING=1 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-int-in-bool-context -Wno-shadow -Wno-sign-compare -Wno-subobject-linkage -Wno-tautological-compare -Wno-uninitialized -Wno-unused-but-set-parameter -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable    -DVL_TIME_CONTEXT   -fcoroutines -c -o verilated.o /usr/local/share/verilator/include/verilated.cpp
+ccache g++ -Os  -I.  -MMD -I/usr/local/share/verilator/include -I/usr/local/share/verilator/include/vltstd -DVERILATOR=1 -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TIMING=1 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-int-in-bool-context -Wno-shadow -Wno-sign-compare -Wno-subobject-linkage -Wno-tautological-compare -Wno-uninitialized -Wno-unused-but-set-parameter -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable    -DVL_TIME_CONTEXT   -fcoroutines -c -o verilated_timing.o /usr/local/share/verilator/include/verilated_timing.cpp
+ccache g++ -Os  -I.  -MMD -I/usr/local/share/verilator/include -I/usr/local/share/verilator/include/vltstd -DVERILATOR=1 -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TIMING=1 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-int-in-bool-context -Wno-shadow -Wno-sign-compare -Wno-subobject-linkage -Wno-tautological-compare -Wno-uninitialized -Wno-unused-but-set-parameter -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable    -DVL_TIME_CONTEXT   -fcoroutines -c -o verilated_threads.o /usr/local/share/verilator/include/verilated_threads.cpp
+python3 /usr/local/share/verilator/bin/verilator_includer -DVL_INCLUDE_OPT=include Vfpu_tb.cpp Vfpu_tb___024root__0.cpp Vfpu_tb__main.cpp Vfpu_tb__ConstPool__0__Slow.cpp Vfpu_tb___024root__Slow.cpp Vfpu_tb___024root__0__Slow.cpp Vfpu_tb__Syms__Slow.cpp > Vfpu_tb__ALL.cpp
+ccache g++ -Os  -I.  -MMD -I/usr/local/share/verilator/include -I/usr/local/share/verilator/include/vltstd -DVERILATOR=1 -DVM_COVERAGE=0 -DVM_SC=0 -DVM_TIMING=1 -DVM_TRACE=0 -DVM_TRACE_FST=0 -DVM_TRACE_VCD=0 -DVM_TRACE_SAIF=0 -faligned-new -fcf-protection=none -Wno-bool-operation -Wno-int-in-bool-context -Wno-shadow -Wno-sign-compare -Wno-subobject-linkage -Wno-tautological-compare -Wno-uninitialized -Wno-unused-but-set-parameter -Wno-unused-but-set-variable -Wno-unused-parameter -Wno-unused-variable    -DVL_TIME_CONTEXT   -fcoroutines -c -o Vfpu_tb__ALL.o Vfpu_tb__ALL.cpp
+g++    verilated.o verilated_timing.o verilated_threads.o Vfpu_tb__ALL.a    -pthread -lpthread -latomic   -o Vfpu_tb
+rm Vfpu_tb__ALL.verilator_deplist.tmp
+make: Leaving directory '/workspace/tmp/scratch/tmp319l35ti/double_fpu/obj_dir'
+- V e r i l a t i o n   R e p o r t: Verilator 5.048 2026-04-26 rev vUNKNOWN-built20260602-c233a39
+- Verilator: Built from 0.409 MB sources in 9 modules, into 0.566 MB in 7 C++ files needing 0.001 MB
+- Verilator: Walltime 0.187 s (elab=0.003, cvt=0.019, bld=0.149); cpu 0.033 s on 1 threads; allocated 36.672 MB
+              840000ps Answer is correct 3cf323ea98d06fb6
+             1660000ps Answer is correct 000010914a4c025a
+             2480000ps Answer is correct 4079000000000000
+             3300000ps Answer is correct 40411d0e56041894
+             4120000ps Answer is correct 400fdb6db6db6db7
+             4940000ps Answer is correct c0d28e0000000000
+             5760000ps Answer is correct c02a000000000000
+             6580000ps Answer is correct c08b900000000000
+             7400000ps Answer is correct bfefb89c2a6346d5
+             8220000ps Answer is correct 4012dc91d14e3bce
+             9040000ps Answer is correct 407b38cccccccccc
+             9860000ps Answer is correct 000012688b70e62b
+            10680000ps Answer is correct 160f5a549627a36c
+            11500000ps Answer is correct 43bbc16d674ec800
+            12320000ps Answer is correct 4000000000000000
+            13140000ps Answer is correct 0000002f201d49fb
+            13960000ps Answer is correct 40e7e9eccccccccd
+            14780000ps Answer is correct 0000027456dbda6d
+            15600000ps Answer is correct 14526914eebbd470
+            16420000ps Answer is correct 3facac083126e600
+            17240000ps Answer is correct c053133333333334
+            18060000ps Answer is correct 3ff0000000000000
+            18880000ps Answer is correct 40513147ae147ae1
+            19700000ps Answer is correct c10c82199999999a
+            20520000ps Answer is correct 000003ae8249c7a2
+            21340000ps Answer is correct 0000000000000000
+            22160000ps Answer is correct 404b000000000000
+            22980000ps Answer is correct ffefffffffffffff
+            23800000ps Answer is correct 3fe525d7ee30f953
+            24620000ps Answer is correct c0d5aa4bda12f685
+            25440000ps Answer is correct 001d7b6f52d0a0f7
+            26260000ps Answer is correct 0021fa474c5e1008
+            27080000ps Answer is correct 401f000000000000
+            27900000ps Answer is correct 40460a1cac083127
+            28720000ps Answer is correct 01934982fc467380
+            29540000ps Answer is correct 80000025b34aa196
+            30360000ps Answer is correct 00000000000017b8
+            31180000ps Answer is correct 3f847ae140000000
+            32000000ps Answer is correct c02a000000000000
+            32820000ps Answer is correct 4043d64f765fd8af
+            33640000ps Answer is correct 4001d70a3d70a3d7
+            34460000ps Answer is correct 00000000022bea15
+            35280000ps Answer is correct 000000001a8a825c
+            36100000ps Answer is correct 4010000000000000
+            36920000ps Answer is correct 00f18e3c781dcab4
+            37740000ps Answer is correct 00000000000f712b
+            38560000ps Answer is correct 8001ca69686873bb
+            39380000ps Answer is correct 800a888a29edf40c
+            40200000ps Answer is correct 223a88ecc2ac8317
+            41020000ps Answer is correct 3f0ec257a882625f
+- fpu_TB.v:833: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 41us; walltime 0.001 s; speed 35.967 ms/s
+- Verilator: cpu 0.001 s on 1 threads; allocated 5 MB
+%Warning-IMPLICIT: fpu_double.v:149:13: Signal definition not found, creating implicitly: 'except_enable'
+                                      : ... Suggested alternative: 'op_enable'
+  149 |  .ex_enable(except_enable),.underflow(underflow_0),.overflow(overflow_0),
+      |             ^~~~~~~~~~~~~
+                   ... For warning description see https://verilator.org/warn/IMPLICIT?v=5.048
+                   ... Use "/* verilator lint_off IMPLICIT */" and lint_on around source to disable this message.
+%Warning-WIDTHEXPAND: fpu_div.v:237:36: Operator COND expects 32 or 12 bits on the Conditional False, but Conditional False's VARREF 'dividend_shift_2' generates 6 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u4'
+  237 |         expon_shift_a <= a_is_norm ? 0 : dividend_shift_2;
+      |                                    ^
+                      ... For warning description see https://verilator.org/warn/WIDTHEXPAND?v=5.048
+                      ... Use "/* verilator lint_off WIDTHEXPAND */" and lint_on around source to disable this message.
+%Warning-WIDTHEXPAND: fpu_div.v:238:36: Operator COND expects 32 or 12 bits on the Conditional False, but Conditional False's VARREF 'divisor_shift_2' generates 6 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u4'
+  238 |         expon_shift_b <= b_is_norm ? 0 : divisor_shift_2;
+      |                                    ^
+%Warning-WIDTHTRUNC: fpu_div.v:255:24: Operator ASSIGNDLY expects 7 bits on the Assign RHS, but Assign RHS's SUB generates 32 or 12 bits.
+                                     : ... note: In instance 'fpu_tb.UUT.u4'
+  255 |   remainder_shift_term <= 52 - expon_uf_term_4;
+      |                        ^~
+                     ... For warning description see https://verilator.org/warn/WIDTHTRUNC?v=5.048
+                     ... Use "/* verilator lint_off WIDTHTRUNC */" and lint_on around source to disable this message.
+%Warning-WIDTHEXPAND: fpu_mul.v:216:39: Operator GT expects 12 bits on the RHS, but RHS's VARREF 'product_shift_2' generates 6 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  216 |   exponent_gt_prodshift <= exponent_2 > product_shift_2;
+      |                                       ^
+%Warning-WIDTHEXPAND: fpu_mul.v:217:28: Operator SUB expects 12 bits on the RHS, but RHS's VARREF 'product_shift' generates 6 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  217 |   exponent_3 <= exponent_2 - product_shift;
+      |                            ^
+%Warning-WIDTHEXPAND: fpu_mul.v:240:25: Operator ADD expects 41 bits on the LHS, but LHS's VARREF 'pre_a_lo' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  240 |   product_a <= pre_a_lo + {pre_a_hi, 12'b0};
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:241:25: Operator ADD expects 41 bits on the LHS, but LHS's VARREF 'pre_b_lo' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  241 |   product_b <= pre_b_lo + {pre_b_hi, 12'b0};
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:242:25: Operator ADD expects 41 bits on the LHS, but LHS's VARREF 'pre_c_lo' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  242 |   product_c <= pre_c_lo + {pre_c_hi, 12'b0};
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:243:25: Operator ADD expects 34 bits on the LHS, but LHS's VARREF 'pre_e_lo' generates 26 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  243 |   product_e <= pre_e_lo + {pre_e_hi, 9'b0};
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:244:25: Operator ADD expects 34 bits on the LHS, but LHS's VARREF 'pre_f_lo' generates 26 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  244 |   product_f <= pre_f_lo + {pre_f_hi, 9'b0};
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:246:25: Operator ADD expects 36 bits on the LHS, but LHS's VARREF 'pre_g_lo' generates 26 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  246 |   product_g <= pre_g_lo + {pre_g_hi, 9'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:246:25: Operator ADD expects 36 bits on the RHS, but RHS's REPLICATE generates 34 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  246 |   product_g <= pre_g_lo + {pre_g_hi, 9'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:247:27: Operator COND expects 36 bits on the Conditional True, but Conditional True's REPLICATE generates 35 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  247 |              + (mul_b[52] ? {mul_a[40:24], 18'b0} : 36'b0)
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:248:27: Operator COND expects 36 bits on the Conditional True, but Conditional True's REPLICATE generates 34 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  248 |              + (mul_b[51] ? {mul_a[40:24], 17'b0} : 36'b0);
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:249:25: Operator ADD expects 29 bits on the LHS, but LHS's VARREF 'pre_h_lo' generates 23 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  249 |   product_h <= pre_h_lo + {pre_h_hi, 6'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:250:27: Operator COND expects 29 bits on the Conditional True, but Conditional True's REPLICATE generates 28 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  250 |              + (mul_a[52] ? {mul_b[16:0], 11'b0} : 28'b0);
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:250:27: Operator COND expects 29 bits on the Conditional False, but Conditional False's CONST '28'h0' generates 28 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  250 |              + (mul_a[52] ? {mul_b[16:0], 11'b0} : 28'b0);
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:251:25: Operator ADD expects 29 bits on the LHS, but LHS's VARREF 'pre_i_lo' generates 23 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  251 |   product_i <= pre_i_lo + {pre_i_hi, 6'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:252:27: Operator COND expects 29 bits on the Conditional True, but Conditional True's REPLICATE generates 28 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  252 |              + (mul_a[52] ? {mul_b[33:17], 11'b0} : 28'b0);
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:252:27: Operator COND expects 29 bits on the Conditional False, but Conditional False's CONST '28'h0' generates 28 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  252 |              + (mul_a[52] ? {mul_b[33:17], 11'b0} : 28'b0);
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:253:25: Operator ADD expects 31 bits on the LHS, but LHS's VARREF 'pre_j_lo' generates 24 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  253 |   product_j <= pre_j_lo + {pre_j_hi, 6'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:253:25: Operator ADD expects 31 bits on the RHS, but RHS's REPLICATE generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  253 |   product_j <= pre_j_lo + {pre_j_hi, 6'b0}
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:254:27: Operator COND expects 31 bits on the Conditional True, but Conditional True's REPLICATE generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  254 |              + (mul_a[52] ? {mb_top18, 11'b0} : 29'b0)
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:254:27: Operator COND expects 31 bits on the Conditional False, but Conditional False's CONST '29'h0' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  254 |              + (mul_a[52] ? {mb_top18, 11'b0} : 29'b0)
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:255:27: Operator COND expects 31 bits on the Conditional True, but Conditional True's REPLICATE generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  255 |              + (mul_b[52] ? {{ma_top5, ma_top6}, 18'b0} : 29'b0)
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:255:27: Operator COND expects 31 bits on the Conditional False, but Conditional False's CONST '29'h0' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  255 |              + (mul_b[52] ? {{ma_top5, ma_top6}, 18'b0} : 29'b0)
+      |                           ^
+%Warning-WIDTHEXPAND: fpu_mul.v:257:29: Operator ADD expects 42 bits on the LHS, but LHS's SEL generates 24 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  257 |   sum_0 <= product_a[40:17] + product_b;
+      |                             ^
+%Warning-WIDTHEXPAND: fpu_mul.v:258:24: Operator ADD expects 36 bits on the RHS, but RHS's VARREF 'product_e' generates 34 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  258 |   sum_1 <= sum_0[41:7] + product_e;
+      |                        ^
+%Warning-WIDTHEXPAND: fpu_mul.v:259:25: Operator ADD expects 42 bits on the LHS, but LHS's SEL generates 26 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  259 |   sum_2 <= sum_1[35:10] + product_c;
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:260:24: Operator ADD expects 36 bits on the RHS, but RHS's VARREF 'product_h' generates 29 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  260 |   sum_3 <= sum_2[41:7] + product_h;
+      |                        ^
+%Warning-WIDTHEXPAND: fpu_mul.v:261:18: Operator ADD expects 37 bits on the RHS, but RHS's VARREF 'product_f' generates 34 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  261 |   sum_4 <= sum_3 + product_f;
+      |                  ^
+%Warning-WIDTHEXPAND: fpu_mul.v:262:25: Operator ADD expects 28 bits on the RHS, but RHS's VARREF 'product_d' generates 26 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  262 |   sum_5 <= sum_4[36:10] + product_d;
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_mul.v:263:24: Operator ADD expects 30 bits on the LHS, but LHS's SEL generates 21 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  263 |   sum_6 <= sum_5[27:7] + product_i;
+      |                        ^
+%Warning-WIDTHEXPAND: fpu_mul.v:264:18: Operator ADD expects 37 bits on the LHS, but LHS's VARREF 'sum_6' generates 30 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  264 |   sum_7 <= sum_6 + product_g;
+      |                  ^
+%Warning-WIDTHEXPAND: fpu_mul.v:265:25: Operator ADD expects 31 bits on the LHS, but LHS's SEL generates 20 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u3'
+  265 |   sum_8 <= sum_7[36:17] + product_j;
+      |                         ^
+%Warning-WIDTHEXPAND: fpu_sub.v:147:41: Operator GT expects 11 bits on the LHS, but LHS's VARREF 'diff_shift_2' generates 7 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u2'
+  147 |   diffshift_gt_exponent <= diff_shift_2 > exponent_large;
+      |                                         ^
+%Warning-WIDTHEXPAND: fpu_sub.v:150:59: Operator SUB expects 32 or 11 bits on the RHS, but RHS's VARREF 'diff_shift_2' generates 7 bits.
+                                      : ... note: In instance 'fpu_tb.UUT.u2'
+  150 |   exponent <= diffshift_gt_exponent ? 0 : (exponent_large - diff_shift_2);
+      |                                                           ^
+%Warning-CASEX: fpu_sub.v:159:4: Suggest casez (with ?'s) in place of casex (with X's)
+  159 |    casex(diff) 
+      |    ^~~~~
+                ... For warning description see https://verilator.org/warn/CASEX?v=5.048
+                ... Use "/* verilator lint_off CASEX */" and lint_on around source to disable this message.
+%Warning-CASEX: fpu_mul.v:282:4: Suggest casez (with ?'s) in place of casex (with X's)
+  282 |    casex(product) 
+      |    ^~~~~
+%Warning-CASEX: fpu_div.v:297:4: Suggest casez (with ?'s) in place of casex (with X's)
+  297 |    casex(dividend_a)
+      |    ^~~~~
+%Warning-CASEX: fpu_div.v:355:4: Suggest casez (with ?'s) in place of casex (with X's)
+  355 |    casex(divisor_b)
+      |    ^~~~~

@@ -1,0 +1,80 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -50,38 +50,54 @@
+ 	output reg [DATA_WIDTH-1:0]L
+ );
+ 
+-reg [DATA_WIDTH-1:0]H_REG;
+-reg [DATA_WIDTH-1:0]L_REG;
++localparam HALF = DATA_WIDTH / 2;
+ 
+-wire LESS;
++// Split into two parallel HALF-width comparisons to halve the carry-chain depth
++wire less_hi, eq_hi, less_lo, LESS;
++
++wire gt_hi;
+ 
+ generate
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		assign less_hi = $unsigned(A[DATA_WIDTH-1:HALF]) < $unsigned(B[DATA_WIDTH-1:HALF]);
++		assign gt_hi   = $unsigned(A[DATA_WIDTH-1:HALF]) > $unsigned(B[DATA_WIDTH-1:HALF]);
++		assign less_lo = $unsigned(A[HALF-1:0])          < $unsigned(B[HALF-1:0]);
+ 	end else begin
+-		assign LESS = $signed(A) < $signed(B);
++		assign less_hi = $signed(A[DATA_WIDTH-1:HALF])   < $signed(B[DATA_WIDTH-1:HALF]);
++		assign gt_hi   = $signed(A[DATA_WIDTH-1:HALF])   > $signed(B[DATA_WIDTH-1:HALF]);
++		assign less_lo = $unsigned(A[HALF-1:0])          < $unsigned(B[HALF-1:0]);
+ 	end
+-	
++endgenerate
++
++// eq_hi derived from comparators to avoid separate XOR-reduction tree
++assign eq_hi = ~less_hi & ~gt_hi;
++assign LESS  = less_hi | (eq_hi & less_lo);
++
++generate
++
+ 	if (POLARITY == 0) begin
+-		always @(*) begin
+-			H_REG = (LESS) ? A : B;
+-			L_REG = (LESS) ? B : A;
++		if (REGOUT_EN == 1) begin
++			always @(posedge CLK) begin
++				H <= LESS ? A : B;
++				L <= LESS ? B : A;
++			end
++		end else begin
++			always @(*) begin
++				H = LESS ? A : B;
++				L = LESS ? B : A;
++			end
+ 		end
+ 	end else begin
+-		always @(*) begin
+-			H_REG = (LESS) ? B : A;
+-			L_REG = (LESS) ? A : B;
+-		end
+-	end
+-	if (REGOUT_EN == 1) begin
+-		always @(posedge CLK) begin
+-			H <= H_REG;
+-			L <= L_REG;
+-		end
+-	end else begin
+-		always @(*) begin
+-			H = H_REG;
+-			L = L_REG;
++		if (REGOUT_EN == 1) begin
++			always @(posedge CLK) begin
++				H <= LESS ? B : A;
++				L <= LESS ? A : B;
++			end
++		end else begin
++			always @(*) begin
++				H = LESS ? B : A;
++				L = LESS ? A : B;
++			end
+ 		end
+ 	end
+ endgenerate

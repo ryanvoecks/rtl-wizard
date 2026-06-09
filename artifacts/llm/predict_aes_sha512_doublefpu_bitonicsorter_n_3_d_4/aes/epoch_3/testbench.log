@@ -1,0 +1,10 @@
+iverilog -Wall -o top.sim ../src/tb/tb_aes.v ../src/rtl/aes.v ../src/rtl/aes_core.v ../src/rtl/aes_key_mem.v ../src/rtl/aes_sbox.v ../src/rtl/aes_inv_sbox.v ../src/rtl/aes_encipher_block.v ../src/rtl/aes_decipher_block.v
+../src/rtl/aes_encipher_block.v:294: error: Unable to bind wire/reg/memory `new_sbox0w' in `tb_aes.dut.core.enc_block.round_logic'
+../src/rtl/aes_encipher_block.v:294: error: Unable to bind wire/reg/memory `new_sbox1w' in `tb_aes.dut.core.enc_block.round_logic'
+../src/rtl/aes_encipher_block.v:294: error: Unable to bind wire/reg/memory `new_sbox2w' in `tb_aes.dut.core.enc_block.round_logic'
+../src/rtl/aes_encipher_block.v:294: error: Unable to bind wire/reg/memory `new_sbox3w' in `tb_aes.dut.core.enc_block.round_logic'
+../src/rtl/aes_encipher_block.v:294: error: Concatenation/replication may not have zero width in this context.
+../src/rtl/aes_core.v:116: warning: Instantiating module aes_encipher_block with dangling input port 8 (new_sboxw) floating.
+../src/rtl/aes_key_mem.v:182: warning: @* is sensitive to all 15 words in array 'key_mem'.
+5 error(s) during elaboration.
+make: *** [Makefile:63: top.sim] Error 5

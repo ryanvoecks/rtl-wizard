@@ -7,9 +7,11 @@ replayed without any sandbox/container state.
 """
 
 import asyncio
+import contextlib
 import dataclasses
 import subprocess
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 
 from inspect_ai.scorer import (
@@ -47,19 +49,23 @@ def _apply_diff(diff: str, dest_dir: Path) -> None:
         raise RuntimeError(f"patch failed:\n{proc.stdout}\n{proc.stderr}")
 
 
-def _create_copy(design: DesignConfig, diff: str) -> Path:
-    """Reflink-copy `design.root` into a fresh tempdir and apply `diff` at
-    the rtl_dir location inside the copy. Returns the path to the copy."""
-    dest = Path(tempfile.mkdtemp()) / design.root.name
-    proc = subprocess.run(
-        ["cp", "-R", "--reflink=auto", str(design.root), str(dest)],
-        capture_output=True,
-        text=True,
-    )
-    if proc.returncode != 0:
-        raise RuntimeError(f"copy failed:\n{proc.stderr}")
-    _apply_diff(diff, dest / design.rtl_dir)
-    return dest
+@contextlib.contextmanager
+def _design_copy(design: DesignConfig, diff: str) -> Iterator[Path]:
+    """Reflink-copy `design.root` into a fresh tempdir, apply `diff` at the
+    rtl_dir location inside the copy, and yield the copy path. The tempdir is
+    always removed on exit -- the scorers and MCP tools call this on every
+    check, so a leaked copy per call would otherwise fill the host disk."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_root:
+        dest = Path(tmp_root) / design.root.name
+        proc = subprocess.run(
+            ["cp", "-R", "--reflink=auto", str(design.root), str(dest)],
+            capture_output=True,
+            text=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(f"copy failed:\n{proc.stderr}")
+        _apply_diff(diff, dest / design.rtl_dir)
+        yield dest
 
 
 def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
@@ -67,21 +73,21 @@ def evaluate_synthesis(design: DesignConfig, diff: str) -> Result:
     `hierarchy -check -top <top>; proc; opt; clean`. Returns (log, rc):
     rc == 0 on success, non-zero (reason in `log`) on any failure."""
     try:
-        root = _create_copy(design, diff)
-        rtl_path = root / design.rtl_dir
-        rel_paths = [str(f) for f in design.rtl_files]
-        inc_args = "".join(f" -I {d}" for d in design.include_dirs)
-        script = (
-            f"read_verilog -sv{inc_args} {' '.join(rel_paths)}; "
-            f"hierarchy -check -top {design.top_module}; proc; opt; clean"
-        )
-        proc = subprocess.run(
-            [YOSYS_BIN, "-q", "-p", script],
-            cwd=rtl_path,
-            capture_output=True,
-            text=True,
-            timeout=YOSYS_TIMEOUT,
-        )
+        with _design_copy(design, diff) as root:
+            rtl_path = root / design.rtl_dir
+            rel_paths = [str(f) for f in design.rtl_files]
+            inc_args = "".join(f" -I {d}" for d in design.include_dirs)
+            script = (
+                f"read_verilog -sv{inc_args} {' '.join(rel_paths)}; "
+                f"hierarchy -check -top {design.top_module}; proc; opt; clean"
+            )
+            proc = subprocess.run(
+                [YOSYS_BIN, "-q", "-p", script],
+                cwd=rtl_path,
+                capture_output=True,
+                text=True,
+                timeout=YOSYS_TIMEOUT,
+            )
     except RuntimeError as e:
         return str(e), 1
     except subprocess.TimeoutExpired:
@@ -94,8 +100,8 @@ def evaluate_testbench(design: DesignConfig, diff: str) -> Result:
     """Apply `diff` into a copy of `design.root` and run the upstream
     testbench against that copy. Returns (stdout, rc). Never raises."""
     try:
-        repo_copy = _create_copy(design, diff)
-        return dataclasses.replace(design, root=repo_copy).run_tb()
+        with _design_copy(design, diff) as repo_copy:
+            return dataclasses.replace(design, root=repo_copy).run_tb()
     except RuntimeError as e:
         return str(e), 1
 

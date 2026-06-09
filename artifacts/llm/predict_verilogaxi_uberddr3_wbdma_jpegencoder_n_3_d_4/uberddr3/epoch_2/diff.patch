@@ -1,0 +1,189 @@
+--- a/ddr3_controller.v
++++ b/ddr3_controller.v
+@@ -145,11 +145,11 @@
+         output wire o_phy_toggle_dqs,
+         output reg[wb_data_bits-1:0] o_phy_data,
+         output reg[wb_sel_bits-1:0] o_phy_dm, 
+-        output wire[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
+-        output wire[4:0] o_phy_idelay_data_cntvaluein, 
+-        output wire[4:0] o_phy_idelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_idelay_data_cntvaluein,
++        output reg[4:0] o_phy_idelay_dqs_cntvaluein,
+         output reg[LANES-1:0] o_phy_odelay_data_ld, o_phy_odelay_dqs_ld,
+-        output reg[LANES-1:0] o_phy_idelay_data_ld, 
++        output reg[LANES-1:0] o_phy_idelay_data_ld,
+         output reg[LANES-1:0] o_phy_idelay_dqs_ld,
+         output reg[LANES-1:0] o_phy_bitslip,
+         output reg o_phy_write_leveling_calib,
+@@ -347,7 +347,7 @@
+      // READ_ACK_PIPE_WIDTH is the delay between read command issued (starting from the controller) until the data is received by the controller
+      //the delays included the ODELAY and OSERDES when issuing the read command
+      //and the IDELAY and ISERDES when receiving the data  (NOTE TO SELF: ELABORATE ON WHY THOSE MAGIC NUMBERS)
+-    localparam READ_ACK_PIPE_WIDTH = READ_DELAY + 1 + 2 + 1 + 1 + (DLL_OFF? 2 : 0); // FOr DLL_OFF, phy has no delay thus add delay here       
++    localparam READ_ACK_PIPE_WIDTH = READ_DELAY + 1 + 2 + 1 + 1 + (DLL_OFF? 2 : 1); // DLL_OFF: phy has no OSERDES delay; DLL_ON: +1 for registered o_phy_cmd output
+     localparam MAX_ADDED_READ_ACK_DELAY = 2;
+     localparam DELAY_BEFORE_WRITE_LEVEL_FEEDBACK = STAGE2_DATA_DEPTH + ps_to_cycles(tWLO+tWLOE) + 10;  
+     //plus 10 controller clocks for possible bus latency and the delay for receiving feedback DQ from IOBUF -> IDELAY -> ISERDES
+@@ -663,6 +663,9 @@
+     reg[wb_data_bits-1:0] wrong_data = 0, expected_data=0;
+     wire[wb_data_bits-1:0] correct_data;
+     reg[LANES-1:0] late_dq;
++    // Internal ld registers: driven by FSM, registered one cycle before reaching PHY output
++    reg[LANES-1:0] phy_odelay_data_ld_int, phy_odelay_dqs_ld_int;
++    reg[LANES-1:0] phy_idelay_data_ld_int, phy_idelay_dqs_ld_int;
+     reg stage2_do_wr_or_rd, stage2_do_wr_or_rd_d;
+     reg stage2_do_wr, stage2_do_wr_d;
+     reg stage2_do_update_delay_before_precharge_after_wr, stage2_do_update_delay_before_precharge_after_wr_d;
+@@ -1652,7 +1655,7 @@
+         end
+         else begin : dll_on_out_phy
+             always @* begin
+-                o_phy_data = stage2_data[STAGE2_DATA_DEPTH-1]; // the data sent to PHY is the last stage of of stage 2 (since stage 2 can have multiple pipelined stages inside it_           
++                o_phy_data = stage2_data[STAGE2_DATA_DEPTH-1];
+                 o_phy_dm = stage2_dm[STAGE2_DATA_DEPTH-1];
+                 o_phy_cmd = {cmd_d[3], cmd_d[2], cmd_d[1], cmd_d[0]};
+             end
+@@ -2274,13 +2277,13 @@
+             // after sending the wishbone data on a particular index, invert it for the next ack
+             
+             if(ECC_ENABLE != 3) begin
+-                if(o_wb_ack_read_q[0][0]) begin 
++                if(o_wb_ack_read_q[0][0]) begin
+                     index_wb_data <= !index_wb_data; //alternatingly uses the o_wb_data_q (either 0 or 1)
+                 end
+             end
+             else begin
+                 // last bit of AUX is high if ECC request (wb ack does not go high at ECC reqs)
+-                if(o_wb_ack_read_q[0][0] || o_wb_ack_read_q[0][AUX_WIDTH]) begin 
++                if(o_wb_ack_read_q[0][0] || o_wb_ack_read_q[0][AUX_WIDTH]) begin
+                     index_wb_data <= !index_wb_data; //alternatingly uses the o_wb_data_q (either 0 or 1)
+                 end
+             end
+@@ -2396,10 +2399,18 @@
+             dqs_target_index <= 0;
+             dqs_target_index_orig <= 0;
+             o_phy_bitslip <= 0;
++            phy_odelay_data_ld_int <= 0;
++            phy_odelay_dqs_ld_int <= 0;
++            phy_idelay_data_ld_int <= 0;
++            phy_idelay_dqs_ld_int <= 0;
+             o_phy_odelay_data_ld <= 0;
+             o_phy_odelay_dqs_ld <= 0;
+             o_phy_idelay_data_ld <= 0;
+             o_phy_idelay_dqs_ld <= 0;
++            o_phy_odelay_data_cntvaluein <= DATA_INITIAL_ODELAY_TAP[4:0];
++            o_phy_odelay_dqs_cntvaluein <= DQS_INITIAL_ODELAY_TAP[4:0];
++            o_phy_idelay_data_cntvaluein <= DATA_INITIAL_IDELAY_TAP[4:0];
++            o_phy_idelay_dqs_cntvaluein <= DQS_INITIAL_IDELAY_TAP[4:0];
+             lane_times_8 <= 0;
+             idelay_data_cntvaluein_prev <= 0;
+             initial_dqs <= 1;
+@@ -2464,10 +2475,19 @@
+             delay_before_read_data <= (delay_before_read_data == 0)? 0: delay_before_read_data - 1;
+             delay_before_write_level_feedback <= (delay_before_write_level_feedback == 0)? 0: delay_before_write_level_feedback - 1;
+             o_phy_bitslip <= 0;
+-            o_phy_odelay_data_ld <= 0;
+-            o_phy_odelay_dqs_ld <= 0;
+-            o_phy_idelay_data_ld <= 0;
+-            o_phy_idelay_dqs_ld <= 0;
++            phy_odelay_data_ld_int <= 0;
++            phy_odelay_dqs_ld_int <= 0;
++            phy_idelay_data_ld_int <= 0;
++            phy_idelay_dqs_ld_int <= 0;
++            // Pipeline register: capture internal ld/cntvaluein for PHY output
++            o_phy_odelay_data_ld <= phy_odelay_data_ld_int;
++            o_phy_odelay_dqs_ld <= phy_odelay_dqs_ld_int;
++            o_phy_idelay_data_ld <= phy_idelay_data_ld_int;
++            o_phy_idelay_dqs_ld <= phy_idelay_dqs_ld_int;
++            o_phy_odelay_data_cntvaluein <= odelay_data_cntvaluein[lane];
++            o_phy_odelay_dqs_cntvaluein <= odelay_dqs_cntvaluein[lane];
++            o_phy_idelay_data_cntvaluein <= idelay_data_cntvaluein[lane];
++            o_phy_idelay_dqs_cntvaluein <= idelay_dqs_cntvaluein[lane];
+             /* verilator lint_off WIDTH */
+             lane_times_8 <= lane << 3;
+             /* verilator lint_on WIDTH */
+@@ -2481,10 +2501,10 @@
+                 odelay_dqs_cntvaluein[wb2_write_lane] <= wb2_phy_odelay_dqs_ld[wb2_write_lane]? wb2_phy_odelay_dqs_cntvaluein : odelay_dqs_cntvaluein[wb2_write_lane];
+                 idelay_data_cntvaluein[wb2_write_lane] <= wb2_phy_idelay_data_ld[wb2_write_lane]? wb2_phy_idelay_data_cntvaluein : idelay_data_cntvaluein[wb2_write_lane];
+                 idelay_dqs_cntvaluein[wb2_write_lane] <= wb2_phy_idelay_dqs_ld[wb2_write_lane]? wb2_phy_idelay_dqs_cntvaluein : idelay_dqs_cntvaluein[wb2_write_lane];
+-                o_phy_odelay_data_ld <= wb2_phy_odelay_data_ld;
+-                o_phy_odelay_dqs_ld <= wb2_phy_odelay_dqs_ld;
+-                o_phy_idelay_data_ld <= wb2_phy_idelay_data_ld;
+-                o_phy_idelay_dqs_ld <= wb2_phy_idelay_dqs_ld;
++                phy_odelay_data_ld_int <= wb2_phy_odelay_data_ld;
++                phy_odelay_dqs_ld_int <= wb2_phy_odelay_dqs_ld;
++                phy_idelay_data_ld_int <= wb2_phy_idelay_data_ld;
++                phy_idelay_dqs_ld_int <= wb2_phy_idelay_dqs_ld;
+                 lane <= wb2_write_lane;
+             end
+             else if(!final_calibration_done) begin
+@@ -2518,10 +2538,10 @@
+                 IDLE: if(i_phy_idelayctrl_rdy && instruction_address == 13) begin //we are now inside instruction 15 with maximum delay
+                         state_calibrate <= DLL_OFF? ISSUE_WRITE_1 : BITSLIP_DQS_TRAIN_1; // If DLL Off then dont do any calibration, go straight to write-read
+                         lane <= 0;
+-                        o_phy_odelay_data_ld <= {LANES{1'b1}};
+-                        o_phy_odelay_dqs_ld <= {LANES{1'b1}};
+-                        o_phy_idelay_data_ld <= {LANES{1'b1}};
+-                        o_phy_idelay_dqs_ld <= {LANES{1'b1}};
++                        phy_odelay_data_ld_int <= {LANES{1'b1}};
++                        phy_odelay_dqs_ld_int <= {LANES{1'b1}};
++                        phy_idelay_data_ld_int <= {LANES{1'b1}};
++                        phy_idelay_dqs_ld_int <= {LANES{1'b1}};
+                         pause_counter <= DLL_OFF? 0 : 1; // If DLL on, do calibration so pause instruction address @13 until read calibration finishes
+                         write_calib_dqs <= 0;
+                         write_calib_odt <= 0;
+@@ -2571,7 +2591,7 @@
+             MPR_READ: if(delay_before_read_data == 0) begin //align the incoming DQS during reads to the controller clock 
+                              //issue_read_command = 1;
+                              /* verilator lint_off WIDTH */
+-                             delay_before_read_data <= READ_DELAY + 1 + 2 + 1 - 1; ///NOTE TO SELF: why these numbers? 1=issue command delay (OSERDES delay), 2 =  ISERDES delay 
++                             delay_before_read_data <= READ_DELAY + 1 + 2 + 1 - 1; // 1=OSERDES, 2=ISERDES, 1=iodelay_ctrl_clk
+                              /* verilator lint_on WIDTH */
+                              state_calibrate <= COLLECT_DQS;
+                              dqs_count_repeat <= 0;
+@@ -2652,8 +2672,8 @@
+                       end 
+                       else begin
+                         if(dqs_start_index == (STORED_DQS_SIZE*8-1) ) begin //if we reached end then most likely we hit a glitch where 01_01_01_01_00 is muddied
+-                            o_phy_idelay_data_ld[lane] <= 1;
+-                            o_phy_idelay_dqs_ld[lane] <= 1;
++                            phy_idelay_data_ld_int[lane] <= 1;
++                            phy_idelay_dqs_ld_int[lane] <= 1;
+                             state_calibrate <= MPR_READ;
+                             delay_before_read_data <= 10; //wait for sometime to make sure idelay load settles
+                             `ifdef UART_DEBUG_READ_LEVEL
+@@ -2702,8 +2722,8 @@
+                             // the time we are sure the DQS is edge aligned with ddr3_clk and thus ddr3_clk posedge
+                             // is hitting the center of DQ eye
+                             // To show why next odd number is needed: https://github.com/AngeloJacobo/UberDDR3/tree/b762c464f6526159c1d8c2e4ee039b4ae4e78dbd#per-lane-read-calibration
+-                            o_phy_idelay_data_ld[lane] <= 1;
+-                            o_phy_idelay_dqs_ld[lane] <= 1;
++                            phy_idelay_data_ld_int[lane] <= 1;
++                            phy_idelay_dqs_ld_int[lane] <= 1;
+                             state_calibrate <= MPR_READ;
+                             delay_before_read_data <= 10; //wait for sometime to make sure idelay load settles
+                             `ifdef UART_DEBUG_READ_LEVEL
+@@ -2821,8 +2841,8 @@
+                                         end
+                                     end
+                                     else begin
+-                                        o_phy_odelay_data_ld[lane] <= 1;
+-                                        o_phy_odelay_dqs_ld[lane] <= 1;
++                                        phy_odelay_data_ld_int[lane] <= 1;
++                                        phy_odelay_dqs_ld_int[lane] <= 1;
+                                         write_level_fail[lane] <= odelay_cntvalue_halfway;
+                                         // if(odelay_cntvalue_halfway) begin // if halfway cntvalue is reached which is illegal (or impossible to happen), then we load the original cntvalues
+                                         //     odelay_data_cntvaluein[lane] <= DATA_INITIAL_ODELAY_TAP[4:0];
+@@ -3578,10 +3598,7 @@
+     endgenerate
+ 
+     assign issue_read_command = (state_calibrate == MPR_READ && delay_before_read_data == 0);
+-    assign o_phy_odelay_data_cntvaluein = odelay_data_cntvaluein[lane]; 
+-    assign o_phy_odelay_dqs_cntvaluein = odelay_dqs_cntvaluein[lane];
+-    assign o_phy_idelay_data_cntvaluein = idelay_data_cntvaluein[lane];
+-    assign o_phy_idelay_dqs_cntvaluein = idelay_dqs_cntvaluein[lane];
++    // o_phy_*_cntvaluein and o_phy_*_ld are now registered (pipelined) outputs
+     assign dqs_target_index_value = dqs_start_index_stored[0]? dqs_start_index_stored + 2: dqs_start_index_stored + 1; // move to next odd (if 3 then 5, if 4 then 5)
+      // To show why next odd number is needed: https://github.com/AngeloJacobo/UberDDR3/tree/b762c464f6526159c1d8c2e4ee039b4ae4e78dbd#per-lane-read-calibration
+ 

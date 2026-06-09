@@ -1,0 +1,24 @@
+iverilog sr_wb2: built (warnings -> testbench/iverilog_sr_wb2.stderr, 677 lines)
+iverilog bist2: built (warnings -> testbench/iverilog_bist2.stderr, 678 lines)
+iverilog ecc3: built (warnings -> testbench/iverilog_ecc3.stderr, 676 lines)
+
+=== uberddr3 variant sr_wb2: PASS ===
+Number of Writes = 4608
+Number of Reads = 4608
+Number of Success = 4604
+Number of Fails = 4
+Number of Injected Errors = 4
+
+=== uberddr3 variant bist2: PASS ===
+Number of Writes = 4608
+Number of Reads = 4608
+Number of Success = 4604
+Number of Fails = 4
+Number of Injected Errors = 4
+
+=== uberddr3 variant ecc3: PASS ===
+Number of Writes = 4608
+Number of Reads = 4608
+Number of Success = 4604
+Number of Fails = 4
+Number of Injected Errors = 4

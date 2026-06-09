@@ -1,0 +1,6 @@
+Warning: Replacing memory \thread_region_reg with list of registers. See rtl/axi_crossbar_addr.v:320
+Warning: Replacing memory \thread_m_reg with list of registers. See rtl/axi_crossbar_addr.v:319
+Warning: Replacing memory \thread_id_reg with list of registers. See rtl/axi_crossbar_addr.v:318
+Warning: Replacing memory \thread_count_reg with list of registers. See rtl/axi_crossbar_addr.v:307, rtl/axi_crossbar_addr.v:295
+Warning: Deep recursion in AST simplifier.
+Does this design contain overly long or deeply nested expressions, or excessive recursion?

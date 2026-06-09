@@ -1,0 +1,311 @@
+--- a/rtl/axi_crossbar_rd.v
++++ b/rtl/axi_crossbar_rd.v
+@@ -210,8 +210,8 @@
+         wire m_rc_valid;
+         wire m_rc_ready;
+ 
+-        wire [S_ID_WIDTH-1:0] s_cpl_id;
+-        wire s_cpl_valid;
++        reg [S_ID_WIDTH-1:0] s_cpl_id_reg = 0;
++        reg s_cpl_valid_reg = 1'b0;
+ 
+         axi_crossbar_addr #(
+             .S(m),
+@@ -268,8 +268,8 @@
+             /*
+              * Completion input
+              */
+-            .s_cpl_id(s_cpl_id),
+-            .s_cpl_valid(s_cpl_valid)
++            .s_cpl_id(s_cpl_id_reg),
++            .s_cpl_valid(s_cpl_valid_reg)
+         );
+ 
+         assign int_axi_arvalid[m*M_COUNT +: M_COUNT] = m_axi_avalid << a_select;
+@@ -365,8 +365,14 @@
+         assign r_request[M_COUNT_P1-1] = decerr_m_axi_rvalid_reg && !r_grant[M_COUNT_P1-1];
+         assign r_acknowledge[M_COUNT_P1-1] = r_grant[M_COUNT_P1-1] && decerr_m_axi_rvalid_reg && decerr_m_axi_rlast_reg && m_axi_rready_mux;
+ 
+-        assign s_cpl_id = m_axi_rid_mux;
+-        assign s_cpl_valid = m_axi_rvalid_mux && m_axi_rready_mux && m_axi_rlast_mux;
++        always @(posedge clk) begin
++            if (rst) begin
++                s_cpl_valid_reg <= 1'b0;
++            end else begin
++                s_cpl_id_reg <= m_axi_rid_mux;
++                s_cpl_valid_reg <= m_axi_rvalid_mux && m_axi_rready_mux && m_axi_rlast_mux;
++            end
++        end
+ 
+         // S side register
+         axi_register_rd #(
+--- a/rtl/axi_crossbar_wr.v
++++ b/rtl/axi_crossbar_wr.v
+@@ -241,8 +241,8 @@
+         wire m_rc_valid;
+         wire m_rc_ready;
+ 
+-        wire [S_ID_WIDTH-1:0] s_cpl_id;
+-        wire s_cpl_valid;
++        reg [S_ID_WIDTH-1:0] s_cpl_id_reg = 0;
++        reg s_cpl_valid_reg = 1'b0;
+ 
+         axi_crossbar_addr #(
+             .S(m),
+@@ -299,8 +299,8 @@
+             /*
+              * Completion input
+              */
+-            .s_cpl_id(s_cpl_id),
+-            .s_cpl_valid(s_cpl_valid)
++            .s_cpl_id(s_cpl_id_reg),
++            .s_cpl_valid(s_cpl_valid_reg)
+         );
+ 
+         assign int_axi_awvalid[m*M_COUNT +: M_COUNT] = m_axi_avalid << a_select;
+@@ -413,8 +413,14 @@
+         assign b_request[M_COUNT_P1-1] = decerr_m_axi_bvalid_reg && !b_grant[M_COUNT_P1-1];
+         assign b_acknowledge[M_COUNT_P1-1] = b_grant[M_COUNT_P1-1] && decerr_m_axi_bvalid_reg && m_axi_bready_mux;
+ 
+-        assign s_cpl_id = m_axi_bid_mux;
+-        assign s_cpl_valid = m_axi_bvalid_mux && m_axi_bready_mux;
++        always @(posedge clk) begin
++            if (rst) begin
++                s_cpl_valid_reg <= 1'b0;
++            end else begin
++                s_cpl_id_reg <= m_axi_bid_mux;
++                s_cpl_valid_reg <= m_axi_bvalid_mux && m_axi_bready_mux;
++            end
++        end
+ 
+         // S side register
+         axi_register_wr #(
+@@ -508,6 +514,7 @@
+ 
+         // address arbitration
+         reg [CL_S_COUNT-1:0] w_select_reg = 0, w_select_next;
++        reg [S_COUNT-1:0] w_select_onehot_reg = 1;
+         reg w_select_valid_reg = 1'b0, w_select_valid_next;
+         reg w_select_new_reg = 1'b0, w_select_new_next;
+ 
+@@ -566,7 +573,7 @@
+         wire                   s_axi_wvalid_mux  = int_axi_wvalid[w_select_reg*M_COUNT+n] && w_select_valid_reg;
+         wire                   s_axi_wready_mux;
+ 
+-        assign int_axi_wready[n*S_COUNT +: S_COUNT] = (w_select_valid_reg && s_axi_wready_mux) << w_select_reg;
++        assign int_axi_wready[n*S_COUNT +: S_COUNT] = {S_COUNT{w_select_valid_reg && s_axi_wready_mux}} & w_select_onehot_reg;
+ 
+         // write data routing
+         always @* begin
+@@ -591,6 +598,7 @@
+             end
+ 
+             w_select_reg <= w_select_next;
++            w_select_onehot_reg <= {{(S_COUNT-1){1'b0}}, 1'b1} << w_select_next;
+         end
+ 
+         // write response forwarding
+--- a/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
++++ b/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
+@@ -228,7 +228,7 @@
+     parameter M07_SECURE = 0,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S00_AW_REG_TYPE = 0,
++    parameter S00_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S00_W_REG_TYPE = 0,
+@@ -237,13 +237,13 @@
+     parameter S00_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S00_AR_REG_TYPE = 0,
++    parameter S00_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S00_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S01_AW_REG_TYPE = 0,
++    parameter S01_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S01_W_REG_TYPE = 0,
+@@ -252,13 +252,13 @@
+     parameter S01_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S01_AR_REG_TYPE = 0,
++    parameter S01_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S01_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S02_AW_REG_TYPE = 0,
++    parameter S02_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S02_W_REG_TYPE = 0,
+@@ -267,13 +267,13 @@
+     parameter S02_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S02_AR_REG_TYPE = 0,
++    parameter S02_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S02_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S03_AW_REG_TYPE = 0,
++    parameter S03_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S03_W_REG_TYPE = 0,
+@@ -282,13 +282,13 @@
+     parameter S03_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S03_AR_REG_TYPE = 0,
++    parameter S03_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S03_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S04_AW_REG_TYPE = 0,
++    parameter S04_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S04_W_REG_TYPE = 0,
+@@ -297,13 +297,13 @@
+     parameter S04_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S04_AR_REG_TYPE = 0,
++    parameter S04_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S04_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S05_AW_REG_TYPE = 0,
++    parameter S05_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S05_W_REG_TYPE = 0,
+@@ -312,13 +312,13 @@
+     parameter S05_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S05_AR_REG_TYPE = 0,
++    parameter S05_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S05_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S06_AW_REG_TYPE = 0,
++    parameter S06_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S06_W_REG_TYPE = 0,
+@@ -327,13 +327,13 @@
+     parameter S06_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S06_AR_REG_TYPE = 0,
++    parameter S06_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S06_R_REG_TYPE = 2,
+     // Slave interface AW channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S07_AW_REG_TYPE = 0,
++    parameter S07_AW_REG_TYPE = 1,
+     // Slave interface W channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S07_W_REG_TYPE = 0,
+@@ -342,7 +342,7 @@
+     parameter S07_B_REG_TYPE = 1,
+     // Slave interface AR channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter S07_AR_REG_TYPE = 0,
++    parameter S07_AR_REG_TYPE = 1,
+     // Slave interface R channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter S07_R_REG_TYPE = 2,
+@@ -360,7 +360,7 @@
+     parameter M00_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M00_R_REG_TYPE = 0,
++    parameter M00_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M01_AW_REG_TYPE = 1,
+@@ -375,7 +375,7 @@
+     parameter M01_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M01_R_REG_TYPE = 0,
++    parameter M01_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M02_AW_REG_TYPE = 1,
+@@ -390,7 +390,7 @@
+     parameter M02_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M02_R_REG_TYPE = 0,
++    parameter M02_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M03_AW_REG_TYPE = 1,
+@@ -405,7 +405,7 @@
+     parameter M03_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M03_R_REG_TYPE = 0,
++    parameter M03_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M04_AW_REG_TYPE = 1,
+@@ -420,7 +420,7 @@
+     parameter M04_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M04_R_REG_TYPE = 0,
++    parameter M04_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M05_AW_REG_TYPE = 1,
+@@ -435,7 +435,7 @@
+     parameter M05_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M05_R_REG_TYPE = 0,
++    parameter M05_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M06_AW_REG_TYPE = 1,
+@@ -450,7 +450,7 @@
+     parameter M06_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M06_R_REG_TYPE = 0,
++    parameter M06_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M07_AW_REG_TYPE = 1,
+@@ -465,7 +465,7 @@
+     parameter M07_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M07_R_REG_TYPE = 0
++    parameter M07_R_REG_TYPE = 1
+ )
+ (
+     input  wire                     clk,

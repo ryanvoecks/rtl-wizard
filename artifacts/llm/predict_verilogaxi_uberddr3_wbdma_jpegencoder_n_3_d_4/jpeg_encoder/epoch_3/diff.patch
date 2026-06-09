@@ -1,0 +1,151 @@
+--- a/dct/rtl/verilog/dct.v
++++ b/dct/rtl/verilog/dct.v
+@@ -109,7 +109,7 @@
+ 	//
+ 	// variables
+ 	//
+-	reg go, dgo, ddgo, ddcnt, dddcnt;
++	reg go, dgo, ddgo, ddcnt, dddcnt, ddddcnt, dddddcnt, ddddddcnt;
+ 	reg [di_width:1] ddin;
+ 
+ 	//
+@@ -138,9 +138,12 @@
+ 		  ddgo   <= #1 1'b0;
+ 		  ddin   <= #1 0;
+ 
+-	      douten <= #1 1'b0;
+-	      ddcnt  <= #1 1'b1;
+-	      dddcnt <= #1 1'b1;
++	      douten    <= #1 1'b0;
++	      ddcnt     <= #1 1'b1;
++	      dddcnt    <= #1 1'b1;
++	      ddddcnt   <= #1 1'b1;
++	      dddddcnt  <= #1 1'b1;
++	      ddddddcnt <= #1 1'b1;
+ 	  end
+ 	  else if (ena)
+ 	  begin
+@@ -149,10 +152,13 @@
+ 	      ddgo   <= #1 dgo;
+ 	      ddin   <= #1 din;
+ 
+-	      ddcnt  <= #1 dcnt;
+-	      dddcnt <= #1 ddcnt;
+-
+-	      douten <= #1 ddcnt & ~dddcnt;
++	      ddcnt     <= #1 dcnt;
++	      dddcnt    <= #1 ddcnt;
++	      ddddcnt   <= #1 dddcnt;
++	      dddddcnt  <= #1 ddddcnt;
++	      ddddddcnt <= #1 dddddcnt;
++
++	      douten <= #1 dddddcnt & ~ddddddcnt;
+ 	  end
+ 
+ 	// Hookup DCT units
+--- a/dct/rtl/verilog/dct_mac.v
++++ b/dct/rtl/verilog/dct_mac.v
+@@ -81,8 +81,21 @@
+ 	//
+ 	// variables
+ 	//
+-	wire [mwidth-1:0] idin;
+-	wire [mwidth-1:0] icoef;
++	// Split dwidth into two halves so each sub-multiply is smaller.
++	// Lower half: unsigned dwidth/2 bits; upper half: signed dwidth/2 bits.
++	// Two partial products are registered and combined the next cycle.
++	//
++	localparam DHALF = dwidth / 2;                  // 4 for dwidth=8
++	localparam PP_HI_W = cwidth + DHALF;            // 15: signed coef x signed 4-bit upper
++	localparam PP_LO_W = cwidth + DHALF + 1;        // 16: signed coef x unsigned 5-bit lower
++
++	reg  [dwidth-1:0] din_r;
++	reg  [cwidth-1:0] coef_r;
++	reg               dclr_r;
++
++	reg signed [PP_HI_W-1:0] pp_hi;   // coef_r * din_r[dwidth-1:DHALF]  (signed x signed)
++	reg signed [PP_LO_W-1:0] pp_lo;   // coef_r * {1'b0,din_r[DHALF-1:0]} (signed x unsigned)
++	reg                       dclr_r2;
+ 
+ 	reg  [mwidth -1:0] mult_res /* synthesis syn_multstyle="block_mult" syn_pipeline=1*/ ;
+ 	wire [rwidth -1:0] ext_mult_res;
+@@ -91,20 +104,35 @@
+ 	//
+ 	// module body
+ 	//
+-	assign icoef = { {(mwidth-cwidth){coef[cwidth-1]}}, coef};
+-	assign idin  = { {(mwidth-dwidth){din[dwidth-1]}}, din};
+ 
+-	// generate multiplier structure
++	// stage 1: register raw operands
++	always @(posedge clk)
++	  if(ena) begin
++	    din_r  <= #1 din;
++	    coef_r <= #1 coef;
++	    dclr_r <= #1 dclr;
++	  end
++
++	// stage 2: two narrow partial-product multiplies
++	always @(posedge clk)
++	  if(ena) begin
++	    pp_hi   <= #1 $signed(coef_r) * $signed(din_r[dwidth-1 : DHALF]);
++	    pp_lo   <= #1 $signed(coef_r) * $signed({1'b0, din_r[DHALF-1 : 0]});
++	    dclr_r2 <= #1 dclr_r;
++	  end
++
++	// stage 3: combine — mult_res = pp_lo + pp_hi * 2^DHALF
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    mult_res <= #1 icoef * idin;
++	    mult_res <= #1 {{(mwidth-PP_LO_W){pp_lo[PP_LO_W-1]}}, pp_lo} +
++	                   {pp_hi, {DHALF{1'b0}}};
+ 
+ 	assign ext_mult_res = { {3{mult_res[mwidth-1]}}, mult_res};
+ 
+-	// generate adder structure
++	// generate adder structure (uses dclr_r2 to match the extra pipeline stage)
+ 	always @(posedge clk)
+ 	  if(ena)
+-	    if(dclr)
++	    if(dclr_r2)
+ 	      result <= #1 ext_mult_res;
+ 	    else
+ 	      result <= #1 ext_mult_res + result;
+--- a/dct/rtl/verilog/dctu.v
++++ b/dct/rtl/verilog/dctu.v
+@@ -79,6 +79,9 @@
+ 	// variables
+ 	//
+ 	reg [      31:0] coef;
++	reg [coef_width-1:0] coef2;
++	reg [di_width:1] ddin2;
++	reg ddgo2;
+ 
+ 	wire [coef_width +10:0] result;
+ 	`include "../../../dct/rtl/verilog/dct_cos_table.v"
+@@ -91,14 +94,22 @@
+ 	  if(ena)
+ 	    coef <= #1 dct_cos_table(x, y, u, v);
+ 
++	// pipeline register: register coef slice, ddin, and ddgo together
++	always @(posedge clk)
++	  if(ena) begin
++	    coef2 <= #1 coef[31 -: coef_width];
++	    ddin2 <= #1 ddin;
++	    ddgo2 <= #1 ddgo;
++	  end
++
+ 	// hookup dct-mac unit
+ 	dct_mac #(8, coef_width)
+ 	macu (
+ 		.clk(clk),
+ 		.ena(ena),
+-		.dclr(ddgo),
+-		.din(ddin),
+-		.coef( coef[31:31 -coef_width +1] ),
++		.dclr(ddgo2),
++		.din(ddin2),
++		.coef(coef2),
+ 		.result(result)
+ 	);
+ 

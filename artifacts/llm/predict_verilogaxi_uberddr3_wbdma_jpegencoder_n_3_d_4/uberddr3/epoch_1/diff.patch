@@ -1,0 +1,254 @@
+--- a/ddr3_controller.v
++++ b/ddr3_controller.v
+@@ -145,9 +145,9 @@
+         output wire o_phy_toggle_dqs,
+         output reg[wb_data_bits-1:0] o_phy_data,
+         output reg[wb_sel_bits-1:0] o_phy_dm, 
+-        output wire[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
+-        output wire[4:0] o_phy_idelay_data_cntvaluein, 
+-        output wire[4:0] o_phy_idelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_idelay_data_cntvaluein,
++        output reg[4:0] o_phy_idelay_dqs_cntvaluein,
+         output reg[LANES-1:0] o_phy_odelay_data_ld, o_phy_odelay_dqs_ld,
+         output reg[LANES-1:0] o_phy_idelay_data_ld, 
+         output reg[LANES-1:0] o_phy_idelay_dqs_ld,
+@@ -527,10 +527,11 @@
+         o_phy_bitslip = 0;
+     end
+     reg cmd_odt_q = 0, cmd_odt, cmd_reset_n;
+-    reg[DUAL_RANK_DIMM:0] cmd_ck_en, prev_cmd_ck_en;  
+-    reg o_wb_stall_int_q = 1, o_wb_stall_int_d, o_wb_stall_calib;
++    reg[DUAL_RANK_DIMM:0] cmd_ck_en, prev_cmd_ck_en;
+     reg precharge_slot_busy;
+     reg activate_slot_busy;
++    reg o_wb_stall_int_q = 1, o_wb_stall_int_d, o_wb_stall_calib;
++
+     reg[1:0] write_dqs_q;
+     reg write_dqs_d;
+     reg[STAGE2_DATA_DEPTH:0] write_dqs;
+@@ -1485,16 +1486,17 @@
+     end
+ 
+     always @* begin
+-        // stage 2 conditions
+-        stage2_do_wr_or_rd_d = bank_status_d[stage2_bank_d] &&  bank_active_row_d[stage2_bank_d] == stage2_row_d; 
+-        stage2_do_wr_d = stage2_we_d && delay_before_write_counter_d[stage2_bank_d] == 0;
+-        stage2_do_update_delay_before_precharge_after_wr_d = delay_before_precharge_counter_d[stage2_bank_d] <= WRITE_TO_PRECHARGE_DELAY[$clog2(MAX_DELAY_BEFORE_PRECHARGE):0];
+-        stage2_do_rd_d = !stage2_we_d && delay_before_read_counter_d[stage2_bank_d] == 0;
+-        stage2_do_update_delay_before_precharge_after_rd_d = delay_before_precharge_counter_d[stage2_bank_d] <= READ_TO_PRECHARGE_DELAY[$clog2(MAX_DELAY_BEFORE_PRECHARGE):0];
+-        stage2_do_act_d = !bank_status_d[stage2_bank_d] && delay_before_activate_counter_d[stage2_bank_d] == 0;
+-        stage2_do_update_delay_before_read_after_act_d = delay_before_read_counter_d[stage2_bank_d] <= ACTIVATE_TO_READ_DELAY[$clog2(MAX_DELAY_BEFORE_READ):0];
+-        stage2_do_update_delay_before_write_after_act_d = delay_before_write_counter_d[stage2_bank_d] <= ACTIVATE_TO_WRITE_DELAY[$clog2(MAX_DELAY_BEFORE_WRITE):0];
+-        stage2_do_pre_d = bank_status_d[stage2_bank_d] &&  bank_active_row_d[stage2_bank_d] != stage2_row_d &&  delay_before_precharge_counter_d[stage2_bank_d] == 0 ;
++        // stage 2 conditions — gated with stage2_pending_d so that stage2_do_* implies stage2_pending,
++        // allowing the outer if(stage2_pending) guard to be removed from cmd_d assignments.
++        stage2_do_wr_or_rd_d = stage2_pending_d && bank_status_d[stage2_bank_d] &&  bank_active_row_d[stage2_bank_d] == stage2_row_d;
++        stage2_do_wr_d = stage2_pending_d && stage2_we_d && delay_before_write_counter_d[stage2_bank_d] == 0;
++        stage2_do_update_delay_before_precharge_after_wr_d = stage2_pending_d && delay_before_precharge_counter_d[stage2_bank_d] <= WRITE_TO_PRECHARGE_DELAY[$clog2(MAX_DELAY_BEFORE_PRECHARGE):0];
++        stage2_do_rd_d = stage2_pending_d && !stage2_we_d && delay_before_read_counter_d[stage2_bank_d] == 0;
++        stage2_do_update_delay_before_precharge_after_rd_d = stage2_pending_d && delay_before_precharge_counter_d[stage2_bank_d] <= READ_TO_PRECHARGE_DELAY[$clog2(MAX_DELAY_BEFORE_PRECHARGE):0];
++        stage2_do_act_d = stage2_pending_d && !bank_status_d[stage2_bank_d] && delay_before_activate_counter_d[stage2_bank_d] == 0;
++        stage2_do_update_delay_before_read_after_act_d = stage2_pending_d && delay_before_read_counter_d[stage2_bank_d] <= ACTIVATE_TO_READ_DELAY[$clog2(MAX_DELAY_BEFORE_READ):0];
++        stage2_do_update_delay_before_write_after_act_d = stage2_pending_d && delay_before_write_counter_d[stage2_bank_d] <= ACTIVATE_TO_WRITE_DELAY[$clog2(MAX_DELAY_BEFORE_WRITE):0];
++        stage2_do_pre_d = stage2_pending_d && bank_status_d[stage2_bank_d] &&  bank_active_row_d[stage2_bank_d] != stage2_row_d &&  delay_before_precharge_counter_d[stage2_bank_d] == 0 ;
+         // stage 2 conditions
+         stage1_do_pre_d = bank_status_d[stage1_next_bank_d] &&  bank_active_row_d[stage1_next_bank_d] != stage1_next_row_d && delay_before_precharge_counter_d[stage1_next_bank_d] == 0;
+         stage1_do_act_d = !bank_status_d[stage1_next_bank_d] && delay_before_activate_counter_d[stage1_next_bank_d] == 0;
+@@ -1700,8 +1702,7 @@
+         stage2_stall = 1'b0;
+         ecc_stage2_stall = 1'b0;
+         stage2_update = 1'b1; //always update stage 2 UNLESS it has a pending request (stage2_pending high)
+-        precharge_slot_busy = 0; //flag that determines if stage 2 is issuing precharge (thus stage 1 cannot issue precharge)
+-        activate_slot_busy = 0; //flag that determines if stage 2 is issuing activate (thus stage 1 cannot issue activate)
++
+         write_dqs_d = write_calib_dqs;
+         write_dq_d = write_calib_dq;
+         for(index=0; index < (1<<(BA_BITS+DUAL_RANK_DIMM)); index=index+1) begin
+@@ -1769,15 +1770,17 @@
+         shift_reg_read_pipe_d[READ_ACK_PIPE_WIDTH-1] = 0; //MSB just receives zero when shifted rightward
+ 
+ 
+-        //USE _d in ALL
+-        //if there is a pending request, issue the appropriate commands
+-        if(stage2_pending) begin 
++        // Set stall/update defaults when pending; command-specific blocks follow outside this guard.
++        // stage2_do_* now imply stage2_pending (gated in the _d conditions), so cmd_d
++        // assignments no longer need the outer if(stage2_pending) mux, reducing path depth.
++        if(stage2_pending) begin
+             ecc_stage2_stall = 1;
+             stage2_update = 0;
+-
+-            //bank is not idle but wrong row is activated so do precharge
+-            if(stage2_do_pre) begin       
+-                precharge_slot_busy = 1'b1;
++        end
++
++        //if there is a pending request, issue the appropriate commands
++        //bank is not idle but wrong row is activated so do precharge
++        if(stage2_do_pre) begin
+                 //set-up delay before activate
+                 delay_before_activate_counter_d[stage2_bank] = PRECHARGE_TO_ACTIVATE_DELAY[$clog2(MAX_DELAY_BEFORE_ACTIVATE):0];
+                 //issue precharge command
+@@ -1792,8 +1795,7 @@
+             end
+ 
+             //bank is idle so activate it
+-            else if(stage2_do_act) begin 
+-                activate_slot_busy = 1'b1;
++            else if(stage2_do_act) begin
+                 // must meet TRRD (activate to activate delay)
+                 for(index=0; index < (1<<(BA_BITS+DUAL_RANK_DIMM)); index=index+1) begin //the activate to activate delay applies to all banks
+                     if(delay_before_activate_counter_q[index] <= ACTIVATE_TO_ACTIVATE_DELAY[$clog2(MAX_DELAY_BEFORE_ACTIVATE):0]) begin // if delay is > ACTIVATE_TO_ACTIVATE_DELAY, then updating it to the lower delay will cause the previous delay to be violated
+@@ -1956,66 +1958,6 @@
+                     cmd_d[3][CMD_ODT] = cmd_odt;
+                 end
+             end
+-        end //end of stage 2 pending
+-
+-        // pending request on stage 1
+-        // if DDR3_CLK_PERIOD == 1250, then remove this anticipate stage 1 to pass timing
+-        if(DDR3_CLK_PERIOD != 1_250) begin
+-            if(stage1_pending && !((stage1_next_bank == stage2_bank) && stage2_pending)) begin
+-                //stage 1 will mainly be for anticipation (if next requests need to jump to new bank then 
+-                //anticipate the precharging and activate of that next bank, BUT it can also handle
+-                //precharge and activate of CURRENT wishbone request.
+-                //Anticipate will depend if the request is on the end of the row 
+-                // and must start the anticipation. For example if we have 10 rows in a bank:
+-                //[R][R][R][R][R][R][R][A][A][A] -> [next bank]
+-                //
+-                //R = Request, A = Anticipate
+-                //Unless we are near the third to the last column, stage 1 will
+-                //issue Activate and Precharge on the CURRENT bank. Else, stage
+-                //1 will issue Activate and Precharge for the NEXT bank
+-                // Thus stage 1 anticipate makes sure smooth burst operation that jumps banks
+-                if(stage1_do_pre && !precharge_slot_busy) begin    
+-                    //set-up delay before read and write
+-                    delay_before_activate_counter_d[stage1_next_bank] = PRECHARGE_TO_ACTIVATE_DELAY[$clog2(MAX_DELAY_BEFORE_ACTIVATE):0];
+-                    if(DUAL_RANK_DIMM[0]) begin
+-                        cmd_d[PRECHARGE_SLOT] = {!stage1_next_bank[(DUAL_RANK_DIMM[0]? BA_BITS : 0)], stage1_next_bank[(DUAL_RANK_DIMM[0]? BA_BITS : 0)], CMD_PRE[2:0], cmd_odt, cmd_ck_en, cmd_reset_n, stage1_next_bank[BA_BITS-1:0], { {{ROW_BITS-32'd11}{1'b0}} , 1'b0 , stage1_next_row[(DUAL_RANK_DIMM[0]? 9 : 8):0] } };
+-                    end
+-                    else begin
+-                        cmd_d[PRECHARGE_SLOT] = {1'b0, CMD_PRE[2:0], cmd_odt, cmd_ck_en, cmd_reset_n, stage1_next_bank, { {{ROW_BITS-32'd11}{1'b0}} , 1'b0 , stage1_next_row[9:0] } };
+-                    end
+-                    bank_status_d[stage1_next_bank] = 1'b0; 
+-                end //end of anticipate precharge
+-                
+-                //anticipated bank is idle so do activate
+-                else if(stage1_do_act && !activate_slot_busy) begin 
+-                    // must meet TRRD (activate to activate delay)
+-                    for(index=0; index < (1<<(BA_BITS+DUAL_RANK_DIMM)); index=index+1) begin //the activate to activate delay applies to all banks
+-                        if(delay_before_activate_counter_d[index] <= ACTIVATE_TO_ACTIVATE_DELAY[$clog2(MAX_DELAY_BEFORE_ACTIVATE):0]) begin // if delay is > ACTIVATE_TO_ACTIVATE_DELAY, then updating it to the lower delay will cause the previous delay to be violated
+-                            delay_before_activate_counter_d[index] = ACTIVATE_TO_ACTIVATE_DELAY[$clog2(MAX_DELAY_BEFORE_ACTIVATE):0];
+-                        end
+-                    end
+-
+-                    delay_before_precharge_counter_d[stage1_next_bank] = ACTIVATE_TO_PRECHARGE_DELAY[$clog2(MAX_DELAY_BEFORE_PRECHARGE):0];
+-                    
+-                    //set-up delay before read and write
+-                    if(delay_before_read_counter_d[stage1_next_bank] <= ACTIVATE_TO_READ_DELAY[$clog2(MAX_DELAY_BEFORE_READ):0]) begin  // if current delay is > ACTIVATE_TO_READ_DELAY, then updating it to the lower delay will cause the previous delay to be violated
+-                        delay_before_read_counter_d[stage1_next_bank] = ACTIVATE_TO_READ_DELAY[$clog2(MAX_DELAY_BEFORE_READ):0];
+-                    end
+-                    if(delay_before_write_counter_d[stage1_next_bank] <= ACTIVATE_TO_WRITE_DELAY[$clog2(MAX_DELAY_BEFORE_WRITE):0]) begin  // if current delay is > ACTIVATE_TO_WRITE_DELAY, then updating it to the lower delay will cause the previous delay to be violated
+-                        delay_before_write_counter_d[stage1_next_bank] = ACTIVATE_TO_WRITE_DELAY[$clog2(MAX_DELAY_BEFORE_WRITE):0];
+-                    end
+-                    if(DUAL_RANK_DIMM[0]) begin
+-                        cmd_d[ACTIVATE_SLOT] = {!stage1_next_bank[(DUAL_RANK_DIMM[0]? BA_BITS : 0)], stage1_next_bank[(DUAL_RANK_DIMM[0]? BA_BITS : 0)], CMD_ACT[2:0] , cmd_odt, cmd_ck_en, cmd_reset_n, stage1_next_bank[BA_BITS-1:0] , stage1_next_row[(DUAL_RANK_DIMM[0]? ROW_BITS-1 : ROW_BITS-2):0]}; 
+-                    end
+-                    else begin
+-                        cmd_d[ACTIVATE_SLOT] = {1'b0, CMD_ACT[2:0] , cmd_odt, cmd_ck_en, cmd_reset_n, stage1_next_bank , stage1_next_row};
+-                    end
+-                    bank_status_d[stage1_next_bank] = 1'b1;
+-                    bank_active_row_d[stage1_next_bank] = stage1_next_row;
+-                end //end of anticipate activate
+-                
+-            end //end of stage1 anticipate
+-        end
+ 
+         // control stage 1 stall in advance
+         if(stage1_pending) begin // raise stall only if stage2 will still be busy next clock
+@@ -2147,7 +2089,7 @@
+             write_dq_q <= 0;
+             write_dq <= 0;
+             write_ack_index_q <= 1;
+-            if(ECC_ENABLE == 1 || ECC_ENABLE == 2) begin
++            if(ECC_ENABLE == 1 || ECC_ENABLE == 2 || ECC_ENABLE == 0) begin
+                 o_wb_ack_q <= 0;
+                 o_wb_ack_uncalibrated <= 0;
+             end
+@@ -2317,6 +2259,14 @@
+                     shift_reg_read_pipe_q[index] <= 0;
+                 end
+             end
++            if(ECC_ENABLE == 0) begin // register o_wb_data to break index_wb_data→output combinational path
++                o_wb_data <= o_wb_data_q[index_wb_data]; // single registered stage: FF output → output port
++                o_aux <= o_wb_ack_read_q[0][AUX_WIDTH:1]; // Aux output
++                o_wb_data_uncalibrated <= o_wb_data_q[index_wb_data]; // same registered data for calibration
++                o_wb_ack_uncalibrated <= o_wb_ack_read_q[0][0] && !final_calibration_done; // ack used during calibration
++                o_wb_ack_q <= o_wb_ack_read_q[0][0] && final_calibration_done && i_wb_cyc; // ack used during normal operation
++                o_wb_err_q <= 0;
++            end
+             if(ECC_ENABLE == 1 || ECC_ENABLE == 2) begin // added latency of 1 clock cycle for decoding the ECC
+                 o_wb_data <= o_wb_data_q_decoded; // Wishbone data output
+                 o_aux <= o_wb_ack_read_q[0][AUX_WIDTH:1]; // Aux output
+@@ -2331,14 +2281,8 @@
+ 
+     generate
+         if(ECC_ENABLE == 0) begin: ecc_disabled_wishbone_out
+-            always @* begin
+-                o_wb_data = o_wb_data_q_current; // Wishbone data output
+-                o_aux = o_wb_ack_read_q[0][AUX_WIDTH:1]; // Aux output
+-                o_wb_data_uncalibrated = o_wb_data; // wishbone data is also used when not yet done calibration
+-                o_wb_ack_uncalibrated = o_wb_ack_read_q[0][0] && !final_calibration_done; // ack used during calibration
+-                o_wb_ack_q = o_wb_ack_read_q[0][0] && final_calibration_done; // ack used during normal operation
+-                o_wb_err_q = 0; // no wishbone error when ECC is disabled
+-            end
++            // o_wb_data, o_wb_ack_q, o_wb_data_uncalibrated, o_wb_ack_uncalibrated, o_aux, o_wb_err_q
++            // are all driven from the clocked block above (registered pipeline stage).
+         end
+         else if(ECC_ENABLE == 3) begin: ecc_3_wishbone_out
+             always @* begin
+@@ -2457,6 +2401,10 @@
+                 idelay_dqs_cntvaluein[index] <= DQS_INITIAL_IDELAY_TAP[4:0];
+                 dq_target_index[index] <= 0;
+             end
++            o_phy_odelay_data_cntvaluein <= DATA_INITIAL_ODELAY_TAP[4:0];
++            o_phy_odelay_dqs_cntvaluein  <= DQS_INITIAL_ODELAY_TAP[4:0];
++            o_phy_idelay_data_cntvaluein <= DATA_INITIAL_IDELAY_TAP[4:0];
++            o_phy_idelay_dqs_cntvaluein  <= DQS_INITIAL_IDELAY_TAP[4:0];
+         end
+         else begin
+             write_calib_dq <= 0;
+@@ -2493,6 +2441,20 @@
+                 odelay_dqs_cntvaluein[lane] <= o_phy_odelay_dqs_ld[lane]? odelay_dqs_cntvaluein[lane] + 1: odelay_dqs_cntvaluein[lane];
+                 idelay_data_cntvaluein[lane] <= o_phy_idelay_data_ld[lane]? idelay_data_cntvaluein[lane] + 1: idelay_data_cntvaluein[lane];
+                 idelay_dqs_cntvaluein[lane] <= o_phy_idelay_dqs_ld[lane]? idelay_dqs_cntvaluein[lane] + 1: idelay_dqs_cntvaluein[lane];
++            end
++            // Registered pipeline stage for cntvaluein outputs: breaks lane→mux→output wire combinational path
++            if (wb2_update) begin
++                // Next cycle: lane==wb2_write_lane, ld fires — pre-load correct lane's value
++                o_phy_odelay_data_cntvaluein <= wb2_phy_odelay_data_ld[wb2_write_lane] ? wb2_phy_odelay_data_cntvaluein : odelay_data_cntvaluein[wb2_write_lane];
++                o_phy_odelay_dqs_cntvaluein  <= wb2_phy_odelay_dqs_ld[wb2_write_lane]  ? wb2_phy_odelay_dqs_cntvaluein  : odelay_dqs_cntvaluein[wb2_write_lane];
++                o_phy_idelay_data_cntvaluein <= wb2_phy_idelay_data_ld[wb2_write_lane] ? wb2_phy_idelay_data_cntvaluein : idelay_data_cntvaluein[wb2_write_lane];
++                o_phy_idelay_dqs_cntvaluein  <= wb2_phy_idelay_dqs_ld[wb2_write_lane]  ? wb2_phy_idelay_dqs_cntvaluein  : idelay_dqs_cntvaluein[wb2_write_lane];
++            end else begin
++                // Track cntvaluein[lane]: lane is stable whenever ld fires (set in prior cycle)
++                o_phy_odelay_data_cntvaluein <= odelay_data_cntvaluein[lane];
++                o_phy_odelay_dqs_cntvaluein  <= odelay_dqs_cntvaluein[lane];
++                o_phy_idelay_data_cntvaluein <= idelay_data_cntvaluein[lane];
++                o_phy_idelay_dqs_cntvaluein  <= idelay_dqs_cntvaluein[lane];
+             end
+             // high initial_dqs is the time when the IDELAY of dqs and dq is not yet calibrated 
+             // dqs_target_index_value = dqs_start_index_stored[0]? dqs_start_index_stored + 2: dqs_start_index_stored + 1; // move to next odd (if 3 then 5, if 4 then 5)
+@@ -3578,10 +3540,7 @@
+     endgenerate
+ 
+     assign issue_read_command = (state_calibrate == MPR_READ && delay_before_read_data == 0);
+-    assign o_phy_odelay_data_cntvaluein = odelay_data_cntvaluein[lane]; 
+-    assign o_phy_odelay_dqs_cntvaluein = odelay_dqs_cntvaluein[lane];
+-    assign o_phy_idelay_data_cntvaluein = idelay_data_cntvaluein[lane];
+-    assign o_phy_idelay_dqs_cntvaluein = idelay_dqs_cntvaluein[lane];
++    // o_phy_*_cntvaluein are now registered (see calibration always block)
+     assign dqs_target_index_value = dqs_start_index_stored[0]? dqs_start_index_stored + 2: dqs_start_index_stored + 1; // move to next odd (if 3 then 5, if 4 then 5)
+      // To show why next odd number is needed: https://github.com/AngeloJacobo/UberDDR3/tree/b762c464f6526159c1d8c2e4ee039b4ae4e78dbd#per-lane-read-calibration
+ 

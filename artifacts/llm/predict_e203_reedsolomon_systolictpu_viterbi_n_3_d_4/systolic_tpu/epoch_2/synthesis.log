@@ -1,0 +1,6 @@
+Warning: Replacing memory \matrix_mul_2D with list of registers. See systolic.v:119
+Warning: Replacing memory \is_accum_reg with list of registers. See systolic.v:89
+Warning: Replacing memory \is_reset_reg with list of registers. See systolic.v:88
+Warning: Replacing memory \product_reg with list of registers. See systolic.v:87
+Warning: Replacing memory \data_queue with list of registers. See systolic.v:52
+Warning: Replacing memory \weight_queue with list of registers. See systolic.v:51

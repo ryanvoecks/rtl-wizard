@@ -1,0 +1,6 @@
+Warning: Replacing memory \x_sb_r with list of registers. See BMU.v:233
+Warning: Replacing memory \pm_nom_r with list of registers. See pm_normalize.v:421
+Warning: Replacing memory \pm_stg1_r with list of registers. See pm_normalize.v:407
+Warning: Replacing memory \grp_state_r with list of registers. See pm_normalize.v:456
+Warning: Replacing memory \grp_max_r with list of registers. See pm_normalize.v:456
+Warning: Driver-driver conflict for \tb_bits_valid_r between cell $procdff$5731.Q and constant 1'0 in traceback: Resolved using constant.

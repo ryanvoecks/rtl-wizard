@@ -1,0 +1,73 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -1,10 +1,10 @@
+ `timescale 1ns / 1ps
+ //////////////////////////////////////////////////////////////////////////////////
+-// Company: 
++// Company:
+ // Engineer: Dmitry Matyunin (https://github.com/mcjtag)
+-// 
++//
+ // Create Date: 05.02.2018 14:00:10
+-// Design Name: 
++// Design Name:
+ // Module Name: comparator
+ // Project Name: bitonic_sort
+ // Target Devices:
+@@ -33,7 +33,7 @@
+ //  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ //  THE SOFTWARE.
+-// 
++//
+ //////////////////////////////////////////////////////////////////////////////////
+ 
+ module bitonic_comp #(
+@@ -57,11 +57,11 @@
+ 
+ generate
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		assign LESS = $unsigned(A) < $unsigned(B);
+ 	end else begin
+ 		assign LESS = $signed(A) < $signed(B);
+ 	end
+-	
++
+ 	if (POLARITY == 0) begin
+ 		always @(*) begin
+ 			H_REG = (LESS) ? A : B;
+--- a/bitonic_node.v
++++ b/bitonic_node.v
+@@ -1,10 +1,10 @@
+ `timescale 1ns / 1ps
+ //////////////////////////////////////////////////////////////////////////////////
+-// Company: 
++// Company:
+ // Engineer: Dmitry Matyunin (https://github.com/mcjtag)
+-// 
++//
+ // Create Date: 10.02.2018 12:29:58
+-// Design Name: 
++// Design Name:
+ // Module Name: bitonic_node
+ // Project Name: bitonic_sort
+ // Target Devices:
+@@ -33,7 +33,7 @@
+ //  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ //  THE SOFTWARE.
+-// 
++//
+ //////////////////////////////////////////////////////////////////////////////////
+ 
+ module bitonic_node #(
+@@ -60,7 +60,7 @@
+ 	wire [DATA_WIDTH-1:0]B;
+ 	wire [DATA_WIDTH-1:0]H;
+ 	wire [DATA_WIDTH-1:0]L;
+-	
++
+ 	assign A = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH];
+ 	assign B = data_in[DATA_WIDTH*(i + 1 + COMP_NUM * 1)-1-:DATA_WIDTH];
+ 	assign data_out[DATA_WIDTH*(i + 1 + COMP_NUM * 0)-1-:DATA_WIDTH] = H;

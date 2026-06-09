@@ -1,0 +1,199 @@
+--- a/rtl/axi_crossbar_addr.v
++++ b/rtl/axi_crossbar_addr.v
+@@ -261,8 +261,16 @@
+ reg trans_start;
+ reg trans_complete;
+ 
++// registered completion signals to break long combinational path from grant_encoded through mux/compare to thread_count_reg
++reg [ID_WIDTH-1:0] s_cpl_id_reg = 0;
++reg s_cpl_valid_reg = 1'b0;
++
+ reg [$clog2(S_ACCEPT+1)-1:0] trans_count_reg = 0;
+ wire trans_limit = trans_count_reg >= S_ACCEPT && !trans_complete;
++
++// registered trans_start to break address-decode → trans_count_reg critical path;
++// safe because state machine is in STATE_DECODE between consecutive trans_start events
++reg trans_start_q = 1'b0;
+ 
+ // transfer ID thread tracking
+ reg [ID_WIDTH-1:0] thread_id_reg[S_INT_THREADS-1:0];
+@@ -276,6 +284,8 @@
+ wire [S_INT_THREADS-1:0] thread_cpl_match;
+ wire [S_INT_THREADS-1:0] thread_trans_start;
+ wire [S_INT_THREADS-1:0] thread_trans_complete;
++// registered thread_trans_start to break address-decode → thread_count_reg critical path
++reg [S_INT_THREADS-1:0] thread_trans_start_q = {S_INT_THREADS{1'b0}};
+ 
+ generate
+     genvar n;
+@@ -288,7 +298,7 @@
+         assign thread_active[n] = thread_count_reg[n] != 0;
+         assign thread_match[n] = thread_active[n] && thread_id_reg[n] == s_axi_aid;
+         assign thread_match_dest[n] = thread_match[n] && thread_m_reg[n] == m_select_next && (M_REGIONS < 2 || thread_region_reg[n] == m_axi_aregion_next);
+-        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id;
++        assign thread_cpl_match[n] = thread_active[n] && thread_id_reg[n] == s_cpl_id_reg;
+         assign thread_trans_start[n] = (thread_match[n] || (!thread_active[n] && !thread_match && !(thread_trans_start & ({S_INT_THREADS{1'b1}} >> (S_INT_THREADS-n))))) && trans_start;
+         assign thread_trans_complete[n] = thread_cpl_match[n] && trans_complete;
+ 
+@@ -296,9 +306,10 @@
+             if (rst) begin
+                 thread_count_reg[n] <= 0;
+             end else begin
+-                if (thread_trans_start[n] && !thread_trans_complete[n]) begin
++                // use registered start to break long combinational path from s_axi_aaddr
++                if (thread_trans_start_q[n] && !thread_trans_complete[n]) begin
+                     thread_count_reg[n] <= thread_count_reg[n] + 1;
+-                end else if (!thread_trans_start[n] && thread_trans_complete[n]) begin
++                end else if (!thread_trans_start_q[n] && thread_trans_complete[n]) begin
+                     thread_count_reg[n] <= thread_count_reg[n] - 1;
+                 end
+             end
+@@ -381,17 +392,28 @@
+         end
+     endcase
+ 
+-    // manage completions
+-    trans_complete = s_cpl_valid;
++    // manage completions (use registered signals to break critical path)
++    trans_complete = s_cpl_valid_reg;
+ end
+ 
+ always @(posedge clk) begin
++    // pipeline completion signals to break long path from grant_encoded through mux to thread_count
++    s_cpl_id_reg <= s_cpl_id;
++    s_cpl_valid_reg <= s_cpl_valid;
++
++    // register trans_start and thread_trans_start to break address-decode → count_reg critical path
++    trans_start_q <= trans_start;
++    thread_trans_start_q <= thread_trans_start;
++
+     if (rst) begin
+         state_reg <= STATE_IDLE;
+         s_axi_aready_reg <= 1'b0;
+         m_axi_avalid_reg <= 1'b0;
+         m_wc_valid_reg <= 1'b0;
+         m_rc_valid_reg <= 1'b0;
++        s_cpl_valid_reg <= 1'b0;
++        trans_start_q <= 1'b0;
++        thread_trans_start_q <= {S_INT_THREADS{1'b0}};
+ 
+         trans_count_reg <= 0;
+     end else begin
+@@ -401,9 +423,10 @@
+         m_wc_valid_reg <= m_wc_valid_next;
+         m_rc_valid_reg <= m_rc_valid_next;
+ 
+-        if (trans_start && !trans_complete) begin
++        // use registered trans_start to break address-decode → trans_count_reg path
++        if (trans_start_q && !trans_complete) begin
+             trans_count_reg <= trans_count_reg + 1;
+-        end else if (!trans_start && trans_complete) begin
++        end else if (!trans_start_q && trans_complete) begin
+             trans_count_reg <= trans_count_reg - 1;
+         end
+     end
+--- a/rtl/axi_crossbar_wr.v
++++ b/rtl/axi_crossbar_wr.v
+@@ -510,6 +510,8 @@
+         reg [CL_S_COUNT-1:0] w_select_reg = 0, w_select_next;
+         reg w_select_valid_reg = 1'b0, w_select_valid_next;
+         reg w_select_new_reg = 1'b0, w_select_new_next;
++        // one-hot registered decode of w_select_reg (avoids barrel-shift on critical ready path)
++        reg [S_COUNT-1:0] w_select_onehot_reg = {S_COUNT{1'b0}};
+ 
+         wire [S_COUNT-1:0] a_request;
+         wire [S_COUNT-1:0] a_acknowledge;
+@@ -566,7 +568,7 @@
+         wire                   s_axi_wvalid_mux  = int_axi_wvalid[w_select_reg*M_COUNT+n] && w_select_valid_reg;
+         wire                   s_axi_wready_mux;
+ 
+-        assign int_axi_wready[n*S_COUNT +: S_COUNT] = (w_select_valid_reg && s_axi_wready_mux) << w_select_reg;
++        assign int_axi_wready[n*S_COUNT +: S_COUNT] = w_select_onehot_reg & {S_COUNT{w_select_valid_reg && s_axi_wready_mux}};
+ 
+         // write data routing
+         always @* begin
+@@ -591,6 +593,10 @@
+             end
+ 
+             w_select_reg <= w_select_next;
++            // capture one-hot grant directly to avoid decode on critical path
++            if (a_grant_valid && !w_select_valid_reg && w_select_new_reg) begin
++                w_select_onehot_reg <= a_grant;
++            end
+         end
+ 
+         // write response forwarding
+--- a/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
++++ b/tb/axi_crossbar/axi_crossbar_wrap_8x8.v
+@@ -360,7 +360,7 @@
+     parameter M00_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M00_R_REG_TYPE = 0,
++    parameter M00_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M01_AW_REG_TYPE = 1,
+@@ -375,7 +375,7 @@
+     parameter M01_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M01_R_REG_TYPE = 0,
++    parameter M01_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M02_AW_REG_TYPE = 1,
+@@ -390,7 +390,7 @@
+     parameter M02_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M02_R_REG_TYPE = 0,
++    parameter M02_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M03_AW_REG_TYPE = 1,
+@@ -405,7 +405,7 @@
+     parameter M03_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M03_R_REG_TYPE = 0,
++    parameter M03_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M04_AW_REG_TYPE = 1,
+@@ -420,7 +420,7 @@
+     parameter M04_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M04_R_REG_TYPE = 0,
++    parameter M04_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M05_AW_REG_TYPE = 1,
+@@ -435,7 +435,7 @@
+     parameter M05_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M05_R_REG_TYPE = 0,
++    parameter M05_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M06_AW_REG_TYPE = 1,
+@@ -450,7 +450,7 @@
+     parameter M06_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M06_R_REG_TYPE = 0,
++    parameter M06_R_REG_TYPE = 1,
+     // Master interface AW channel register type (output)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+     parameter M07_AW_REG_TYPE = 1,
+@@ -465,7 +465,7 @@
+     parameter M07_AR_REG_TYPE = 1,
+     // Master interface R channel register type (input)
+     // 0 to bypass, 1 for simple buffer, 2 for skid buffer
+-    parameter M07_R_REG_TYPE = 0
++    parameter M07_R_REG_TYPE = 1
+ )
+ (
+     input  wire                     clk,

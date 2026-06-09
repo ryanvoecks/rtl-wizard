@@ -1,0 +1,146 @@
+--- a/wb_dma_ch_sel.v
++++ b/wb_dma_ch_sel.v
+@@ -596,39 +596,39 @@
+ 	   5'h1e:	valid_sel = valid[30];
+ 	endcase
+ 
+-always @(ch_sel or ndr_r)
++always @(posedge clk)
+ 	case(ch_sel)		// synopsys parallel_case full_case
+-	   5'h0:	ndr = ndr_r[0];
+-	   5'h1:	ndr = ndr_r[1];
+-	   5'h2:	ndr = ndr_r[2];
+-	   5'h3:	ndr = ndr_r[3];
+-	   5'h4:	ndr = ndr_r[4];
+-	   5'h5:	ndr = ndr_r[5];
+-	   5'h6:	ndr = ndr_r[6];
+-	   5'h7:	ndr = ndr_r[7];
+-	   5'h8:	ndr = ndr_r[8];
+-	   5'h9:	ndr = ndr_r[9];
+-	   5'ha:	ndr = ndr_r[10];
+-	   5'hb:	ndr = ndr_r[11];
+-	   5'hc:	ndr = ndr_r[12];
+-	   5'hd:	ndr = ndr_r[13];
+-	   5'he:	ndr = ndr_r[14];
+-	   5'hf:	ndr = ndr_r[15];
+-	   5'h10:	ndr = ndr_r[16];
+-	   5'h11:	ndr = ndr_r[17];
+-	   5'h12:	ndr = ndr_r[18];
+-	   5'h13:	ndr = ndr_r[19];
+-	   5'h14:	ndr = ndr_r[20];
+-	   5'h15:	ndr = ndr_r[21];
+-	   5'h16:	ndr = ndr_r[22];
+-	   5'h17:	ndr = ndr_r[23];
+-	   5'h18:	ndr = ndr_r[24];
+-	   5'h19:	ndr = ndr_r[25];
+-	   5'h1a:	ndr = ndr_r[26];
+-	   5'h1b:	ndr = ndr_r[27];
+-	   5'h1c:	ndr = ndr_r[28];
+-	   5'h1d:	ndr = ndr_r[29];
+-	   5'h1e:	ndr = ndr_r[30];
++	   5'h0:	ndr <= #1 ndr_r[0];
++	   5'h1:	ndr <= #1 ndr_r[1];
++	   5'h2:	ndr <= #1 ndr_r[2];
++	   5'h3:	ndr <= #1 ndr_r[3];
++	   5'h4:	ndr <= #1 ndr_r[4];
++	   5'h5:	ndr <= #1 ndr_r[5];
++	   5'h6:	ndr <= #1 ndr_r[6];
++	   5'h7:	ndr <= #1 ndr_r[7];
++	   5'h8:	ndr <= #1 ndr_r[8];
++	   5'h9:	ndr <= #1 ndr_r[9];
++	   5'ha:	ndr <= #1 ndr_r[10];
++	   5'hb:	ndr <= #1 ndr_r[11];
++	   5'hc:	ndr <= #1 ndr_r[12];
++	   5'hd:	ndr <= #1 ndr_r[13];
++	   5'he:	ndr <= #1 ndr_r[14];
++	   5'hf:	ndr <= #1 ndr_r[15];
++	   5'h10:	ndr <= #1 ndr_r[16];
++	   5'h11:	ndr <= #1 ndr_r[17];
++	   5'h12:	ndr <= #1 ndr_r[18];
++	   5'h13:	ndr <= #1 ndr_r[19];
++	   5'h14:	ndr <= #1 ndr_r[20];
++	   5'h15:	ndr <= #1 ndr_r[21];
++	   5'h16:	ndr <= #1 ndr_r[22];
++	   5'h17:	ndr <= #1 ndr_r[23];
++	   5'h18:	ndr <= #1 ndr_r[24];
++	   5'h19:	ndr <= #1 ndr_r[25];
++	   5'h1a:	ndr <= #1 ndr_r[26];
++	   5'h1b:	ndr <= #1 ndr_r[27];
++	   5'h1c:	ndr <= #1 ndr_r[28];
++	   5'h1d:	ndr <= #1 ndr_r[29];
++	   5'h1e:	ndr <= #1 ndr_r[30];
+ 	endcase
+ 
+ always @(ch_sel or pointer0 or pointer1 or pointer2 or pointer3 or pointer4
+--- a/wb_dma_ch_rf.v
++++ b/wb_dma_ch_rf.v
+@@ -168,7 +168,7 @@
+ reg	[2:0]	int_src_r;
+ reg		ch_err_r;
+ reg		ch_stop;
+-reg		ch_busy;
++wire		ch_busy;
+ reg		ch_done;
+ reg		ch_err;
+ reg		rest_en;
+@@ -328,8 +328,7 @@
+ 	   end
+ 
+ // busy bit
+-always @(posedge clk)
+-	ch_busy <= #1 CH_EN & (ch_sel==CH_NO) & dma_busy;
++assign ch_busy = CH_EN & (ch_sel == CH_NO) & dma_busy;
+ 
+ // stop bit
+ always @(posedge clk)
+--- a/wb_dma_wb_slv.v
++++ b/wb_dma_wb_slv.v
+@@ -132,7 +132,8 @@
+ reg		slv_re, slv_we;
+ wire		rf_sel;
+ reg		rf_ack;
+-reg	[31:0]	slv_adr, slv_dout;
++reg	[31:0]	slv_dout;
++reg	[31:0]	slv_din_r;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -140,6 +141,11 @@
+ //
+ 
+ assign rf_sel = `WDMA_REG_SEL ;
++
++// slv_adr is driven combinatorially so the RF register (wb_rf_dout) captures
++// data based on the current address one cycle earlier, allowing slv_din_r to
++// be registered at the same edge as rf_ack without adding extra latency.
++assign slv_adr = wb_addr_i;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -151,15 +157,12 @@
+ 
+ assign slv_pt_out = {wb_data_i, wb_addr_i, wb_sel_i, wb_we_i, wb_cyc_i, wb_stb_i};
+ assign {wb_data_o, wb_ack_o, wb_err_o, wb_rty_o} = pt_sel ? slv_pt_in :
+-	{slv_din, rf_ack, 1'b0, 1'b0};
++	{slv_din_r, rf_ack, 1'b0, 1'b0};
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+ // Register File Logic
+ //
+-
+-always @(posedge clk)
+-	slv_adr <= #1 wb_addr_i;
+ 
+ always @(posedge clk)
+ 	slv_re <= #1 rf_sel & wb_cyc_i & wb_stb_i & !wb_we_i & !rf_ack & !slv_re;
+@@ -173,4 +176,9 @@
+ always @(posedge clk)
+ 	rf_ack <= #1 (slv_re | slv_we) & wb_cyc_i & wb_stb_i & !rf_ack ;
+ 
++// slv_din_r registers the RF read data so the path to wb_data_o ends at a FF
++// rather than being a long combinatorial path to a primary output.
++always @(posedge clk)
++	slv_din_r <= #1 slv_din;
++
+ endmodule

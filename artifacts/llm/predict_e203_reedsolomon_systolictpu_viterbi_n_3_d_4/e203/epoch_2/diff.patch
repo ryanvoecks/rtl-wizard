@@ -1,0 +1,51 @@
+--- a/core/e203_cpu.v
++++ b/core/e203_cpu.v
+@@ -288,6 +288,13 @@
+ 
+   wire core_cgstop;
+   wire tcm_cgstop;
++
++  wire dbg_mode_r;
++  sirv_gnrl_dffr #(1) dbg_mode_dffr    (dbg_mode,     dbg_mode_r,     clk, rst_n);
++  wire dbg_halt_r_r;
++  sirv_gnrl_dffr #(1) dbg_halt_r_dffr  (dbg_halt_r,   dbg_halt_r_r,   clk, rst_n);
++  wire dbg_step_r_r;
++  sirv_gnrl_dffr #(1) dbg_step_r_dffr  (dbg_step_r,   dbg_step_r_r,   clk, rst_n);
+   
+   wire core_ifu_active;
+   wire core_exu_active;
+@@ -568,9 +575,9 @@
+     .dpc_r           (dpc_r          ),
+     .dscratch_r      (dscratch_r     ),
+                                              
+-    .dbg_mode                (dbg_mode       ),
+-    .dbg_halt_r              (dbg_halt_r     ),
+-    .dbg_step_r              (dbg_step_r     ),
++    .dbg_mode                (dbg_mode_r     ),
++    .dbg_halt_r              (dbg_halt_r_r   ),
++    .dbg_step_r              (dbg_step_r_r   ),
+     .dbg_ebreakm_r           (dbg_ebreakm_r),
+     .dbg_stopcycle           (dbg_stopcycle),
+ 
+--- a/core/e203_dtcm_ctrl.v
++++ b/core/e203_dtcm_ctrl.v
+@@ -200,7 +200,7 @@
+   .ALLOW_0CYCL_RSP (0),// Dont allow the 0 cycle response because for ITCM and DTCM, 
+                        //   Dcache, .etc, definitely they cannot reponse as 0 cycle
+   .FIFO_OUTS_NUM   (`E203_DTCM_OUTS_NUM),
+-  .FIFO_CUT_READY(0),
++  .FIFO_CUT_READY(1),
+   .USR_W      (1),
+   .ARBT_NUM   (DTCM_ARBT_I_NUM  ),
+   .ARBT_PTR_W (DTCM_ARBT_I_PTR_W),
+--- a/core/e203_itcm_ctrl.v
++++ b/core/e203_itcm_ctrl.v
+@@ -367,7 +367,7 @@
+   .ALLOW_0CYCL_RSP (0),// Dont allow the 0 cycle response because for ITCM and DTCM, 
+                        //   Dcache, .etc, definitely they cannot reponse as 0 cycle
+   .FIFO_OUTS_NUM   (`E203_ITCM_OUTS_NUM),
+-  .FIFO_CUT_READY(0),
++  .FIFO_CUT_READY(1),
+   .USR_W      (1),
+   .ARBT_NUM   (ITCM_ARBT_I_NUM  ),
+   .ARBT_PTR_W (ITCM_ARBT_I_PTR_W),

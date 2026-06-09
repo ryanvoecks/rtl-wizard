@@ -1,0 +1,78 @@
+--- a/ddr3_controller.v
++++ b/ddr3_controller.v
+@@ -145,9 +145,9 @@
+         output wire o_phy_toggle_dqs,
+         output reg[wb_data_bits-1:0] o_phy_data,
+         output reg[wb_sel_bits-1:0] o_phy_dm, 
+-        output wire[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
+-        output wire[4:0] o_phy_idelay_data_cntvaluein, 
+-        output wire[4:0] o_phy_idelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_odelay_data_cntvaluein, o_phy_odelay_dqs_cntvaluein,
++        output reg[4:0] o_phy_idelay_data_cntvaluein,
++        output reg[4:0] o_phy_idelay_dqs_cntvaluein,
+         output reg[LANES-1:0] o_phy_odelay_data_ld, o_phy_odelay_dqs_ld,
+         output reg[LANES-1:0] o_phy_idelay_data_ld, 
+         output reg[LANES-1:0] o_phy_idelay_dqs_ld,
+@@ -347,7 +347,7 @@
+      // READ_ACK_PIPE_WIDTH is the delay between read command issued (starting from the controller) until the data is received by the controller
+      //the delays included the ODELAY and OSERDES when issuing the read command
+      //and the IDELAY and ISERDES when receiving the data  (NOTE TO SELF: ELABORATE ON WHY THOSE MAGIC NUMBERS)
+-    localparam READ_ACK_PIPE_WIDTH = READ_DELAY + 1 + 2 + 1 + 1 + (DLL_OFF? 2 : 0); // FOr DLL_OFF, phy has no delay thus add delay here       
++    localparam READ_ACK_PIPE_WIDTH = READ_DELAY + 1 + 2 + 1 + 1 + (DLL_OFF? 2 : 0);
+     localparam MAX_ADDED_READ_ACK_DELAY = 2;
+     localparam DELAY_BEFORE_WRITE_LEVEL_FEEDBACK = STAGE2_DATA_DEPTH + ps_to_cycles(tWLO+tWLOE) + 10;  
+     //plus 10 controller clocks for possible bus latency and the delay for receiving feedback DQ from IOBUF -> IDELAY -> ISERDES
+@@ -1652,9 +1652,9 @@
+         end
+         else begin : dll_on_out_phy
+             always @* begin
+-                o_phy_data = stage2_data[STAGE2_DATA_DEPTH-1]; // the data sent to PHY is the last stage of of stage 2 (since stage 2 can have multiple pipelined stages inside it_           
+-                o_phy_dm = stage2_dm[STAGE2_DATA_DEPTH-1];
+-                o_phy_cmd = {cmd_d[3], cmd_d[2], cmd_d[1], cmd_d[0]};
++                o_phy_data = stage2_data[STAGE2_DATA_DEPTH-1];
++                o_phy_dm   = stage2_dm[STAGE2_DATA_DEPTH-1];
++                o_phy_cmd  = {cmd_d[3], cmd_d[2], cmd_d[1], cmd_d[0]};
+             end
+         end
+     endgenerate
+@@ -2571,7 +2571,7 @@
+             MPR_READ: if(delay_before_read_data == 0) begin //align the incoming DQS during reads to the controller clock 
+                              //issue_read_command = 1;
+                              /* verilator lint_off WIDTH */
+-                             delay_before_read_data <= READ_DELAY + 1 + 2 + 1 - 1; ///NOTE TO SELF: why these numbers? 1=issue command delay (OSERDES delay), 2 =  ISERDES delay 
++                             delay_before_read_data <= READ_DELAY + 1 + 2 + 1 - 1;
+                              /* verilator lint_on WIDTH */
+                              state_calibrate <= COLLECT_DQS;
+                              dqs_count_repeat <= 0;
+@@ -3578,10 +3578,27 @@
+     endgenerate
+ 
+     assign issue_read_command = (state_calibrate == MPR_READ && delay_before_read_data == 0);
+-    assign o_phy_odelay_data_cntvaluein = odelay_data_cntvaluein[lane]; 
+-    assign o_phy_odelay_dqs_cntvaluein = odelay_dqs_cntvaluein[lane];
+-    assign o_phy_idelay_data_cntvaluein = idelay_data_cntvaluein[lane];
+-    assign o_phy_idelay_dqs_cntvaluein = idelay_dqs_cntvaluein[lane];
++    // Pipeline registers break the lane->mux->output combinatorial path (critical path)
++    always @(posedge i_controller_clk) begin
++        if(sync_rst_controller) begin
++            o_phy_odelay_data_cntvaluein <= DATA_INITIAL_ODELAY_TAP[4:0];
++            o_phy_odelay_dqs_cntvaluein  <= DQS_INITIAL_ODELAY_TAP[4:0];
++            o_phy_idelay_data_cntvaluein <= DATA_INITIAL_IDELAY_TAP[4:0];
++            o_phy_idelay_dqs_cntvaluein  <= DQS_INITIAL_IDELAY_TAP[4:0];
++        end
++        else if(wb2_update) begin
++            o_phy_odelay_data_cntvaluein <= wb2_phy_odelay_data_ld[wb2_write_lane] ? wb2_phy_odelay_data_cntvaluein : odelay_data_cntvaluein[wb2_write_lane];
++            o_phy_odelay_dqs_cntvaluein  <= wb2_phy_odelay_dqs_ld[wb2_write_lane]  ? wb2_phy_odelay_dqs_cntvaluein  : odelay_dqs_cntvaluein[wb2_write_lane];
++            o_phy_idelay_data_cntvaluein <= wb2_phy_idelay_data_ld[wb2_write_lane] ? wb2_phy_idelay_data_cntvaluein : idelay_data_cntvaluein[wb2_write_lane];
++            o_phy_idelay_dqs_cntvaluein  <= wb2_phy_idelay_dqs_ld[wb2_write_lane]  ? wb2_phy_idelay_dqs_cntvaluein  : idelay_dqs_cntvaluein[wb2_write_lane];
++        end
++        else begin
++            o_phy_odelay_data_cntvaluein <= odelay_data_cntvaluein[lane];
++            o_phy_odelay_dqs_cntvaluein  <= odelay_dqs_cntvaluein[lane];
++            o_phy_idelay_data_cntvaluein <= idelay_data_cntvaluein[lane];
++            o_phy_idelay_dqs_cntvaluein  <= idelay_dqs_cntvaluein[lane];
++        end
++    end
+     assign dqs_target_index_value = dqs_start_index_stored[0]? dqs_start_index_stored + 2: dqs_start_index_stored + 1; // move to next odd (if 3 then 5, if 4 then 5)
+      // To show why next odd number is needed: https://github.com/AngeloJacobo/UberDDR3/tree/b762c464f6526159c1d8c2e4ee039b4ae4e78dbd#per-lane-read-calibration
+ 

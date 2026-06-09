@@ -1,0 +1,186 @@
+--- a/RsDecodeDegree.v
++++ b/RsDecodeDegree.v
+@@ -2,7 +2,7 @@
+ // Module Name : RsDecodeDegree
+ // File Name   : RsDecodeDegree.v
+ // Function    : Rs Decoder Degree Module
+-// 
++//
+ // Revision History:
+ // Date          By           Version    Change Description
+ //===================================================================
+@@ -14,6 +14,9 @@
+ 
+ 
+ module RsDecodeDegree(
++   CLK,
++   RESET,
++   enable,
+    polynom_0,
+    polynom_1,
+    polynom_2,
+@@ -40,6 +43,9 @@
+ );
+ 
+ 
++   input          CLK;
++   input          RESET;
++   input          enable;
+    input  [7:0]   polynom_0;    // polynom 0
+    input  [7:0]   polynom_1;    // polynom 1
+    input  [7:0]   polynom_2;    // polynom 2
+@@ -67,7 +73,7 @@
+ 
+ 
+    //------------------------------------------------------------------------
+-   //- registers
++   //- Stage 1: combinational steps 0 and 1
+    //------------------------------------------------------------------------
+ //---------------------------------------------------------------
+ //- step 0
+@@ -107,27 +113,73 @@
+ assign winner3Step1 =( winner7Step0 [4:0] < winner6Step0  [4:0]) ? winner6Step0  [4:0]:  winner7Step0  [4:0];
+ wire [4:0]   winner4Step1;
+ assign winner4Step1 =( winner9Step0 [4:0] < winner8Step0  [4:0]) ? winner8Step0  [4:0]:  winner9Step0  [4:0];
+-//---------------------------------------------------------------
+-//- step 2
+-//---------------------------------------------------------------
++
++   //------------------------------------------------------------------------
++   //- Pipeline register between stage 1 and stage 2
++   //------------------------------------------------------------------------
++   reg [4:0]   pipeWinner0;
++   reg [4:0]   pipeWinner1;
++   reg [4:0]   pipeWinner2;
++   reg [4:0]   pipeWinner3;
++   reg [4:0]   pipeWinner4;
++   reg [4:0]   pipeWinner10;
++
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         pipeWinner0  <= 5'd0;
++         pipeWinner1  <= 5'd0;
++         pipeWinner2  <= 5'd0;
++         pipeWinner3  <= 5'd0;
++         pipeWinner4  <= 5'd0;
++         pipeWinner10 <= 5'd0;
++      end
++      else if (enable == 1'b1) begin
++         pipeWinner0  <= winner0Step1;
++         pipeWinner1  <= winner1Step1;
++         pipeWinner2  <= winner2Step1;
++         pipeWinner3  <= winner3Step1;
++         pipeWinner4  <= winner4Step1;
++         pipeWinner10 <= winner10Step0;
++      end
++   end
++
++   //------------------------------------------------------------------------
++   //- Stage 2: combinational step 2
++   //------------------------------------------------------------------------
+ wire [4:0]   winner0Step2;
+-assign winner0Step2 =( winner1Step1 [4:0] < winner0Step1  [4:0]) ? winner0Step1  [4:0]:  winner1Step1  [4:0];
++assign winner0Step2 =( pipeWinner1 [4:0] < pipeWinner0  [4:0]) ? pipeWinner0  [4:0]:  pipeWinner1  [4:0];
+ wire [4:0]   winner1Step2;
+-assign winner1Step2 =( winner3Step1 [4:0] < winner2Step1  [4:0]) ? winner2Step1  [4:0]:  winner3Step1  [4:0];
++assign winner1Step2 =( pipeWinner3 [4:0] < pipeWinner2  [4:0]) ? pipeWinner2  [4:0]:  pipeWinner3  [4:0];
+ wire [4:0]   winner2Step2;
+-assign winner2Step2 =( winner10Step0 [4:0] < winner4Step1  [4:0]) ? winner4Step1  [4:0]:  winner10Step0  [4:0];
+-//---------------------------------------------------------------
+-//- step 3
+-//---------------------------------------------------------------
++assign winner2Step2 =( pipeWinner10 [4:0] < pipeWinner4  [4:0]) ? pipeWinner4  [4:0]:  pipeWinner10  [4:0];
++
++   //------------------------------------------------------------------------
++   //- Second pipeline register between stage 2 and stage 3
++   //------------------------------------------------------------------------
++   reg [4:0]   pipeWinner0b;
++   reg [4:0]   pipeWinner1b;
++   reg [4:0]   pipeWinner2b;
++
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         pipeWinner0b <= 5'd0;
++         pipeWinner1b <= 5'd0;
++         pipeWinner2b <= 5'd0;
++      end
++      else if (enable == 1'b1) begin
++         pipeWinner0b <= winner0Step2;
++         pipeWinner1b <= winner1Step2;
++         pipeWinner2b <= winner2Step2;
++      end
++   end
++
++   //------------------------------------------------------------------------
++   //- Stage 3: combinational steps 3-4
++   //------------------------------------------------------------------------
+ wire [4:0]   winner0Step3;
+-assign winner0Step3 =( winner1Step2 [4:0] < winner0Step2  [4:0]) ? winner0Step2  [4:0]:  winner1Step2  [4:0];
+-//---------------------------------------------------------------
+-//- step 4
+-//---------------------------------------------------------------
++assign winner0Step3 =( pipeWinner1b [4:0] < pipeWinner0b  [4:0]) ? pipeWinner0b  [4:0]:  pipeWinner1b  [4:0];
+ wire [4:0]   winner0Step4;
+-assign winner0Step4 =( winner2Step2 [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  winner2Step2  [4:0];
+-//---------------------------------------------------------------
+-//---------------------------------------------------------------
++assign winner0Step4 =( pipeWinner2b [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  pipeWinner2b  [4:0];
+ assign degree [4:0] =  winner0Step4 [4:0] ;
+ 
+ 
+--- a/RsDecodeSyndrome.v
++++ b/RsDecodeSyndrome.v
+@@ -100,15 +100,15 @@
+ 
+ 
+    //------------------------------------------------------------------------
+-   // + done
++   // + done (registered from count==254 so output is a FF, not comb from count)
+    //------------------------------------------------------------------------
+    reg         done;
+-   always @(count) begin
+-      if (count ==8'd255) begin
+-         done = 1'b1;
+-      end
+-      else begin
+-         done = 1'b0;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         done <= 1'b0;
++      end
++      else if (enable == 1'b1) begin
++         done <= (count == 8'd254);
+       end
+    end
+ 
+--- a/RsDecodeTop.v
++++ b/RsDecodeTop.v
+@@ -1149,6 +1149,9 @@
+ 
+    RsDecodeDegree  RsDecodeDegree_1(
+       // Inputs
++      .CLK         (CLK),
++      .RESET       (RESET),
++      .enable      (enable),
+       .polynom_0   (omegaShiftedReg_0),
+       .polynom_1   (omegaShiftedReg_1),
+       .polynom_2   (omegaShiftedReg_2),
+@@ -1263,6 +1266,9 @@
+    wire [4:0]   degreeLambda;
+    RsDecodeDegree  RsDecodeDegree_2(
+       // Inputs
++      .CLK         (CLK),
++      .RESET       (RESET),
++      .enable      (enable),
+       .polynom_0   (lambdaReg2_0),
+       .polynom_1   (lambdaReg2_1),
+       .polynom_2   (lambdaReg2_2),
+@@ -1302,7 +1308,7 @@
+          degreeOmegaReg  <= 5'd0;
+          degreeLambdaReg <= 5'd0;
+       end
+-      else if ((enable == 1'b1) && (doneShiftReg == 1'b1)) begin
++      else if ((enable == 1'b1) && (startReg[2] == 1'b1)) begin
+          degreeOmegaReg  <= degreeOmega;
+          degreeLambdaReg <= degreeLambda;
+       end

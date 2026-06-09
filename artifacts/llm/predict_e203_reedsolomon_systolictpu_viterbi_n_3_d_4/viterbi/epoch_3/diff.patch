@@ -1,0 +1,345 @@
+--- a/viterbi_core.v
++++ b/viterbi_core.v
+@@ -348,10 +348,10 @@
+        else src_len_counter_r <= src_len_counter_r + 1;  
+        src_rd_r <= 1'b1; 
+    end
+-   else if (pm_norm_en_s == 1 && fetch_src_cnt_r!=0 ) begin
++   else if (pm_nom_valid2_r == 1 && fetch_src_cnt_r!=0 ) begin
+        if(src_len_counter_r >=infobit_length_i) src_len_counter_r <= 1;
+-       else src_len_counter_r <= src_len_counter_r + 1;  
+-       src_rd_r <= 1'b1;            
++       else src_len_counter_r <= src_len_counter_r + 1;
++       src_rd_r <= 1'b1;
+    end
+    else src_rd_r <= 1'b0; 
+  end
+@@ -394,7 +394,7 @@
+   always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i)          traceback_start_r      <= 1'b0;
+   else if(rst_sync_i )   traceback_start_r      <= 1'b0;
+-  else if(fetch_src_cnt_r==0 && pm_norm_en_s==1'b1)  traceback_start_r      <= 1'b1;
++  else if(fetch_src_cnt_r==0 && pm_nom_valid2_r==1'b1) traceback_start_r      <= 1'b1;
+   else traceback_start_r      <= 1'b0;
+  end
+  
+@@ -513,7 +513,15 @@
+ end
+  
+  assign pm_norm_en_s = acs_valid_s[0];
+- 
++
++ // 3-stage pm_normalize pipeline: pm_nom_r valid 2 cycles after pm_norm_en_s
++ reg pm_nom_valid_r, pm_nom_valid2_r;
++ always@(posedge clk_i or negedge rst_an_i) begin
++   if(!rst_an_i)       begin pm_nom_valid_r <= 1'b0; pm_nom_valid2_r <= 1'b0; end
++   else if(rst_sync_i) begin pm_nom_valid_r <= 1'b0; pm_nom_valid2_r <= 1'b0; end
++   else                begin pm_nom_valid_r <= pm_norm_en_s; pm_nom_valid2_r <= pm_nom_valid_r; end
++ end
++
+  pm_normalize pm_normalize_inst(
+     .clk_i         (clk_i         ),
+     .rst_an_i      (rst_an_i      ),
+--- a/BMU.v
++++ b/BMU.v
+@@ -54,6 +54,8 @@
+ 
+ reg signed [WIDTH_BM-1:0] bm_r;
+ reg bm_valid_r;
++reg signed [4:0] x_sb_r [5:0];
++reg xsb_valid_r;
+ 
+ assign bm_o =  bm_r;
+ assign bm_valid_o = bm_valid_r;
+@@ -224,26 +226,49 @@
+ assign x_soft_bit4 =  low_codeword[4]? -soft_bit4 : soft_bit4;
+ assign x_soft_bit5 =  low_codeword[5]? -soft_bit5 : soft_bit5;
+ 
++// Stage A: register negated soft bits
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin
++    xsb_valid_r <= 1'b0;
++    x_sb_r[0] <= 0; x_sb_r[1] <= 0; x_sb_r[2] <= 0;
++    x_sb_r[3] <= 0; x_sb_r[4] <= 0; x_sb_r[5] <= 0;
++  end
++  else if(rst_sync_i) begin
++    xsb_valid_r <= 1'b0;
++    x_sb_r[0] <= 0; x_sb_r[1] <= 0; x_sb_r[2] <= 0;
++    x_sb_r[3] <= 0; x_sb_r[4] <= 0; x_sb_r[5] <= 0;
++  end
++  else if(soft_data_valid_i) begin
++    xsb_valid_r <= 1'b1;
++    x_sb_r[0] <= x_soft_bit0; x_sb_r[1] <= x_soft_bit1;
++    x_sb_r[2] <= x_soft_bit2; x_sb_r[3] <= x_soft_bit3;
++    x_sb_r[4] <= x_soft_bit4; x_sb_r[5] <= x_soft_bit5;
++  end
++  else
++    xsb_valid_r <= 1'b0;
++end
++
++// Stage B: add registered negated soft bits
+ always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i) begin
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
+-    end
+-  else if( rst_sync_i ) begin
++  end
++  else if(rst_sync_i) begin
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
+-    end
+-  else if( soft_data_valid_i ) begin
++  end
++  else if(xsb_valid_r) begin
+     bm_valid_r <= 1'b1;
+-    case( valid_polynomials_i)
+-      3'b000 : bm_r <=  x_soft_bit1 + x_soft_bit0; 
+-      3'b001 : bm_r <=  x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-      3'b010 : bm_r <=  x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-      3'b011 : bm_r <=  x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0; 
+-      3'b100 : bm_r <=  x_soft_bit5 + x_soft_bit4 + x_soft_bit3 + x_soft_bit2 + x_soft_bit1 + x_soft_bit0;
+-	  default: bm_r <= 0;
+-    endcase    
+-  end 
++    case(valid_polynomials_i)
++      3'b000 : bm_r <= x_sb_r[1] + x_sb_r[0];
++      3'b001 : bm_r <= x_sb_r[2] + x_sb_r[1] + x_sb_r[0];
++      3'b010 : bm_r <= x_sb_r[3] + x_sb_r[2] + x_sb_r[1] + x_sb_r[0];
++      3'b011 : bm_r <= x_sb_r[4] + x_sb_r[3] + x_sb_r[2] + x_sb_r[1] + x_sb_r[0];
++      3'b100 : bm_r <= x_sb_r[5] + x_sb_r[4] + x_sb_r[3] + x_sb_r[2] + x_sb_r[1] + x_sb_r[0];
++      default: bm_r <= 0;
++    endcase
++  end
+   else begin
+     bm_valid_r <= 1'b0;
+     bm_r <= 0;
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -183,6 +183,15 @@
+ reg signed [WIDTH_BM-1:0] final_max_matric_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
++// Pipeline stage 1 registers
++reg en_stage2_r;
++reg signed [WIDTH_BM-1:0] grp_max_r   [7:0];
++reg [5:0]                  grp_state_r [7:0];
++reg signed [WIDTH_BM-1:0] pm_stg1_r   [63:0];
++// Pipeline stage 2 registers
++reg en_stage3_r;
++reg signed [WIDTH_BM-1:0] final_max_r;
++reg [5:0]                  final_state_r;
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+ wire [5:0] state_16_0_s, state_16_1_s,  state_16_2_s,  state_16_3_s ; 
+ wire [5:0] state_24_0_s, state_24_1_s,  state_24_2_s,  state_24_3_s ; 
+@@ -223,16 +232,35 @@
+ 
+ wire [5:0] max_state_8_s,  max_state_16_s,max_state_32_s,  max_state_64_s;
+ wire signed [WIDTH_BM-1:0]   nom_matric_8_s,  nom_matric_16_s, nom_matric_32_s,  nom_matric_64_s;
+- 
+-assign max_state_8_s = state_8_s;
+-assign max_state_16_s = state_2nd_0_s;
+-assign max_state_32_s = state_2nd_00_s;
+-assign max_state_64_s = max_state_s;
+-
+-assign nom_matric_8_s = max_matric_8_s;
+-assign nom_matric_16_s = max_matric_2nd_0_s ;
+-assign nom_matric_32_s = max_matric_2nd_00_s;
+-assign nom_matric_64_s = max_matric_s;
++
++// Stage-2 registered 2nd-level tree: operates on grp_max_r (registered group maxima)
++wire signed [WIDTH_BM-1:0] rg_m01_s, rg_m23_s, rg_m45_s, rg_m67_s;
++wire signed [WIDTH_BM-1:0] rg_m0123_s, rg_m4567_s, rg_m64_s;
++wire [5:0] rg_s01_s, rg_s23_s, rg_s45_s, rg_s67_s, rg_s0123_s, rg_s4567_s, rg_s64_s;
++assign rg_m01_s   = grp_max_r[1] > grp_max_r[0] ? grp_max_r[1]   : grp_max_r[0];
++assign rg_s01_s   = grp_max_r[1] > grp_max_r[0] ? grp_state_r[1] : grp_state_r[0];
++assign rg_m23_s   = grp_max_r[3] > grp_max_r[2] ? grp_max_r[3]   : grp_max_r[2];
++assign rg_s23_s   = grp_max_r[3] > grp_max_r[2] ? grp_state_r[3] : grp_state_r[2];
++assign rg_m45_s   = grp_max_r[5] > grp_max_r[4] ? grp_max_r[5]   : grp_max_r[4];
++assign rg_s45_s   = grp_max_r[5] > grp_max_r[4] ? grp_state_r[5] : grp_state_r[4];
++assign rg_m67_s   = grp_max_r[7] > grp_max_r[6] ? grp_max_r[7]   : grp_max_r[6];
++assign rg_s67_s   = grp_max_r[7] > grp_max_r[6] ? grp_state_r[7] : grp_state_r[6];
++assign rg_m0123_s = rg_m23_s > rg_m01_s ? rg_m23_s : rg_m01_s;
++assign rg_s0123_s = rg_m23_s > rg_m01_s ? rg_s23_s : rg_s01_s;
++assign rg_m4567_s = rg_m67_s > rg_m45_s ? rg_m67_s : rg_m45_s;
++assign rg_s4567_s = rg_m67_s > rg_m45_s ? rg_s67_s : rg_s45_s;
++assign rg_m64_s   = rg_m4567_s > rg_m0123_s ? rg_m4567_s : rg_m0123_s;
++assign rg_s64_s   = rg_m4567_s > rg_m0123_s ? rg_s4567_s : rg_s0123_s;
++
++assign max_state_8_s  = grp_state_r[0];
++assign max_state_16_s = rg_s01_s;
++assign max_state_32_s = rg_s0123_s;
++assign max_state_64_s = rg_s64_s;
++
++assign nom_matric_8_s  = grp_max_r[0];
++assign nom_matric_16_s = rg_m01_s;
++assign nom_matric_32_s = rg_m0123_s;
++assign nom_matric_64_s = rg_m64_s;
+     
+ assign pm_i_signed_s[0] = $signed(pm_tmp_0_i);
+ assign pm_i_signed_s[1] = $signed(pm_tmp_1_i);
+@@ -374,26 +402,40 @@
+ generate
+    for(i=0;i<64;i=i+1)
+    begin:pm_reg
+-     always@(posedge clk_i or negedge rst_an_i) 
+-       if(!rst_an_i) 
+-         pm_nom_r[i] <= 0;    
+-      else if(rst_sync_i) 
+-         pm_nom_r[i] <= 0; 
++     always@(posedge clk_i or negedge rst_an_i)
++       if(!rst_an_i)
++         pm_stg1_r[i] <= 0;
++      else if(rst_sync_i)
++         pm_stg1_r[i] <= 0;
++      else if(en_i)
++         pm_stg1_r[i] <= pm_i_signed_s[i];
++   end
++endgenerate
++
++genvar j;
++generate
++   for(j=0;j<64;j=j+1)
++   begin:pm_nom_reg
++     always@(posedge clk_i or negedge rst_an_i)
++       if(!rst_an_i)
++         pm_nom_r[j] <= 0;
++      else if(rst_sync_i)
++         pm_nom_r[j] <= 0;
+ 		else if(frame_start_i) begin
+-		   if(tail_biting_en_i ) pm_nom_r[i] <= 0;
+-         else if(i==0) pm_nom_r[i] <= 0;
+-         else pm_nom_r[i] <= Initial_Lower;
+-      end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
+-         
+-     end     
+- 
++		   if(tail_biting_en_i ) pm_nom_r[j] <= 0;
++         else if(j==0) pm_nom_r[j] <= 0;
++         else pm_nom_r[j] <= Initial_Lower;
++      end
++      else if(en_stage3_r & pm_update_en_s[j])
++         if((pm_stg1_r[j]-final_max_r)>Initial_Upper)
++            pm_nom_r[j] <= Initial_Upper;
++           else if((pm_stg1_r[j]-final_max_r)<Initial_Lower)
++            pm_nom_r[j] <= -128;//Initial_Lower;
++         else
++            pm_nom_r[j] <=pm_stg1_r[j]-final_max_r;
++
++     end
++
+ endgenerate
+ 
+ assign max_state_index_o = max_state_index_r;
+@@ -403,10 +445,70 @@
+          max_state_index_r <= 0;      
+       else if(rst_sync_i) 
+          max_state_index_r <= 0; 
+-      else if(en_i)  
+-         max_state_index_r <=  final_state_index_s;
++      else if(en_stage3_r)
++         max_state_index_r <=  final_state_r;
+    end
+    
++// Stage 1: register per-group maxima and full pm_tmp snapshot each time en_i fires
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin
++    en_stage2_r    <= 0;
++    grp_max_r[0]   <= 0; grp_state_r[0] <= 0;
++    grp_max_r[1]   <= 0; grp_state_r[1] <= 0;
++    grp_max_r[2]   <= 0; grp_state_r[2] <= 0;
++    grp_max_r[3]   <= 0; grp_state_r[3] <= 0;
++    grp_max_r[4]   <= 0; grp_state_r[4] <= 0;
++    grp_max_r[5]   <= 0; grp_state_r[5] <= 0;
++    grp_max_r[6]   <= 0; grp_state_r[6] <= 0;
++    grp_max_r[7]   <= 0; grp_state_r[7] <= 0;
++  end
++  else if(rst_sync_i) begin
++    en_stage2_r    <= 0;
++    grp_max_r[0]   <= 0; grp_state_r[0] <= 0;
++    grp_max_r[1]   <= 0; grp_state_r[1] <= 0;
++    grp_max_r[2]   <= 0; grp_state_r[2] <= 0;
++    grp_max_r[3]   <= 0; grp_state_r[3] <= 0;
++    grp_max_r[4]   <= 0; grp_state_r[4] <= 0;
++    grp_max_r[5]   <= 0; grp_state_r[5] <= 0;
++    grp_max_r[6]   <= 0; grp_state_r[6] <= 0;
++    grp_max_r[7]   <= 0; grp_state_r[7] <= 0;
++  end
++  else begin
++    en_stage2_r <= en_i;
++    if(en_i) begin
++      grp_max_r[0] <= max_matric_8_s;   grp_state_r[0] <= state_8_s;
++      grp_max_r[1] <= max_matric_16_s;  grp_state_r[1] <= state_16_s;
++      grp_max_r[2] <= max_matric_24_s;  grp_state_r[2] <= state_24_s;
++      grp_max_r[3] <= max_matric_32_s;  grp_state_r[3] <= state_32_s;
++      grp_max_r[4] <= max_matric_40_s;  grp_state_r[4] <= state_40_s;
++      grp_max_r[5] <= max_matric_48_s;  grp_state_r[5] <= state_48_s;
++      grp_max_r[6] <= max_matric_56_s;  grp_state_r[6] <= state_56_s;
++      grp_max_r[7] <= max_matric_64_s;  grp_state_r[7] <= state_64_s;
++    end
++  end
++end
++
++// Stage 2: register global max metric and state index
++always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin
++    en_stage3_r  <= 0;
++    final_max_r  <= 0;
++    final_state_r <= 0;
++  end
++  else if(rst_sync_i) begin
++    en_stage3_r  <= 0;
++    final_max_r  <= 0;
++    final_state_r <= 0;
++  end
++  else begin
++    en_stage3_r   <= en_stage2_r;
++    if(en_stage2_r) begin
++      final_max_r   <= final_max_matric_s;
++      final_state_r <= final_state_index_s;
++    end
++  end
++end
++
+  always@(*) begin
+    case(register_num_i)
+    2'b00: final_max_matric_s = nom_matric_64_s ;
+@@ -613,22 +715,22 @@
+ //---------------------------------------------------------------------
+ //      select the max metric of second level 
+ //--------------------------------------------------------------------- 
+-    assign state_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  state_16_s : state_8_s  ; 
++    assign state_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  state_16_s : state_8_s  ;
+     assign state_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  state_32_s : state_24_s ;
+     assign state_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  state_48_s : state_40_s ;
+     assign state_2nd_3_s =  max_matric_64_s > max_matric_56_s ?  state_64_s : state_56_s ;
+-    
+-    assign max_matric_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  max_matric_16_s : max_matric_8_s  ; 
+-    assign max_matric_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  max_matric_32_s : max_matric_24_s ; 
+-    assign max_matric_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  max_matric_48_s : max_matric_40_s ; 
+-    assign max_matric_2nd_3_s =  max_matric_64_s > max_matric_56_s ?  max_matric_64_s : max_matric_56_s ; 
+-    
++
++    assign max_matric_2nd_0_s =  max_matric_16_s > max_matric_8_s  ?  max_matric_16_s : max_matric_8_s  ;
++    assign max_matric_2nd_1_s =  max_matric_32_s > max_matric_24_s ?  max_matric_32_s : max_matric_24_s ;
++    assign max_matric_2nd_2_s =  max_matric_48_s > max_matric_40_s ?  max_matric_48_s : max_matric_40_s ;
++    assign max_matric_2nd_3_s =  max_matric_64_s > max_matric_56_s ?  max_matric_64_s : max_matric_56_s ;
++
+     assign state_2nd_00_s = max_matric_2nd_1_s > max_matric_2nd_0_s ? state_2nd_1_s : state_2nd_0_s;
+     assign state_2nd_01_s = max_matric_2nd_3_s > max_matric_2nd_2_s ? state_2nd_3_s : state_2nd_2_s;
+-    
++
+     assign max_matric_2nd_00_s =  max_matric_2nd_1_s > max_matric_2nd_0_s  ? max_matric_2nd_1_s : max_matric_2nd_0_s ;
+     assign max_matric_2nd_01_s =  max_matric_2nd_3_s > max_matric_2nd_2_s  ? max_matric_2nd_3_s : max_matric_2nd_2_s ;
+-    
++
+     assign max_state_s = max_matric_2nd_01_s  > max_matric_2nd_00_s  ? state_2nd_01_s : state_2nd_00_s;
+     assign max_matric_s = max_matric_2nd_01_s > max_matric_2nd_00_s ? max_matric_2nd_01_s : max_matric_2nd_00_s ;
+ endmodule    
