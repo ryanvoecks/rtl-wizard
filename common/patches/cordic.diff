@@ -149,7 +149,7 @@ index 0000000..d109b11
 +	// bits on the right.  The one bit extra on the left is to
 +	// allow for any accumulation due to the cordic gain
 +	// within the algorithm.
-+	// 
++	//
 +	assign	e_xval = { {i_xval[(IW-1)]}, i_xval, {(WW-IW-1){1'b0}} };
 +	assign	e_yval = { {i_yval[(IW-1)]}, i_yval, {(WW-IW-1){1'b0}} };
 +
@@ -390,7 +390,7 @@ index 0000000..d109b11
 +	// {{{
 +	// verilator lint_off UNUSED
 +	wire	unused_val;
-+	assign	unused_val = &{ 1'b0, 
++	assign	unused_val = &{ 1'b0,
 +		pre_xval[(WW-OW-1):0],
 +		pre_yval[(WW-OW-1):0]
 +		};
@@ -484,7 +484,7 @@ index 0000000..e5e4dc3
 +	// bits on the right.  The one bit extra on the left is to
 +	// allow for any accumulation due to the cordic gain
 +	// within the algorithm.
-+	// 
++	//
 +	assign	e_xval = { {(2){i_xval[(IW-1)]}}, i_xval, {(WW-IW-2){1'b0}} };
 +	assign	e_yval = { {(2){i_yval[(IW-1)]}}, i_yval, {(WW-IW-2){1'b0}} };
 +
