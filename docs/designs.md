@@ -16,3 +16,6 @@ Reference designs we evaluate. Each lives under `external/<name>/` and is regist
 | `viterbi` | coole198669/viterbi_decoder | K=7 Viterbi decoder | 45.2k | Fixed TB syntax; skipped long-running final test case |
 | `e203` | riscv-mcu/e203_hbirdv2 | Nuclei Hummingbird-V2 RV32IMAC core | 19.5k | Removed instruction/data memories for synthesis; TB runs 9 hand-picked tests |
 | `uberddr3` | AngeloJacobo/UberDDR3 | DDR3 SDRAM controller | 35.9k | Parallelised TB; reduced TB output size; removed dual-DIMM test case |
+| `wb_conmax` | opencores/wb_conmax (Usselmann) | Wishbone Connection Matrix: 8x16 on-chip interconnect | 27.4k | none |
+| `cordic` | ZipCPU/cordic (Gisselquist) | CORDIC rotation + vectoring engine | 41.1k | Used generator output; added thin wrapper and reference TB |
+| `fir` | ahmedshahein/DSP-RTL-Lib | FIR low-pass filter | 35.0k | Parameterised 16-bit data / 80 taps; generated coefficients and TB vectors; fixed TB race condition |

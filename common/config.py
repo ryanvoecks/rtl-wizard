@@ -35,6 +35,9 @@ VITERBI = EXTERNAL / "viterbi"
 E203 = EXTERNAL / "e203"
 WB_DMA = EXTERNAL / "wb_dma"
 UBERDDR3 = EXTERNAL / "uberddr3"
+WB_CONMAX = EXTERNAL / "wb_conmax"
+CORDIC = EXTERNAL / "cordic"
+FIR = EXTERNAL / "fir"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts"

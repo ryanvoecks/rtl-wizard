@@ -60,3 +60,18 @@
 	url = https://github.com/AngeloJacobo/UberDDR3.git
 	shallow = true
 	ignore = all
+[submodule "external/fir"]
+	path = external/fir
+	url = https://github.com/ahmedshahein/DSP-RTL-Lib.git
+	shallow = true
+	ignore = all
+[submodule "external/cordic"]
+	path = external/cordic
+	url = https://github.com/ZipCPU/cordic.git
+	shallow = true
+	ignore = all
+[submodule "external/wb_conmax"]
+	path = external/wb_conmax
+	url = https://github.com/freecores/wb_conmax.git
+	shallow = true
+	ignore = all

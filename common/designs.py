@@ -8,8 +8,10 @@ from pathlib import Path
 from common.config import (
     AES,
     BITONIC_SORTER,
+    CORDIC,
     DOUBLE_FPU,
     E203,
+    FIR,
     JPEG_ENCODER,
     REED_SOLOMON,
     SCRIPTS_DIR,
@@ -18,6 +20,7 @@ from common.config import (
     UBERDDR3,
     VERILOG_AXI,
     VITERBI,
+    WB_CONMAX,
     WB_DMA,
     DesignConfig,
 )
@@ -366,6 +369,79 @@ uberddr3_reference = DesignConfig(
     clock_port="i_controller_clk",
     test_script=SCRIPTS_DIR / "uberddr3.sh",
     tb_timeout_s=600,
+)
+
+
+# OpenCores wb_conmax (Rudolf Usselmann)
+
+WB_CONMAX_RTL_DIR = Path("rtl") / "verilog"
+WB_CONMAX_RTL = (
+    Path("wb_conmax_defines.v"),
+    Path("wb_conmax_arb.v"),
+    Path("wb_conmax_master_if.v"),
+    Path("wb_conmax_msel.v"),
+    Path("wb_conmax_pri_dec.v"),
+    Path("wb_conmax_pri_enc.v"),
+    Path("wb_conmax_rf.v"),
+    Path("wb_conmax_slave_if.v"),
+    Path("wb_conmax_top.v"),
+)
+wb_conmax_reference = DesignConfig(
+    benchmark="opencores",
+    name="wb_conmax",
+    variant="reference",
+    root=WB_CONMAX,
+    rtl_dir=WB_CONMAX_RTL_DIR,
+    rtl_files=WB_CONMAX_RTL,
+    include_dirs=(WB_CONMAX_RTL_DIR,),
+    top_module="wb_conmax_top",
+    clock_port="clk_i",
+    test_script=SCRIPTS_DIR / "wb_conmax.sh",
+    tb_timeout_s=240,
+)
+
+
+# ZipCPU/cordic (Dan Gisselquist)
+
+CORDIC_RTL_DIR = Path("rtl_gen")
+CORDIC_RTL = (
+    Path("cordic_p2r.v"),
+    Path("cordic_r2p.v"),
+    Path("cordic_engine.v"),
+)
+cordic_reference = DesignConfig(
+    benchmark="zipcpu",
+    name="cordic",
+    variant="reference",
+    root=CORDIC,
+    rtl_dir=CORDIC_RTL_DIR,
+    rtl_files=CORDIC_RTL,
+    top_module="cordic_engine",
+    clock_port="i_clk",
+    test_script=SCRIPTS_DIR / "cordic.sh",
+)
+
+
+# ahmedshahein/DSP-RTL-Lib filt_fir
+
+FIR_RTL_DIR = Path(".drl_src_code") / "filt_fir" / "rtl"
+FIR_RTL = (
+    Path("filt_fir.v"),
+    Path("dff.v"),
+)
+fir_reference = DesignConfig(
+    benchmark="ahmedshahein",
+    name="fir",
+    variant="reference",
+    root=FIR,
+    rtl_dir=FIR_RTL_DIR,
+    rtl_files=FIR_RTL,
+    # filt_fir.v `include "filt_coeff.v"` resolves to the rtl dir.
+    include_dirs=(Path("."),),
+    top_module="filt_fir",
+    clock_port="i_clk",
+    test_script=SCRIPTS_DIR / "fir.sh",
+    tb_timeout_s=120,
 )
 
 
