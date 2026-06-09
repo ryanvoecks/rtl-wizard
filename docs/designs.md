@@ -18,4 +18,5 @@ Reference designs we evaluate. Each lives under `external/<name>/` and is regist
 | `uberddr3` | AngeloJacobo/UberDDR3 | DDR3 SDRAM controller | 35.9k | Parallelised TB; reduced TB output size; removed dual-DIMM test case |
 | `wb_conmax` | opencores/wb_conmax (Usselmann) | Wishbone Connection Matrix: 8x16 on-chip interconnect | 27.4k | none |
 | `cordic` | ZipCPU/cordic (Gisselquist) | CORDIC rotation + vectoring engine | 41.1k | Used generator output; added thin wrapper and reference TB |
+| `modexp` | secworks/modexp | Modular exponentiation (RSA) core | 34.4k | Reduced memories from 256 to 32 words; enabled fast self-check TB vectors; disabled slow cases |
 | `fir` | ahmedshahein/DSP-RTL-Lib | FIR low-pass filter | 35.0k | Parameterised 16-bit data / 80 taps; generated coefficients and TB vectors; fixed TB race condition |

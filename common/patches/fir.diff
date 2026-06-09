@@ -71,9 +71,9 @@ index 091850f..8779b85 100755
      
 -  always @(posedge i_clk)
 -    begin: MATLAB_STIMULI
-+  
 +
-+      
++
++
 +  // ------------------------------------------------------------------
 +  // Race-free stimulus + checking (rtl-wizard).
 +  // The upstream TB drove i_data with a blocking $fscanf on the same posedge

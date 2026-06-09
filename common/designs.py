@@ -13,6 +13,7 @@ from common.config import (
     E203,
     FIR,
     JPEG_ENCODER,
+    MODEXP,
     REED_SOLOMON,
     SCRIPTS_DIR,
     SHA512,
@@ -441,6 +442,35 @@ fir_reference = DesignConfig(
     top_module="filt_fir",
     clock_port="i_clk",
     test_script=SCRIPTS_DIR / "fir.sh",
+    tb_timeout_s=120,
+)
+
+
+# secworks/modexp (Joachim Strombergson) modular exponentiation (RSA) core
+
+MODEXP_RTL_DIR = Path("src") / "rtl"
+MODEXP_RTL = (
+    Path("modexp.v"),
+    Path("modexp_core.v"),
+    Path("montprod.v"),
+    Path("residue.v"),
+    Path("adder32.v"),
+    Path("shl32.v"),
+    Path("shr32.v"),
+    Path("blockmem1r1w.v"),
+    Path("blockmem2r1w.v"),
+    Path("blockmem2r1wptr.v"),
+    Path("blockmem2rptr1w.v"),
+)
+modexp_reference = DesignConfig(
+    benchmark="secworks",
+    name="modexp",
+    variant="reference",
+    root=MODEXP,
+    rtl_dir=MODEXP_RTL_DIR,
+    rtl_files=MODEXP_RTL,
+    top_module="modexp",
+    test_script=SCRIPTS_DIR / "modexp.sh",
     tb_timeout_s=120,
 )
 
