@@ -38,6 +38,7 @@ UBERDDR3 = EXTERNAL / "uberddr3"
 WB_CONMAX = EXTERNAL / "wb_conmax"
 CORDIC = EXTERNAL / "cordic"
 FIR = EXTERNAL / "fir"
+MODEXP = EXTERNAL / "modexp"
 
 # EDA tools and PDK
 ORFS_HOME = Path("/") / "OpenROAD-flow-scripts"

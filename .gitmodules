@@ -75,3 +75,8 @@
 	url = https://github.com/freecores/wb_conmax.git
 	shallow = true
 	ignore = all
+[submodule "external/modexp"]
+	path = external/modexp
+	url = git@github.com:secworks/modexp.git
+	shallow = true
+	ignore = all
