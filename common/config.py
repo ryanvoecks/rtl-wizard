@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import signal
 import subprocess
 from dataclasses import asdict, dataclass, field, fields, is_dataclass
 from functools import cached_property
@@ -60,6 +61,23 @@ if not (ORFS_FLOW / "Makefile").is_file():
 Result = tuple[str, int]  # Output message, return code tuple
 
 
+def _kill_process_group(proc: subprocess.Popen[str]) -> None:
+    """SIGKILL the whole process group led by `proc` and reap the leader.
+
+    `proc` must have been started with `start_new_session=True` so it leads
+    its own group; killing the group takes any background simulators the
+    script spawned (e.g. iverilog `vvp`) down with it. Idempotent -- a no-op
+    once the group is already gone."""
+    try:
+        os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        pass
+
+
 def _from_json(cls: Any, val: Any) -> Any:
     """Inverse of `asdict(...) + default=str`: rebuild nested dataclasses,
     rehydrate `tuple[T, ...]` from JSON lists, and reconstruct `Path`s."""
@@ -108,18 +126,31 @@ class DesignConfig:
         return [self.root / self.rtl_dir / f for f in self.rtl_files]
 
     def run_tb(self) -> Result:
-        """Run design testbench."""
+        """Run the design testbench in its own process group.
+
+        The script may launch background simulators (e.g. iverilog `vvp`) that
+        outlive it. `subprocess`'s own timeout only kills the direct child, so
+        a sim that never `$finish`es would keep running and pin CPU forever.
+        Starting a new session and SIGKILLing the whole group on exit
+        guarantees the sims die with the wrapper -- whether the run finishes
+        normally, times out, or errors."""
+        proc = subprocess.Popen(
+            [str(self.test_script)],
+            cwd=self.root,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            start_new_session=True,
+        )
         try:
-            proc = subprocess.run(
-                [str(self.test_script)],
-                cwd=self.root,
-                capture_output=True,
-                text=True,
-                timeout=self.tb_timeout_s,
-            )
-        except subprocess.TimeoutExpired as e:
-            return f"tb timed out after {e.timeout}s\n{e.stdout or ''}", 124
-        return proc.stdout + proc.stderr, proc.returncode
+            out, _ = proc.communicate(timeout=self.tb_timeout_s)
+            return out, proc.returncode
+        except subprocess.TimeoutExpired:
+            _kill_process_group(proc)
+            out, _ = proc.communicate()
+            return f"tb timed out after {self.tb_timeout_s}s\n{out}", 124
+        finally:
+            _kill_process_group(proc)
 
 
 @dataclass(frozen=True)
