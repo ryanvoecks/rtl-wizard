@@ -1,0 +1,15 @@
+Warning: Replacing memory \matrix_mul_2D with list of registers. See systolic.v:143
+Warning: Replacing memory \accum_pipe2 with list of registers. See systolic.v:123
+Warning: Replacing memory \init_pipe2 with list of registers. See systolic.v:122
+Warning: Replacing memory \mul_pipe with list of registers. See systolic.v:121
+Warning: Replacing memory \accum_pipe with list of registers. See systolic.v:96
+Warning: Replacing memory \init_pipe with list of registers. See systolic.v:95
+Warning: Replacing memory \pp_hi with list of registers. See systolic.v:94
+Warning: Replacing memory \pp_lo with list of registers. See systolic.v:93
+Warning: Replacing memory \data_queue with list of registers. See systolic.v:59
+Warning: Replacing memory \weight_queue with list of registers. See systolic.v:58
+Warning: Replacing memory \pre_en_b_simp with list of registers. See write_out.v:57
+Warning: Replacing memory \pre_en_b_mix with list of registers. See write_out.v:56
+Warning: Replacing memory \pre_en_mix with list of registers. See write_out.v:55
+Warning: Replacing memory \pre_en_a_simp with list of registers. See write_out.v:54
+Warning: Replacing memory \pre_src with list of registers. See write_out.v:53

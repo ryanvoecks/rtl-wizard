@@ -1,0 +1,381 @@
+--- a/core/e203_cpu_top.v
++++ b/core/e203_cpu_top.v
+@@ -234,6 +234,74 @@
+   input  rst_n
+   );
+ 
++  // Register debug control inputs to cut long input-to-output combinational paths.
++  // Debug state transitions are rare and multi-cycle, so a 1-cycle pipeline is safe.
++  reg dbg_mode_r;
++  reg dbg_halt_r_r;
++  reg dbg_step_r_r;
++  always @(posedge clk or negedge rst_n) begin
++    if (!rst_n) begin
++      dbg_mode_r   <= 1'b0;
++      dbg_halt_r_r <= 1'b0;
++      dbg_step_r_r <= 1'b0;
++    end else begin
++      dbg_mode_r   <= dbg_mode;
++      dbg_halt_r_r <= dbg_halt_r;
++      dbg_step_r_r <= dbg_step_r;
++    end
++  end
++
++  // Register debug output signals to cut long combinational paths to the debug module.
++  // All of these are sampled synchronously by the external debug module.
++  wire [`E203_PC_SIZE-1:0] cmt_dpc_i;
++  wire                     cmt_dpc_ena_i;
++  wire [3-1:0]             cmt_dcause_i;
++  wire                     cmt_dcause_ena_i;
++  wire                     wr_dcsr_ena_i;
++  wire                     wr_dpc_ena_i;
++  wire                     wr_dscratch_ena_i;
++  wire [32-1:0]            wr_csr_nxt_i;
++
++  reg [`E203_PC_SIZE-1:0]  cmt_dpc_r;
++  reg                      cmt_dpc_ena_r;
++  reg [3-1:0]              cmt_dcause_r;
++  reg                      cmt_dcause_ena_r;
++  reg                      wr_dcsr_ena_r;
++  reg                      wr_dpc_ena_r;
++  reg                      wr_dscratch_ena_r;
++  reg [32-1:0]             wr_csr_nxt_r;
++
++  always @(posedge clk or negedge rst_n) begin
++    if (!rst_n) begin
++      cmt_dpc_r        <= {`E203_PC_SIZE{1'b0}};
++      cmt_dpc_ena_r    <= 1'b0;
++      cmt_dcause_r     <= 3'b0;
++      cmt_dcause_ena_r <= 1'b0;
++      wr_dcsr_ena_r    <= 1'b0;
++      wr_dpc_ena_r     <= 1'b0;
++      wr_dscratch_ena_r<= 1'b0;
++      wr_csr_nxt_r     <= 32'b0;
++    end else begin
++      cmt_dpc_r        <= cmt_dpc_i;
++      cmt_dpc_ena_r    <= cmt_dpc_ena_i;
++      cmt_dcause_r     <= cmt_dcause_i;
++      cmt_dcause_ena_r <= cmt_dcause_ena_i;
++      wr_dcsr_ena_r    <= wr_dcsr_ena_i;
++      wr_dpc_ena_r     <= wr_dpc_ena_i;
++      wr_dscratch_ena_r<= wr_dscratch_ena_i;
++      wr_csr_nxt_r     <= wr_csr_nxt_i;
++    end
++  end
++
++  assign cmt_dpc         = cmt_dpc_r;
++  assign cmt_dpc_ena     = cmt_dpc_ena_r;
++  assign cmt_dcause      = cmt_dcause_r;
++  assign cmt_dcause_ena  = cmt_dcause_ena_r;
++  assign wr_dcsr_ena     = wr_dcsr_ena_r;
++  assign wr_dpc_ena      = wr_dpc_ena_r;
++  assign wr_dscratch_ena = wr_dscratch_ena_r;
++  assign wr_csr_nxt      = wr_csr_nxt_r;
++
+   `ifdef E203_HAS_ITCM //{
+   wire  itcm_ls;
+ 
+@@ -366,26 +434,26 @@
+     .core_wfi        (core_wfi),
+     .dbg_irq_r       (dbg_irq_r      ),
+ 
+-    .cmt_dpc         (cmt_dpc        ),
+-    .cmt_dpc_ena     (cmt_dpc_ena    ),
+-    .cmt_dcause      (cmt_dcause     ),
+-    .cmt_dcause_ena  (cmt_dcause_ena ),
+-
+-    .wr_dcsr_ena     (wr_dcsr_ena    ),
+-    .wr_dpc_ena      (wr_dpc_ena     ),
+-    .wr_dscratch_ena (wr_dscratch_ena),
++    .cmt_dpc         (cmt_dpc_i      ),
++    .cmt_dpc_ena     (cmt_dpc_ena_i  ),
++    .cmt_dcause      (cmt_dcause_i   ),
++    .cmt_dcause_ena  (cmt_dcause_ena_i),
++
++    .wr_dcsr_ena     (wr_dcsr_ena_i  ),
++    .wr_dpc_ena      (wr_dpc_ena_i   ),
++    .wr_dscratch_ena (wr_dscratch_ena_i),
+ 
+ 
+                                      
+-    .wr_csr_nxt      (wr_csr_nxt    ),
++    .wr_csr_nxt      (wr_csr_nxt_i  ),
+                                      
+     .dcsr_r          (dcsr_r         ),
+     .dpc_r           (dpc_r          ),
+     .dscratch_r      (dscratch_r     ),
+ 
+-    .dbg_mode        (dbg_mode),
+-    .dbg_halt_r      (dbg_halt_r),
+-    .dbg_step_r      (dbg_step_r),
++    .dbg_mode        (dbg_mode_r),
++    .dbg_halt_r      (dbg_halt_r_r),
++    .dbg_step_r      (dbg_step_r_r),
+     .dbg_ebreakm_r   (dbg_ebreakm_r),
+     .dbg_stopcycle   (dbg_stopcycle),
+ 
+--- a/core/e203_dtcm_ctrl.v
++++ b/core/e203_dtcm_ctrl.v
+@@ -126,45 +126,110 @@
+   wire [DTCM_ARBT_I_NUM*1-1:0] arbt_bus_icb_rsp_err;
+   wire [DTCM_ARBT_I_NUM*`E203_DTCM_DATA_WIDTH-1:0] arbt_bus_icb_rsp_rdata;
+ 
++  `ifdef E203_HAS_DTCM_EXTITF //{
++  // Buffered external DTCM signals (cut-ready to break long combinational path)
++  wire ext_buf_icb_cmd_valid;
++  wire ext_buf_icb_cmd_ready;
++  wire ext_buf_icb_cmd_read;
++  wire [`E203_DTCM_ADDR_WIDTH-1:0] ext_buf_icb_cmd_addr;
++  wire [32-1:0] ext_buf_icb_cmd_wdata;
++  wire [ 4-1:0] ext_buf_icb_cmd_wmask;
++  wire ext_buf_icb_rsp_valid;
++  wire ext_buf_icb_rsp_ready;
++  wire ext_buf_icb_rsp_err;
++  wire [32-1:0] ext_buf_icb_rsp_rdata;
++
++  sirv_gnrl_icb_buffer # (
++    .OUTS_CNT_W    (1),
++    .AW            (`E203_DTCM_ADDR_WIDTH),
++    .DW            (32),
++    .CMD_CUT_READY (1),
++    .RSP_CUT_READY (0),
++    .CMD_DP        (1),
++    .RSP_DP        (1),
++    .USR_W         (1)
++  ) u_ext_dtcm_icb_buf (
++    .icb_buffer_active (),
++    .i_icb_cmd_valid   (ext2dtcm_icb_cmd_valid ),
++    .i_icb_cmd_ready   (ext2dtcm_icb_cmd_ready ),
++    .i_icb_cmd_read    (ext2dtcm_icb_cmd_read  ),
++    .i_icb_cmd_addr    (ext2dtcm_icb_cmd_addr  ),
++    .i_icb_cmd_wdata   (ext2dtcm_icb_cmd_wdata ),
++    .i_icb_cmd_wmask   (ext2dtcm_icb_cmd_wmask ),
++    .i_icb_cmd_lock    (1'b0),
++    .i_icb_cmd_excl    (1'b0),
++    .i_icb_cmd_size    (2'b0),
++    .i_icb_cmd_burst   (2'b0),
++    .i_icb_cmd_beat    (2'b0),
++    .i_icb_cmd_usr     (1'b0),
++    .i_icb_rsp_valid   (ext2dtcm_icb_rsp_valid ),
++    .i_icb_rsp_ready   (ext2dtcm_icb_rsp_ready ),
++    .i_icb_rsp_err     (ext2dtcm_icb_rsp_err   ),
++    .i_icb_rsp_excl_ok (),
++    .i_icb_rsp_rdata   (ext2dtcm_icb_rsp_rdata ),
++    .i_icb_rsp_usr     (),
++    .o_icb_cmd_valid   (ext_buf_icb_cmd_valid  ),
++    .o_icb_cmd_ready   (ext_buf_icb_cmd_ready  ),
++    .o_icb_cmd_read    (ext_buf_icb_cmd_read   ),
++    .o_icb_cmd_addr    (ext_buf_icb_cmd_addr   ),
++    .o_icb_cmd_wdata   (ext_buf_icb_cmd_wdata  ),
++    .o_icb_cmd_wmask   (ext_buf_icb_cmd_wmask  ),
++    .o_icb_cmd_lock    (),
++    .o_icb_cmd_excl    (),
++    .o_icb_cmd_size    (),
++    .o_icb_cmd_burst   (),
++    .o_icb_cmd_beat    (),
++    .o_icb_cmd_usr     (),
++    .o_icb_rsp_valid   (ext_buf_icb_rsp_valid  ),
++    .o_icb_rsp_ready   (ext_buf_icb_rsp_ready  ),
++    .o_icb_rsp_err     (ext_buf_icb_rsp_err    ),
++    .o_icb_rsp_excl_ok (1'b0),
++    .o_icb_rsp_rdata   (ext_buf_icb_rsp_rdata  ),
++    .o_icb_rsp_usr     (1'b0),
++    .clk               (clk  ),
++    .rst_n             (rst_n)
++  );
++  `endif//}
++
+   assign arbt_bus_icb_cmd_valid =
+       //LSU take higher priority
+                            {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_valid,
++                             ext_buf_icb_cmd_valid,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_valid
+                            } ;
+   assign arbt_bus_icb_cmd_addr =
+                            {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_addr,
++                             ext_buf_icb_cmd_addr,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_addr
+                            } ;
+   assign arbt_bus_icb_cmd_read =
+                            {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_read,
++                             ext_buf_icb_cmd_read,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_read
+                            } ;
+   assign arbt_bus_icb_cmd_wdata =
+                            {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_wdata,
++                             ext_buf_icb_cmd_wdata,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_wdata
+                            } ;
+   assign arbt_bus_icb_cmd_wmask =
+                            {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_wmask,
++                             ext_buf_icb_cmd_wmask,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_wmask
+                            } ;
+   assign                   {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_cmd_ready,
++                             ext_buf_icb_cmd_ready,
+                       `endif//}
+                              lsu2dtcm_icb_cmd_ready
+                            } = arbt_bus_icb_cmd_ready;
+@@ -172,25 +237,25 @@
+ 
+   assign                   {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_rsp_valid,
++                             ext_buf_icb_rsp_valid,
+                       `endif//}
+                              lsu2dtcm_icb_rsp_valid
+                            } = arbt_bus_icb_rsp_valid;
+   assign                   {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_rsp_err,
++                             ext_buf_icb_rsp_err,
+                       `endif//}
+                              lsu2dtcm_icb_rsp_err
+                            } = arbt_bus_icb_rsp_err;
+   assign                   {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_rsp_rdata,
++                             ext_buf_icb_rsp_rdata,
+                       `endif//}
+                              lsu2dtcm_icb_rsp_rdata
+                            } = arbt_bus_icb_rsp_rdata;
+   assign arbt_bus_icb_rsp_ready = {
+                       `ifdef E203_HAS_DTCM_EXTITF //{
+-                             ext2dtcm_icb_rsp_ready,
++                             ext_buf_icb_rsp_ready,
+                       `endif//}
+                              lsu2dtcm_icb_rsp_ready
+                            };
+--- a/core/e203_itcm_ctrl.v
++++ b/core/e203_itcm_ctrl.v
+@@ -199,7 +199,72 @@
+   wire ext_icb_rsp_valid;
+   wire ext_icb_rsp_ready;
+   wire ext_icb_rsp_err;
+-  wire [`E203_ITCM_DATA_WIDTH-1:0] ext_icb_rsp_rdata; 
++  wire [`E203_ITCM_DATA_WIDTH-1:0] ext_icb_rsp_rdata;
++
++  // Intermediate wires between input cut-ready buffer and n2w
++  wire ext_buf_icb_cmd_valid;
++  wire ext_buf_icb_cmd_ready;
++  wire ext_buf_icb_cmd_read;
++  wire [`E203_ITCM_ADDR_WIDTH-1:0] ext_buf_icb_cmd_addr;
++  wire [32-1:0] ext_buf_icb_cmd_wdata;
++  wire [ 4-1:0] ext_buf_icb_cmd_wmask;
++  wire ext_buf_icb_rsp_valid;
++  wire ext_buf_icb_rsp_ready;
++  wire ext_buf_icb_rsp_err;
++  wire [32-1:0] ext_buf_icb_rsp_rdata;
++
++  // Cut-ready buffer on the external ITCM port to break the long
++  // combinational path from LSU decode -> ITCM arbiter -> ext cmd_ready.
++  sirv_gnrl_icb_buffer # (
++    .OUTS_CNT_W (1),
++    .AW         (`E203_ITCM_ADDR_WIDTH),
++    .DW         (32),
++    .CMD_CUT_READY (1),
++    .RSP_CUT_READY (0),
++    .CMD_DP     (1),
++    .RSP_DP     (1),
++    .USR_W      (1)
++  ) u_ext_itcm_icb_buf (
++    .icb_buffer_active (),
++    .i_icb_cmd_valid   (ext2itcm_icb_cmd_valid ),
++    .i_icb_cmd_ready   (ext2itcm_icb_cmd_ready ),
++    .i_icb_cmd_read    (ext2itcm_icb_cmd_read  ),
++    .i_icb_cmd_addr    (ext2itcm_icb_cmd_addr  ),
++    .i_icb_cmd_wdata   (ext2itcm_icb_cmd_wdata ),
++    .i_icb_cmd_wmask   (ext2itcm_icb_cmd_wmask ),
++    .i_icb_cmd_lock    (1'b0),
++    .i_icb_cmd_excl    (1'b0),
++    .i_icb_cmd_size    (2'b0),
++    .i_icb_cmd_burst   (2'b0),
++    .i_icb_cmd_beat    (2'b0),
++    .i_icb_cmd_usr     (1'b0),
++    .i_icb_rsp_valid   (ext2itcm_icb_rsp_valid ),
++    .i_icb_rsp_ready   (ext2itcm_icb_rsp_ready ),
++    .i_icb_rsp_err     (ext2itcm_icb_rsp_err   ),
++    .i_icb_rsp_excl_ok (),
++    .i_icb_rsp_rdata   (ext2itcm_icb_rsp_rdata ),
++    .i_icb_rsp_usr     (),
++    .o_icb_cmd_valid   (ext_buf_icb_cmd_valid  ),
++    .o_icb_cmd_ready   (ext_buf_icb_cmd_ready  ),
++    .o_icb_cmd_read    (ext_buf_icb_cmd_read   ),
++    .o_icb_cmd_addr    (ext_buf_icb_cmd_addr   ),
++    .o_icb_cmd_wdata   (ext_buf_icb_cmd_wdata  ),
++    .o_icb_cmd_wmask   (ext_buf_icb_cmd_wmask  ),
++    .o_icb_cmd_lock    (),
++    .o_icb_cmd_excl    (),
++    .o_icb_cmd_size    (),
++    .o_icb_cmd_burst   (),
++    .o_icb_cmd_beat    (),
++    .o_icb_cmd_usr     (),
++    .o_icb_rsp_valid   (ext_buf_icb_rsp_valid  ),
++    .o_icb_rsp_ready   (ext_buf_icb_rsp_ready  ),
++    .o_icb_rsp_err     (ext_buf_icb_rsp_err    ),
++    .o_icb_rsp_excl_ok (1'b0),
++    .o_icb_rsp_rdata   (ext_buf_icb_rsp_rdata  ),
++    .o_icb_rsp_usr     (1'b0),
++    .clk               (clk  ),
++    .rst_n             (rst_n)
++  );
+ 
+   `ifdef E203_SYSMEM_DATA_WIDTH_IS_32 //{
+   `ifdef E203_ITCM_DATA_WIDTH_IS_64 //{
+@@ -208,15 +273,15 @@
+   .FIFO_OUTS_NUM   (`E203_ITCM_OUTS_NUM),
+   .FIFO_CUT_READY  (0),
+   .AW         (`E203_ITCM_ADDR_WIDTH),
+-  .X_W        (`E203_SYSMEM_DATA_WIDTH), 
+-  .Y_W        (`E203_ITCM_DATA_WIDTH) 
++  .X_W        (`E203_SYSMEM_DATA_WIDTH),
++  .Y_W        (`E203_ITCM_DATA_WIDTH)
+   ) u_itcm_icb_ext2itcm_n2w(
+-  .i_icb_cmd_valid        (ext2itcm_icb_cmd_valid ),  
+-  .i_icb_cmd_ready        (ext2itcm_icb_cmd_ready ),
+-  .i_icb_cmd_read         (ext2itcm_icb_cmd_read ) ,
+-  .i_icb_cmd_addr         (ext2itcm_icb_cmd_addr ) ,
+-  .i_icb_cmd_wdata        (ext2itcm_icb_cmd_wdata ),
+-  .i_icb_cmd_wmask        (ext2itcm_icb_cmd_wmask) ,
++  .i_icb_cmd_valid        (ext_buf_icb_cmd_valid  ),
++  .i_icb_cmd_ready        (ext_buf_icb_cmd_ready  ),
++  .i_icb_cmd_read         (ext_buf_icb_cmd_read   ) ,
++  .i_icb_cmd_addr         (ext_buf_icb_cmd_addr   ) ,
++  .i_icb_cmd_wdata        (ext_buf_icb_cmd_wdata  ),
++  .i_icb_cmd_wmask        (ext_buf_icb_cmd_wmask  ) ,
+   .i_icb_cmd_burst        (2'b0)                   ,
+   .i_icb_cmd_beat         (2'b0)                   ,
+   .i_icb_cmd_lock         (1'b0),
+@@ -224,11 +289,11 @@
+   .i_icb_cmd_size         (2'b0),
+   .i_icb_cmd_usr          (1'b0),
+    
+-  .i_icb_rsp_valid        (ext2itcm_icb_rsp_valid ),
+-  .i_icb_rsp_ready        (ext2itcm_icb_rsp_ready ),
+-  .i_icb_rsp_err          (ext2itcm_icb_rsp_err)   ,
++  .i_icb_rsp_valid        (ext_buf_icb_rsp_valid  ),
++  .i_icb_rsp_ready        (ext_buf_icb_rsp_ready  ),
++  .i_icb_rsp_err          (ext_buf_icb_rsp_err    ),
+   .i_icb_rsp_excl_ok      ()   ,
+-  .i_icb_rsp_rdata        (ext2itcm_icb_rsp_rdata ),
++  .i_icb_rsp_rdata        (ext_buf_icb_rsp_rdata  ),
+   .i_icb_rsp_usr          (),
+                                                 
+   .o_icb_cmd_valid        (ext_icb_cmd_valid ),  

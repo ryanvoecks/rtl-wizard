@@ -1,0 +1,42 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "opencores",
+    "name": "reed_solomon",
+    "variant": "reference",
+    "root": "/workspace/external/reed_solomon",
+    "rtl_dir": "example/rtl",
+    "rtl_files": [
+      "RsDecodeChien.v",
+      "RsDecodeDegree.v",
+      "RsDecodeDelay.v",
+      "RsDecodeDpRam.v",
+      "RsDecodeErasure.v",
+      "RsDecodeEuclide.v",
+      "RsDecodeInv.v",
+      "RsDecodeMult.v",
+      "RsDecodePolymul.v",
+      "RsDecodeShiftOmega.v",
+      "RsDecodeSyndrome.v",
+      "RsDecodeTop.v",
+      "RsEncodeTop.v"
+    ],
+    "top_module": "RsDecodeTop",
+    "test_script": "/workspace/common/scripts/reed_solomon.sh",
+    "tb_timeout_s": 60,
+    "clock_port": "CLK",
+    "include_dirs": []
+  },
+  "period_ns": 0.7394,
+  "target_utilization": 60
+}

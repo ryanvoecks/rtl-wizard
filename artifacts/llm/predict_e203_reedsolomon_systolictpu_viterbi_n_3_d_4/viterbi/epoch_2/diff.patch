@@ -1,0 +1,186 @@
+--- a/viterbi_core.v
++++ b/viterbi_core.v
+@@ -59,6 +59,7 @@
+ 
+ wire [23:0] soft_data_s;
+ reg  soft_data_valid_r;
++reg  soft_data_valid_d2_r;
+ wire soft_data_valid_s;
+ //wire signed [WIDTH_BM-1:0] pm_r_s[63:0];
+ 
+@@ -322,13 +323,18 @@
+ 
+  
+  assign  soft_data_s = src_rdata_i;
+- assign  soft_data_valid_s = soft_data_valid_r;
+- assign  src_rd_o   = src_rd_r; 
++ assign  soft_data_valid_s = soft_data_valid_d2_r;
++ assign  src_rd_o   = src_rd_r;
+  assign  src_addr_o = src_addr_r;
+  always@(posedge clk_i or negedge rst_an_i) begin
+   if(!rst_an_i)     soft_data_valid_r <= 0;
+   else if(rst_sync_i )      soft_data_valid_r <= 0;
+   else soft_data_valid_r <= src_rd_r;
++ end
++ always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i)     soft_data_valid_d2_r <= 0;
++  else if(rst_sync_i)      soft_data_valid_d2_r <= 0;
++  else soft_data_valid_d2_r <= soft_data_valid_r;
+  end
+  
+  always@(posedge clk_i or negedge rst_an_i) begin
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -183,6 +183,27 @@
+ reg signed [WIDTH_BM-1:0] final_max_matric_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
++
++// Stage-1 pipeline registers: group maxima, pair maxima, and buffered inputs
++reg signed [WIDTH_BM-1:0] gmax_r[7:0];
++reg [5:0]  gidx_r[7:0];
++reg signed [WIDTH_BM-1:0] pmax_r[3:0];  // max of adjacent group pairs
++reg [5:0]  pidx_r[3:0];
++reg signed [WIDTH_BM-1:0] pm_buf_r[63:0];
++reg [63:0] update_en_buf_r;
++reg [1:0]  reg_num_buf_r;
++reg en_d1_r;
++
++// Stage-2 wires: only 2 comparator levels needed now (from 4 pair maxima)
++wire signed [WIDTH_BM-1:0] s2_max_0123, s2_max_4567;
++wire [5:0]  s2_idx_0123, s2_idx_4567;
++wire signed [WIDTH_BM-1:0] s2_max_all;
++wire [5:0]  s2_idx_all;
++reg  signed [WIDTH_BM-1:0] s2_final_max;
++reg  [5:0]                  s2_final_idx;
++// Stage-3 registers: registered final max for subtract+clamp stage
++reg signed [WIDTH_BM-1:0] final_max_r;
++reg en_d2_r;
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+ wire [5:0] state_16_0_s, state_16_1_s,  state_16_2_s,  state_16_3_s ; 
+ wire [5:0] state_24_0_s, state_24_1_s,  state_24_2_s,  state_24_3_s ; 
+@@ -384,13 +405,11 @@
+          else if(i==0) pm_nom_r[i] <= 0;
+          else pm_nom_r[i] <= Initial_Lower;
+       end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
++      else if(en_d2_r & update_en_buf_r[i])
++         if((pm_buf_r[i]-final_max_r)<Initial_Lower)
++            pm_nom_r[i] <= -128;//Initial_Lower;
++         else
++            pm_nom_r[i] <= pm_buf_r[i]-final_max_r;
+          
+      end     
+  
+@@ -398,13 +417,99 @@
+ 
+ assign max_state_index_o = max_state_index_r;
+ 
++// Stage-2 tree: only 2 comparator levels from registered pair maxima
++assign s2_idx_0123 = pmax_r[1] > pmax_r[0] ? pidx_r[1] : pidx_r[0];
++assign s2_max_0123 = pmax_r[1] > pmax_r[0] ? pmax_r[1] : pmax_r[0];
++assign s2_idx_4567 = pmax_r[3] > pmax_r[2] ? pidx_r[3] : pidx_r[2];
++assign s2_max_4567 = pmax_r[3] > pmax_r[2] ? pmax_r[3] : pmax_r[2];
++
++assign s2_idx_all  = s2_max_4567 > s2_max_0123 ? s2_idx_4567 : s2_idx_0123;
++assign s2_max_all  = s2_max_4567 > s2_max_0123 ? s2_max_4567 : s2_max_0123;
++
++always@(*) begin
++   case(reg_num_buf_r)
++   2'b00: s2_final_max = s2_max_all;
++   2'b01: s2_final_max = s2_max_0123;
++   2'b10: s2_final_max = pmax_r[0];
++   default: s2_final_max = gmax_r[0];
++   endcase
++end
++
++always@(*) begin
++   case(reg_num_buf_r)
++   2'b00: s2_final_idx = s2_idx_all;
++   2'b01: s2_final_idx = s2_idx_0123;
++   2'b10: s2_final_idx = pidx_r[0];
++   default: s2_final_idx = gidx_r[0];
++   endcase
++end
++
++// Stage-1: capture group maxima and pm inputs
++integer j;
+ always@(posedge clk_i or negedge rst_an_i) begin
+-       if(!rst_an_i) 
+-         max_state_index_r <= 0;      
+-      else if(rst_sync_i) 
+-         max_state_index_r <= 0; 
+-      else if(en_i)  
+-         max_state_index_r <=  final_state_index_s;
++   if(!rst_an_i) begin
++      en_d1_r       <= 1'b0;
++      reg_num_buf_r <= 2'b0;
++      update_en_buf_r <= 64'b0;
++      for(j=0;j<8;j=j+1) begin gmax_r[j] <= 0; gidx_r[j] <= 0; end
++      for(j=0;j<4;j=j+1) begin pmax_r[j] <= 0; pidx_r[j] <= 0; end
++      for(j=0;j<64;j=j+1) pm_buf_r[j] <= 0;
++   end else if(rst_sync_i) begin
++      en_d1_r       <= 1'b0;
++      reg_num_buf_r <= 2'b0;
++      update_en_buf_r <= 64'b0;
++      for(j=0;j<8;j=j+1) begin gmax_r[j] <= 0; gidx_r[j] <= 0; end
++      for(j=0;j<4;j=j+1) begin pmax_r[j] <= 0; pidx_r[j] <= 0; end
++      for(j=0;j<64;j=j+1) pm_buf_r[j] <= 0;
++   end else if(frame_start_i) begin
++      en_d1_r <= 1'b0;
++   end else begin
++      en_d1_r <= en_i;
++      if(en_i) begin
++         gmax_r[0] <= max_matric_8_s;   gidx_r[0] <= state_8_s;
++         gmax_r[1] <= max_matric_16_s;  gidx_r[1] <= state_16_s;
++         gmax_r[2] <= max_matric_24_s;  gidx_r[2] <= state_24_s;
++         gmax_r[3] <= max_matric_32_s;  gidx_r[3] <= state_32_s;
++         gmax_r[4] <= max_matric_40_s;  gidx_r[4] <= state_40_s;
++         gmax_r[5] <= max_matric_48_s;  gidx_r[5] <= state_48_s;
++         gmax_r[6] <= max_matric_56_s;  gidx_r[6] <= state_56_s;
++         gmax_r[7] <= max_matric_64_s;  gidx_r[7] <= state_64_s;
++         // pair comparisons (= max_matric_2nd_*_s) registered here to shorten stage-2 tree
++         pmax_r[0] <= max_matric_2nd_0_s; pidx_r[0] <= state_2nd_0_s;
++         pmax_r[1] <= max_matric_2nd_1_s; pidx_r[1] <= state_2nd_1_s;
++         pmax_r[2] <= max_matric_2nd_2_s; pidx_r[2] <= state_2nd_2_s;
++         pmax_r[3] <= max_matric_2nd_3_s; pidx_r[3] <= state_2nd_3_s;
++         reg_num_buf_r   <= register_num_i;
++         update_en_buf_r <= pm_update_en_s;
++         for(j=0;j<64;j=j+1) pm_buf_r[j] <= pm_i_signed_s[j];
++      end
++   end
++end
++
++// Stage-2: register the final max (to isolate subtract+clamp into stage-3)
++always@(posedge clk_i or negedge rst_an_i) begin
++   if(!rst_an_i) begin
++      final_max_r <= 0;
++      en_d2_r     <= 1'b0;
++   end else if(rst_sync_i) begin
++      final_max_r <= 0;
++      en_d2_r     <= 1'b0;
++   end else if(frame_start_i) begin
++      en_d2_r <= 1'b0;
++   end else begin
++      en_d2_r <= en_d1_r;
++      if(en_d1_r)
++         final_max_r <= s2_final_max;
++   end
++end
++
++always@(posedge clk_i or negedge rst_an_i) begin
++      if(!rst_an_i)
++         max_state_index_r <= 0;
++      else if(rst_sync_i)
++         max_state_index_r <= 0;
++      else if(en_i)
++         max_state_index_r <= final_state_index_s;
+    end
+    
+  always@(*) begin
