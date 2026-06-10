@@ -265,20 +265,34 @@ class ClaudeEnv:
             raise RuntimeError(result.stderr.strip())
 
 
+# Standard unified-diff marker for a hunk line that has no trailing newline.
+_NO_NEWLINE_MARKER = "\\ No newline at end of file\n"
+
+
+def _unified_file_diff(original: str, final: str, rel: object) -> str:
+    """Well-formed `a/<rel>` `b/<rel>` unified diff for a single file."""
+    out: list[str] = []
+    for line in difflib.unified_diff(
+        original.splitlines(keepends=True),
+        final.splitlines(keepends=True),
+        fromfile=f"a/{rel}",
+        tofile=f"b/{rel}",
+    ):
+        # Header/hunk lines and normal body lines already end in "\n"; only a
+        # body line for a file's newline-less last line is missing it.
+        if line.endswith("\n"):
+            out.append(line)
+        else:
+            out.append(line + "\n")
+            out.append(_NO_NEWLINE_MARKER)
+    return "".join(out)
+
+
 def build_diff_from_env(env: ClaudeEnv, design: DesignConfig) -> str:
     """Unified diff of the env's staged RTL vs `design`'s on-disk originals."""
     parts: list[str] = []
     for rel_file, abs_file in zip(design.rtl_files, design.rtl_abs_paths):
         original = abs_file.read_text()
         final = env.read_file(f"{SANDBOX_RTL_ROOT}/{rel_file}")
-        parts.append(
-            "".join(
-                difflib.unified_diff(
-                    original.splitlines(keepends=True),
-                    final.splitlines(keepends=True),
-                    fromfile=f"a/{rel_file}",
-                    tofile=f"b/{rel_file}",
-                )
-            )
-        )
+        parts.append(_unified_file_diff(original, final, rel_file))
     return "".join(parts)
