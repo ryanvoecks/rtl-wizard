@@ -1,0 +1,34 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "coole198669",
+    "name": "viterbi",
+    "variant": "reference",
+    "root": "/workspace/external/viterbi",
+    "rtl_dir": ".",
+    "rtl_files": [
+      "viterbi_core.v",
+      "BMU.v",
+      "ACS.v",
+      "pm_normalize.v",
+      "traceback.v"
+    ],
+    "top_module": "viterbi_core",
+    "test_script": "/workspace/common/scripts/viterbi.sh",
+    "tb_timeout_s": 300,
+    "clock_port": "clk_i",
+    "include_dirs": []
+  },
+  "period_ns": 1.89,
+  "target_utilization": 60
+}

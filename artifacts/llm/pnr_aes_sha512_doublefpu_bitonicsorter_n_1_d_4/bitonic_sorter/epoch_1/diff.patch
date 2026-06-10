@@ -1,0 +1,104 @@
+--- a/bitonic_comp.v
++++ b/bitonic_comp.v
+@@ -1,10 +1,10 @@
+ `timescale 1ns / 1ps
+ //////////////////////////////////////////////////////////////////////////////////
+-// Company: 
++// Company:
+ // Engineer: Dmitry Matyunin (https://github.com/mcjtag)
+-// 
++//
+ // Create Date: 05.02.2018 14:00:10
+-// Design Name: 
++// Design Name:
+ // Module Name: comparator
+ // Project Name: bitonic_sort
+ // Target Devices:
+@@ -33,7 +33,7 @@
+ //  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ //  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ //  THE SOFTWARE.
+-// 
++//
+ //////////////////////////////////////////////////////////////////////////////////
+ 
+ module bitonic_comp #(
+@@ -50,40 +50,53 @@
+ 	output reg [DATA_WIDTH-1:0]L
+ );
+ 
+-reg [DATA_WIDTH-1:0]H_REG;
+-reg [DATA_WIDTH-1:0]L_REG;
++// One independent comparison tree per nibble of output for H and L.
++// Halves fanout vs the 2-copy design (fanout 4 per copy instead of 16),
++// giving the router freedom to co-locate each comparison with its FFs.
++localparam NGROUPS = 4;
++localparam GWIDTH  = DATA_WIDTH / NGROUPS;
+ 
+-wire LESS;
++genvar gi;
++generate
++for (gi = 0; gi < NGROUPS; gi = gi + 1) begin : GRP
++	localparam LO = gi * GWIDTH;
++	localparam HI = LO + GWIDTH - 1;
++	wire less_h, less_l;
+ 
+-generate
+ 	if (SIGNED == 0) begin
+-		assign LESS = $unsigned(A) < $unsigned(B);	
++		assign less_h = $unsigned(A) < $unsigned(B);
++		assign less_l = $unsigned(A) < $unsigned(B);
+ 	end else begin
+-		assign LESS = $signed(A) < $signed(B);
++		assign less_h = $signed(A) < $signed(B);
++		assign less_l = $signed(A) < $signed(B);
+ 	end
+-	
+-	if (POLARITY == 0) begin
+-		always @(*) begin
+-			H_REG = (LESS) ? A : B;
+-			L_REG = (LESS) ? B : A;
++
++	if (REGOUT_EN == 1) begin
++		if (POLARITY == 0) begin
++			always @(posedge CLK) begin
++				H[HI:LO] <= less_h ? A[HI:LO] : B[HI:LO];
++				L[HI:LO] <= less_l ? B[HI:LO] : A[HI:LO];
++			end
++		end else begin
++			always @(posedge CLK) begin
++				H[HI:LO] <= less_h ? B[HI:LO] : A[HI:LO];
++				L[HI:LO] <= less_l ? A[HI:LO] : B[HI:LO];
++			end
+ 		end
+ 	end else begin
+-		always @(*) begin
+-			H_REG = (LESS) ? B : A;
+-			L_REG = (LESS) ? A : B;
++		if (POLARITY == 0) begin
++			always @(*) begin
++				H[HI:LO] = less_h ? A[HI:LO] : B[HI:LO];
++				L[HI:LO] = less_l ? B[HI:LO] : A[HI:LO];
++			end
++		end else begin
++			always @(*) begin
++				H[HI:LO] = less_h ? B[HI:LO] : A[HI:LO];
++				L[HI:LO] = less_l ? A[HI:LO] : B[HI:LO];
++			end
+ 		end
+ 	end
+-	if (REGOUT_EN == 1) begin
+-		always @(posedge CLK) begin
+-			H <= H_REG;
+-			L <= L_REG;
+-		end
+-	end else begin
+-		always @(*) begin
+-			H = H_REG;
+-			L = L_REG;
+-		end
+-	end
++end
+ endgenerate
+ 
+ endmodule

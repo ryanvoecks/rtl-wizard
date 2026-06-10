@@ -1,0 +1,550 @@
+--- a/RsDecodeDegree.v
++++ b/RsDecodeDegree.v
+@@ -2,7 +2,7 @@
+ // Module Name : RsDecodeDegree
+ // File Name   : RsDecodeDegree.v
+ // Function    : Rs Decoder Degree Module
+-// 
++//
+ // Revision History:
+ // Date          By           Version    Change Description
+ //===================================================================
+@@ -40,95 +40,91 @@
+ );
+ 
+ 
+-   input  [7:0]   polynom_0;    // polynom 0
+-   input  [7:0]   polynom_1;    // polynom 1
+-   input  [7:0]   polynom_2;    // polynom 2
+-   input  [7:0]   polynom_3;    // polynom 3
+-   input  [7:0]   polynom_4;    // polynom 4
+-   input  [7:0]   polynom_5;    // polynom 5
+-   input  [7:0]   polynom_6;    // polynom 6
+-   input  [7:0]   polynom_7;    // polynom 7
+-   input  [7:0]   polynom_8;    // polynom 8
+-   input  [7:0]   polynom_9;    // polynom 9
+-   input  [7:0]   polynom_10;   // polynom 10
+-   input  [7:0]   polynom_11;   // polynom 11
+-   input  [7:0]   polynom_12;   // polynom 12
+-   input  [7:0]   polynom_13;   // polynom 13
+-   input  [7:0]   polynom_14;   // polynom 14
+-   input  [7:0]   polynom_15;   // polynom 15
+-   input  [7:0]   polynom_16;   // polynom 16
+-   input  [7:0]   polynom_17;   // polynom 17
+-   input  [7:0]   polynom_18;   // polynom 18
+-   input  [7:0]   polynom_19;   // polynom 19
+-   input  [7:0]   polynom_20;   // polynom 20
+-   input  [7:0]   polynom_21;   // polynom 21
+-   output [4:0]   degree;       // polynom degree
+-
++   // 1-bit nonzero flags: 1 = coefficient is nonzero
++   input          polynom_0;
++   input          polynom_1;
++   input          polynom_2;
++   input          polynom_3;
++   input          polynom_4;
++   input          polynom_5;
++   input          polynom_6;
++   input          polynom_7;
++   input          polynom_8;
++   input          polynom_9;
++   input          polynom_10;
++   input          polynom_11;
++   input          polynom_12;
++   input          polynom_13;
++   input          polynom_14;
++   input          polynom_15;
++   input          polynom_16;
++   input          polynom_17;
++   input          polynom_18;
++   input          polynom_19;
++   input          polynom_20;
++   input          polynom_21;
++   output [4:0]   degree;
+ 
+ 
+    //------------------------------------------------------------------------
+-   //- registers
++   //- step 0: local max within pairs
+    //------------------------------------------------------------------------
+-//---------------------------------------------------------------
+-//- step 0
+-//---------------------------------------------------------------
+-wire [4:0]   winner0Step0;
+-assign winner0Step0 =(polynom_1 [7:0] == 8'd0) ? ((polynom_0 [7:0] == 8'd0) ? 5'd0 : 5'd0):  5'd1;
+-wire [4:0]   winner1Step0;
+-assign winner1Step0 =(polynom_3 [7:0] == 8'd0) ? ((polynom_2 [7:0] == 8'd0) ? 5'd0 : 5'd2):  5'd3;
+-wire [4:0]   winner2Step0;
+-assign winner2Step0 =(polynom_5 [7:0] == 8'd0) ? ((polynom_4 [7:0] == 8'd0) ? 5'd0 : 5'd4):  5'd5;
+-wire [4:0]   winner3Step0;
+-assign winner3Step0 =(polynom_7 [7:0] == 8'd0) ? ((polynom_6 [7:0] == 8'd0) ? 5'd0 : 5'd6):  5'd7;
+-wire [4:0]   winner4Step0;
+-assign winner4Step0 =(polynom_9 [7:0] == 8'd0) ? ((polynom_8 [7:0] == 8'd0) ? 5'd0 : 5'd8):  5'd9;
+-wire [4:0]   winner5Step0;
+-assign winner5Step0 =(polynom_11 [7:0] == 8'd0) ? ((polynom_10 [7:0] == 8'd0) ? 5'd0 : 5'd10):  5'd11;
+-wire [4:0]   winner6Step0;
+-assign winner6Step0 =(polynom_13 [7:0] == 8'd0) ? ((polynom_12 [7:0] == 8'd0) ? 5'd0 : 5'd12):  5'd13;
+-wire [4:0]   winner7Step0;
+-assign winner7Step0 =(polynom_15 [7:0] == 8'd0) ? ((polynom_14 [7:0] == 8'd0) ? 5'd0 : 5'd14):  5'd15;
+-wire [4:0]   winner8Step0;
+-assign winner8Step0 =(polynom_17 [7:0] == 8'd0) ? ((polynom_16 [7:0] == 8'd0) ? 5'd0 : 5'd16):  5'd17;
+-wire [4:0]   winner9Step0;
+-assign winner9Step0 =(polynom_19 [7:0] == 8'd0) ? ((polynom_18 [7:0] == 8'd0) ? 5'd0 : 5'd18):  5'd19;
+-wire [4:0]   winner10Step0;
+-assign winner10Step0 =(polynom_21 [7:0] == 8'd0) ? ((polynom_20 [7:0] == 8'd0) ? 5'd0 : 5'd20):  5'd21;
+-//---------------------------------------------------------------
+-//- step 1
+-//---------------------------------------------------------------
+-wire [4:0]   winner0Step1;
+-assign winner0Step1 =( winner1Step0 [4:0] < winner0Step0  [4:0]) ? winner0Step0  [4:0]:  winner1Step0  [4:0];
+-wire [4:0]   winner1Step1;
+-assign winner1Step1 =( winner3Step0 [4:0] < winner2Step0  [4:0]) ? winner2Step0  [4:0]:  winner3Step0  [4:0];
+-wire [4:0]   winner2Step1;
+-assign winner2Step1 =( winner5Step0 [4:0] < winner4Step0  [4:0]) ? winner4Step0  [4:0]:  winner5Step0  [4:0];
+-wire [4:0]   winner3Step1;
+-assign winner3Step1 =( winner7Step0 [4:0] < winner6Step0  [4:0]) ? winner6Step0  [4:0]:  winner7Step0  [4:0];
+-wire [4:0]   winner4Step1;
+-assign winner4Step1 =( winner9Step0 [4:0] < winner8Step0  [4:0]) ? winner8Step0  [4:0]:  winner9Step0  [4:0];
+-//---------------------------------------------------------------
+-//- step 2
+-//---------------------------------------------------------------
+-wire [4:0]   winner0Step2;
+-assign winner0Step2 =( winner1Step1 [4:0] < winner0Step1  [4:0]) ? winner0Step1  [4:0]:  winner1Step1  [4:0];
+-wire [4:0]   winner1Step2;
+-assign winner1Step2 =( winner3Step1 [4:0] < winner2Step1  [4:0]) ? winner2Step1  [4:0]:  winner3Step1  [4:0];
+-wire [4:0]   winner2Step2;
+-assign winner2Step2 =( winner10Step0 [4:0] < winner4Step1  [4:0]) ? winner4Step1  [4:0]:  winner10Step0  [4:0];
+-//---------------------------------------------------------------
+-//- step 3
+-//---------------------------------------------------------------
+-wire [4:0]   winner0Step3;
+-assign winner0Step3 =( winner1Step2 [4:0] < winner0Step2  [4:0]) ? winner0Step2  [4:0]:  winner1Step2  [4:0];
+-//---------------------------------------------------------------
+-//- step 4
+-//---------------------------------------------------------------
+-wire [4:0]   winner0Step4;
+-assign winner0Step4 =( winner2Step2 [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  winner2Step2  [4:0];
+-//---------------------------------------------------------------
+-//---------------------------------------------------------------
+-assign degree [4:0] =  winner0Step4 [4:0] ;
++   wire [4:0]   winner0Step0;
++   assign winner0Step0 = polynom_1 ? 5'd1 : 5'd0;
++   wire [4:0]   winner1Step0;
++   assign winner1Step0 = polynom_3 ? 5'd3 : (polynom_2 ? 5'd2 : 5'd0);
++   wire [4:0]   winner2Step0;
++   assign winner2Step0 = polynom_5 ? 5'd5 : (polynom_4 ? 5'd4 : 5'd0);
++   wire [4:0]   winner3Step0;
++   assign winner3Step0 = polynom_7 ? 5'd7 : (polynom_6 ? 5'd6 : 5'd0);
++   wire [4:0]   winner4Step0;
++   assign winner4Step0 = polynom_9 ? 5'd9 : (polynom_8 ? 5'd8 : 5'd0);
++   wire [4:0]   winner5Step0;
++   assign winner5Step0 = polynom_11 ? 5'd11 : (polynom_10 ? 5'd10 : 5'd0);
++   wire [4:0]   winner6Step0;
++   assign winner6Step0 = polynom_13 ? 5'd13 : (polynom_12 ? 5'd12 : 5'd0);
++   wire [4:0]   winner7Step0;
++   assign winner7Step0 = polynom_15 ? 5'd15 : (polynom_14 ? 5'd14 : 5'd0);
++   wire [4:0]   winner8Step0;
++   assign winner8Step0 = polynom_17 ? 5'd17 : (polynom_16 ? 5'd16 : 5'd0);
++   wire [4:0]   winner9Step0;
++   assign winner9Step0 = polynom_19 ? 5'd19 : (polynom_18 ? 5'd18 : 5'd0);
++   wire [4:0]   winner10Step0;
++   assign winner10Step0 = polynom_21 ? 5'd21 : (polynom_20 ? 5'd20 : 5'd0);
++   //---------------------------------------------------------------
++   //- step 1
++   //---------------------------------------------------------------
++   wire [4:0]   winner0Step1;
++   assign winner0Step1 =( winner1Step0 [4:0] < winner0Step0  [4:0]) ? winner0Step0  [4:0]:  winner1Step0  [4:0];
++   wire [4:0]   winner1Step1;
++   assign winner1Step1 =( winner3Step0 [4:0] < winner2Step0  [4:0]) ? winner2Step0  [4:0]:  winner3Step0  [4:0];
++   wire [4:0]   winner2Step1;
++   assign winner2Step1 =( winner5Step0 [4:0] < winner4Step0  [4:0]) ? winner4Step0  [4:0]:  winner5Step0  [4:0];
++   wire [4:0]   winner3Step1;
++   assign winner3Step1 =( winner7Step0 [4:0] < winner6Step0  [4:0]) ? winner6Step0  [4:0]:  winner7Step0  [4:0];
++   wire [4:0]   winner4Step1;
++   assign winner4Step1 =( winner9Step0 [4:0] < winner8Step0  [4:0]) ? winner8Step0  [4:0]:  winner9Step0  [4:0];
++   //---------------------------------------------------------------
++   //- step 2
++   //---------------------------------------------------------------
++   wire [4:0]   winner0Step2;
++   assign winner0Step2 =( winner1Step1 [4:0] < winner0Step1  [4:0]) ? winner0Step1  [4:0]:  winner1Step1  [4:0];
++   wire [4:0]   winner1Step2;
++   assign winner1Step2 =( winner3Step1 [4:0] < winner2Step1  [4:0]) ? winner2Step1  [4:0]:  winner3Step1  [4:0];
++   wire [4:0]   winner2Step2;
++   assign winner2Step2 =( winner10Step0 [4:0] < winner4Step1  [4:0]) ? winner4Step1  [4:0]:  winner10Step0  [4:0];
++   //---------------------------------------------------------------
++   //- step 3
++   //---------------------------------------------------------------
++   wire [4:0]   winner0Step3;
++   assign winner0Step3 =( winner1Step2 [4:0] < winner0Step2  [4:0]) ? winner0Step2  [4:0]:  winner1Step2  [4:0];
++   //---------------------------------------------------------------
++   //- step 4
++   //---------------------------------------------------------------
++   wire [4:0]   winner0Step4;
++   assign winner0Step4 =( winner2Step2 [4:0] < winner0Step3  [4:0]) ? winner0Step3  [4:0]:  winner2Step2  [4:0];
++   //---------------------------------------------------------------
++   assign degree [4:0] =  winner0Step4 [4:0] ;
+ 
+ 
+ 
+--- a/RsDecodeSyndrome.v
++++ b/RsDecodeSyndrome.v
+@@ -101,14 +101,16 @@
+ 
+    //------------------------------------------------------------------------
+    // + done
++   // Precompute one cycle early (count==254) and register, so the output
++   // is a flip-flop and removes the 8-bit compare from downstream paths.
+    //------------------------------------------------------------------------
+    reg         done;
+-   always @(count) begin
+-      if (count ==8'd255) begin
+-         done = 1'b1;
+-      end
+-      else begin
+-         done = 1'b0;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         done <= 1'b0;
++      end
++      else if (enable == 1'b1) begin
++         done <= (count == 8'd254) ? 1'b1 : 1'b0;
+       end
+    end
+ 
+--- a/RsDecodeTop.v
++++ b/RsDecodeTop.v
+@@ -1086,6 +1086,13 @@
+     reg [7:0]   omegaShiftedReg_19;
+     reg [7:0]   omegaShiftedReg_20;
+     reg [7:0]   omegaShiftedReg_21;
++   // Precomputed nonzero flags for degree computation (avoids 8-bit compare on critical path)
++   reg         omegaNzReg_0,  omegaNzReg_1,  omegaNzReg_2,  omegaNzReg_3;
++   reg         omegaNzReg_4,  omegaNzReg_5,  omegaNzReg_6,  omegaNzReg_7;
++   reg         omegaNzReg_8,  omegaNzReg_9,  omegaNzReg_10, omegaNzReg_11;
++   reg         omegaNzReg_12, omegaNzReg_13, omegaNzReg_14, omegaNzReg_15;
++   reg         omegaNzReg_16, omegaNzReg_17, omegaNzReg_18, omegaNzReg_19;
++   reg         omegaNzReg_20, omegaNzReg_21;
+ 
+ 
+    always @(posedge CLK or negedge RESET) begin
+@@ -1112,6 +1119,12 @@
+          omegaShiftedReg_19 [7:0] <= 8'd0;
+          omegaShiftedReg_20 [7:0] <= 8'd0;
+          omegaShiftedReg_21 [7:0] <= 8'd0;
++         omegaNzReg_0  <= 1'b0; omegaNzReg_1  <= 1'b0; omegaNzReg_2  <= 1'b0; omegaNzReg_3  <= 1'b0;
++         omegaNzReg_4  <= 1'b0; omegaNzReg_5  <= 1'b0; omegaNzReg_6  <= 1'b0; omegaNzReg_7  <= 1'b0;
++         omegaNzReg_8  <= 1'b0; omegaNzReg_9  <= 1'b0; omegaNzReg_10 <= 1'b0; omegaNzReg_11 <= 1'b0;
++         omegaNzReg_12 <= 1'b0; omegaNzReg_13 <= 1'b0; omegaNzReg_14 <= 1'b0; omegaNzReg_15 <= 1'b0;
++         omegaNzReg_16 <= 1'b0; omegaNzReg_17 <= 1'b0; omegaNzReg_18 <= 1'b0; omegaNzReg_19 <= 1'b0;
++         omegaNzReg_20 <= 1'b0; omegaNzReg_21 <= 1'b0;
+       end
+       else if (enable == 1'b1) begin
+          omegaShiftedReg_0 [7:0]  <= omegaShifted_0 [7:0];
+@@ -1136,41 +1149,103 @@
+          omegaShiftedReg_19 [7:0] <= omegaShifted_19 [7:0];
+          omegaShiftedReg_20 [7:0] <= omegaShifted_20 [7:0];
+          omegaShiftedReg_21 [7:0] <= omegaShifted_21 [7:0];
+-      end
+-   end
+-
+-
+-
+-   //------------------------------------------------------------------
+-   // + degreeOmega
+-   //------------------------------------------------------------------
++         omegaNzReg_0  <= |omegaShifted_0;  omegaNzReg_1  <= |omegaShifted_1;
++         omegaNzReg_2  <= |omegaShifted_2;  omegaNzReg_3  <= |omegaShifted_3;
++         omegaNzReg_4  <= |omegaShifted_4;  omegaNzReg_5  <= |omegaShifted_5;
++         omegaNzReg_6  <= |omegaShifted_6;  omegaNzReg_7  <= |omegaShifted_7;
++         omegaNzReg_8  <= |omegaShifted_8;  omegaNzReg_9  <= |omegaShifted_9;
++         omegaNzReg_10 <= |omegaShifted_10; omegaNzReg_11 <= |omegaShifted_11;
++         omegaNzReg_12 <= |omegaShifted_12; omegaNzReg_13 <= |omegaShifted_13;
++         omegaNzReg_14 <= |omegaShifted_14; omegaNzReg_15 <= |omegaShifted_15;
++         omegaNzReg_16 <= |omegaShifted_16; omegaNzReg_17 <= |omegaShifted_17;
++         omegaNzReg_18 <= |omegaShifted_18; omegaNzReg_19 <= |omegaShifted_19;
++         omegaNzReg_20 <= |omegaShifted_20; omegaNzReg_21 <= |omegaShifted_21;
++      end
++   end
++
++
++
++   //------------------------------------------------------------------
++   // + degreeOmega: pipelined priority tree (step0+step1 registered, step2-4 combinational)
++   //------------------------------------------------------------------
++   // Step0 wires from 1-bit omegaNzReg
++   wire [4:0] omW0S0 = omegaNzReg_1 ? 5'd1 : 5'd0;
++   wire [4:0] omW1S0 = omegaNzReg_3 ? 5'd3 : (omegaNzReg_2 ? 5'd2 : 5'd0);
++   wire [4:0] omW2S0 = omegaNzReg_5 ? 5'd5 : (omegaNzReg_4 ? 5'd4 : 5'd0);
++   wire [4:0] omW3S0 = omegaNzReg_7 ? 5'd7 : (omegaNzReg_6 ? 5'd6 : 5'd0);
++   wire [4:0] omW4S0 = omegaNzReg_9 ? 5'd9 : (omegaNzReg_8 ? 5'd8 : 5'd0);
++   wire [4:0] omW5S0 = omegaNzReg_11 ? 5'd11 : (omegaNzReg_10 ? 5'd10 : 5'd0);
++   wire [4:0] omW6S0 = omegaNzReg_13 ? 5'd13 : (omegaNzReg_12 ? 5'd12 : 5'd0);
++   wire [4:0] omW7S0 = omegaNzReg_15 ? 5'd15 : (omegaNzReg_14 ? 5'd14 : 5'd0);
++   wire [4:0] omW8S0 = omegaNzReg_17 ? 5'd17 : (omegaNzReg_16 ? 5'd16 : 5'd0);
++   wire [4:0] omW9S0 = omegaNzReg_19 ? 5'd19 : (omegaNzReg_18 ? 5'd18 : 5'd0);
++   wire [4:0] omW10S0 = omegaNzReg_21 ? 5'd21 : (omegaNzReg_20 ? 5'd20 : 5'd0);
++   // Step1 wires
++   wire [4:0] omW0S1 = (omW1S0 < omW0S0) ? omW0S0 : omW1S0;
++   wire [4:0] omW1S1 = (omW3S0 < omW2S0) ? omW2S0 : omW3S0;
++   wire [4:0] omW2S1 = (omW5S0 < omW4S0) ? omW4S0 : omW5S0;
++   wire [4:0] omW3S1 = (omW7S0 < omW6S0) ? omW6S0 : omW7S0;
++   wire [4:0] omW4S1 = (omW9S0 < omW8S0) ? omW8S0 : omW9S0;
++   // Register step1 results when doneShiftReg fires
++   reg [4:0] omS1Reg_0, omS1Reg_1, omS1Reg_2, omS1Reg_3, omS1Reg_4, omS1Reg_10;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         omS1Reg_0 <= 5'd0; omS1Reg_1 <= 5'd0; omS1Reg_2 <= 5'd0;
++         omS1Reg_3 <= 5'd0; omS1Reg_4 <= 5'd0; omS1Reg_10 <= 5'd0;
++      end else if ((enable == 1'b1) && (doneShiftReg == 1'b1)) begin
++         omS1Reg_0  <= omW0S1;
++         omS1Reg_1  <= omW1S1;
++         omS1Reg_2  <= omW2S1;
++         omS1Reg_3  <= omW3S1;
++         omS1Reg_4  <= omW4S1;
++         omS1Reg_10 <= omW10S0;
++      end
++   end
++   // Step2 combinational from step1 registers, then register at startReg[3]
++   wire [4:0] omW0S2c = (omS1Reg_1 < omS1Reg_0) ? omS1Reg_0 : omS1Reg_1;
++   wire [4:0] omW1S2c = (omS1Reg_3 < omS1Reg_2) ? omS1Reg_2 : omS1Reg_3;
++   wire [4:0] omW2S2c = (omS1Reg_10 < omS1Reg_4) ? omS1Reg_4 : omS1Reg_10;
++   reg [4:0] omS2Reg_0, omS2Reg_1, omS2Reg_2;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         omS2Reg_0 <= 5'd0; omS2Reg_1 <= 5'd0; omS2Reg_2 <= 5'd0;
++      end else if ((enable == 1'b1) && (startReg[3] == 1'b1)) begin
++         omS2Reg_0 <= omW0S2c;
++         omS2Reg_1 <= omW1S2c;
++         omS2Reg_2 <= omW2S2c;
++      end
++   end
++   // Step3-4 combinational from step2 registers
++   wire [4:0] omW0S3 = (omS2Reg_1 < omS2Reg_0) ? omS2Reg_0 : omS2Reg_1;
++   wire [4:0] omDegreePipelined = (omS2Reg_2 < omW0S3) ? omW0S3 : omS2Reg_2;
++
+    wire   [4:0]   degreeOmega;
+ 
+ 
+    RsDecodeDegree  RsDecodeDegree_1(
+-      // Inputs
+-      .polynom_0   (omegaShiftedReg_0),
+-      .polynom_1   (omegaShiftedReg_1),
+-      .polynom_2   (omegaShiftedReg_2),
+-      .polynom_3   (omegaShiftedReg_3),
+-      .polynom_4   (omegaShiftedReg_4),
+-      .polynom_5   (omegaShiftedReg_5),
+-      .polynom_6   (omegaShiftedReg_6),
+-      .polynom_7   (omegaShiftedReg_7),
+-      .polynom_8   (omegaShiftedReg_8),
+-      .polynom_9   (omegaShiftedReg_9),
+-      .polynom_10  (omegaShiftedReg_10),
+-      .polynom_11  (omegaShiftedReg_11),
+-      .polynom_12  (omegaShiftedReg_12),
+-      .polynom_13  (omegaShiftedReg_13),
+-      .polynom_14  (omegaShiftedReg_14),
+-      .polynom_15  (omegaShiftedReg_15),
+-      .polynom_16  (omegaShiftedReg_16),
+-      .polynom_17  (omegaShiftedReg_17),
+-      .polynom_18  (omegaShiftedReg_18),
+-      .polynom_19  (omegaShiftedReg_19),
+-      .polynom_20  (omegaShiftedReg_20),
+-      .polynom_21  (omegaShiftedReg_21),
++      // Inputs: precomputed nonzero flags
++      .polynom_0   (omegaNzReg_0),
++      .polynom_1   (omegaNzReg_1),
++      .polynom_2   (omegaNzReg_2),
++      .polynom_3   (omegaNzReg_3),
++      .polynom_4   (omegaNzReg_4),
++      .polynom_5   (omegaNzReg_5),
++      .polynom_6   (omegaNzReg_6),
++      .polynom_7   (omegaNzReg_7),
++      .polynom_8   (omegaNzReg_8),
++      .polynom_9   (omegaNzReg_9),
++      .polynom_10  (omegaNzReg_10),
++      .polynom_11  (omegaNzReg_11),
++      .polynom_12  (omegaNzReg_12),
++      .polynom_13  (omegaNzReg_13),
++      .polynom_14  (omegaNzReg_14),
++      .polynom_15  (omegaNzReg_15),
++      .polynom_16  (omegaNzReg_16),
++      .polynom_17  (omegaNzReg_17),
++      .polynom_18  (omegaNzReg_18),
++      .polynom_19  (omegaNzReg_19),
++      .polynom_20  (omegaNzReg_20),
++      .polynom_21  (omegaNzReg_21),
+       // Outputs
+       .degree      (degreeOmega)
+    );
+@@ -1202,6 +1277,13 @@
+    reg [7:0]   lambdaReg2_19;
+    reg [7:0]   lambdaReg2_20;
+    reg [7:0]   lambdaReg2_21;
++   // Precomputed nonzero flags for degree computation (avoids 8-bit compare on critical path)
++   reg         lambdaNzReg2_0,  lambdaNzReg2_1,  lambdaNzReg2_2,  lambdaNzReg2_3;
++   reg         lambdaNzReg2_4,  lambdaNzReg2_5,  lambdaNzReg2_6,  lambdaNzReg2_7;
++   reg         lambdaNzReg2_8,  lambdaNzReg2_9,  lambdaNzReg2_10, lambdaNzReg2_11;
++   reg         lambdaNzReg2_12, lambdaNzReg2_13, lambdaNzReg2_14, lambdaNzReg2_15;
++   reg         lambdaNzReg2_16, lambdaNzReg2_17, lambdaNzReg2_18, lambdaNzReg2_19;
++   reg         lambdaNzReg2_20, lambdaNzReg2_21;
+ 
+ 
+    always @(posedge CLK or negedge RESET) begin
+@@ -1228,6 +1310,12 @@
+          lambdaReg2_19 [7:0] <= 8'd0;
+          lambdaReg2_20 [7:0] <= 8'd0;
+          lambdaReg2_21 [7:0] <= 8'd0;
++         lambdaNzReg2_0  <= 1'b0; lambdaNzReg2_1  <= 1'b0; lambdaNzReg2_2  <= 1'b0; lambdaNzReg2_3  <= 1'b0;
++         lambdaNzReg2_4  <= 1'b0; lambdaNzReg2_5  <= 1'b0; lambdaNzReg2_6  <= 1'b0; lambdaNzReg2_7  <= 1'b0;
++         lambdaNzReg2_8  <= 1'b0; lambdaNzReg2_9  <= 1'b0; lambdaNzReg2_10 <= 1'b0; lambdaNzReg2_11 <= 1'b0;
++         lambdaNzReg2_12 <= 1'b0; lambdaNzReg2_13 <= 1'b0; lambdaNzReg2_14 <= 1'b0; lambdaNzReg2_15 <= 1'b0;
++         lambdaNzReg2_16 <= 1'b0; lambdaNzReg2_17 <= 1'b0; lambdaNzReg2_18 <= 1'b0; lambdaNzReg2_19 <= 1'b0;
++         lambdaNzReg2_20 <= 1'b0; lambdaNzReg2_21 <= 1'b0;
+       end
+       else if (enable == 1'b1) begin
+          lambdaReg2_0 [7:0]  <= lambdaReg_0 [7:0];
+@@ -1252,39 +1340,101 @@
+          lambdaReg2_19 [7:0] <= lambdaReg_19 [7:0];
+          lambdaReg2_20 [7:0] <= lambdaReg_20 [7:0];
+          lambdaReg2_21 [7:0] <= lambdaReg_21 [7:0];
+-      end
+-   end
+-
+-
+-
+-   //------------------------------------------------------------------
+-   // + degreeLambda
+-   //------------------------------------------------------------------
++         lambdaNzReg2_0  <= |lambdaReg_0;  lambdaNzReg2_1  <= |lambdaReg_1;
++         lambdaNzReg2_2  <= |lambdaReg_2;  lambdaNzReg2_3  <= |lambdaReg_3;
++         lambdaNzReg2_4  <= |lambdaReg_4;  lambdaNzReg2_5  <= |lambdaReg_5;
++         lambdaNzReg2_6  <= |lambdaReg_6;  lambdaNzReg2_7  <= |lambdaReg_7;
++         lambdaNzReg2_8  <= |lambdaReg_8;  lambdaNzReg2_9  <= |lambdaReg_9;
++         lambdaNzReg2_10 <= |lambdaReg_10; lambdaNzReg2_11 <= |lambdaReg_11;
++         lambdaNzReg2_12 <= |lambdaReg_12; lambdaNzReg2_13 <= |lambdaReg_13;
++         lambdaNzReg2_14 <= |lambdaReg_14; lambdaNzReg2_15 <= |lambdaReg_15;
++         lambdaNzReg2_16 <= |lambdaReg_16; lambdaNzReg2_17 <= |lambdaReg_17;
++         lambdaNzReg2_18 <= |lambdaReg_18; lambdaNzReg2_19 <= |lambdaReg_19;
++         lambdaNzReg2_20 <= |lambdaReg_20; lambdaNzReg2_21 <= |lambdaReg_21;
++      end
++   end
++
++
++
++   //------------------------------------------------------------------
++   // + degreeLambda: pipelined priority tree (step0+step1 registered, step2-4 combinational)
++   //------------------------------------------------------------------
++   // Step0 wires from 1-bit lambdaNzReg2
++   wire [4:0] lmW0S0 = lambdaNzReg2_1 ? 5'd1 : 5'd0;
++   wire [4:0] lmW1S0 = lambdaNzReg2_3 ? 5'd3 : (lambdaNzReg2_2 ? 5'd2 : 5'd0);
++   wire [4:0] lmW2S0 = lambdaNzReg2_5 ? 5'd5 : (lambdaNzReg2_4 ? 5'd4 : 5'd0);
++   wire [4:0] lmW3S0 = lambdaNzReg2_7 ? 5'd7 : (lambdaNzReg2_6 ? 5'd6 : 5'd0);
++   wire [4:0] lmW4S0 = lambdaNzReg2_9 ? 5'd9 : (lambdaNzReg2_8 ? 5'd8 : 5'd0);
++   wire [4:0] lmW5S0 = lambdaNzReg2_11 ? 5'd11 : (lambdaNzReg2_10 ? 5'd10 : 5'd0);
++   wire [4:0] lmW6S0 = lambdaNzReg2_13 ? 5'd13 : (lambdaNzReg2_12 ? 5'd12 : 5'd0);
++   wire [4:0] lmW7S0 = lambdaNzReg2_15 ? 5'd15 : (lambdaNzReg2_14 ? 5'd14 : 5'd0);
++   wire [4:0] lmW8S0 = lambdaNzReg2_17 ? 5'd17 : (lambdaNzReg2_16 ? 5'd16 : 5'd0);
++   wire [4:0] lmW9S0 = lambdaNzReg2_19 ? 5'd19 : (lambdaNzReg2_18 ? 5'd18 : 5'd0);
++   wire [4:0] lmW10S0 = lambdaNzReg2_21 ? 5'd21 : (lambdaNzReg2_20 ? 5'd20 : 5'd0);
++   // Step1 wires
++   wire [4:0] lmW0S1 = (lmW1S0 < lmW0S0) ? lmW0S0 : lmW1S0;
++   wire [4:0] lmW1S1 = (lmW3S0 < lmW2S0) ? lmW2S0 : lmW3S0;
++   wire [4:0] lmW2S1 = (lmW5S0 < lmW4S0) ? lmW4S0 : lmW5S0;
++   wire [4:0] lmW3S1 = (lmW7S0 < lmW6S0) ? lmW6S0 : lmW7S0;
++   wire [4:0] lmW4S1 = (lmW9S0 < lmW8S0) ? lmW8S0 : lmW9S0;
++   // Register step1 results when doneShiftReg fires
++   reg [4:0] lmS1Reg_0, lmS1Reg_1, lmS1Reg_2, lmS1Reg_3, lmS1Reg_4, lmS1Reg_10;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         lmS1Reg_0 <= 5'd0; lmS1Reg_1 <= 5'd0; lmS1Reg_2 <= 5'd0;
++         lmS1Reg_3 <= 5'd0; lmS1Reg_4 <= 5'd0; lmS1Reg_10 <= 5'd0;
++      end else if ((enable == 1'b1) && (doneShiftReg == 1'b1)) begin
++         lmS1Reg_0  <= lmW0S1;
++         lmS1Reg_1  <= lmW1S1;
++         lmS1Reg_2  <= lmW2S1;
++         lmS1Reg_3  <= lmW3S1;
++         lmS1Reg_4  <= lmW4S1;
++         lmS1Reg_10 <= lmW10S0;
++      end
++   end
++   // Step2 combinational from step1 registers, then register at startReg[3]
++   wire [4:0] lmW0S2c = (lmS1Reg_1 < lmS1Reg_0) ? lmS1Reg_0 : lmS1Reg_1;
++   wire [4:0] lmW1S2c = (lmS1Reg_3 < lmS1Reg_2) ? lmS1Reg_2 : lmS1Reg_3;
++   wire [4:0] lmW2S2c = (lmS1Reg_10 < lmS1Reg_4) ? lmS1Reg_4 : lmS1Reg_10;
++   reg [4:0] lmS2Reg_0, lmS2Reg_1, lmS2Reg_2;
++   always @(posedge CLK or negedge RESET) begin
++      if (~RESET) begin
++         lmS2Reg_0 <= 5'd0; lmS2Reg_1 <= 5'd0; lmS2Reg_2 <= 5'd0;
++      end else if ((enable == 1'b1) && (startReg[3] == 1'b1)) begin
++         lmS2Reg_0 <= lmW0S2c;
++         lmS2Reg_1 <= lmW1S2c;
++         lmS2Reg_2 <= lmW2S2c;
++      end
++   end
++   // Step3-4 combinational from step2 registers
++   wire [4:0] lmW0S3 = (lmS2Reg_1 < lmS2Reg_0) ? lmS2Reg_0 : lmS2Reg_1;
++   wire [4:0] lmDegreePipelined = (lmS2Reg_2 < lmW0S3) ? lmW0S3 : lmS2Reg_2;
++
+    wire [4:0]   degreeLambda;
+    RsDecodeDegree  RsDecodeDegree_2(
+-      // Inputs
+-      .polynom_0   (lambdaReg2_0),
+-      .polynom_1   (lambdaReg2_1),
+-      .polynom_2   (lambdaReg2_2),
+-      .polynom_3   (lambdaReg2_3),
+-      .polynom_4   (lambdaReg2_4),
+-      .polynom_5   (lambdaReg2_5),
+-      .polynom_6   (lambdaReg2_6),
+-      .polynom_7   (lambdaReg2_7),
+-      .polynom_8   (lambdaReg2_8),
+-      .polynom_9   (lambdaReg2_9),
+-      .polynom_10  (lambdaReg2_10),
+-      .polynom_11  (lambdaReg2_11),
+-      .polynom_12  (lambdaReg2_12),
+-      .polynom_13  (lambdaReg2_13),
+-      .polynom_14  (lambdaReg2_14),
+-      .polynom_15  (lambdaReg2_15),
+-      .polynom_16  (lambdaReg2_16),
+-      .polynom_17  (lambdaReg2_17),
+-      .polynom_18  (lambdaReg2_18),
+-      .polynom_19  (lambdaReg2_19),
+-      .polynom_20  (lambdaReg2_20),
+-      .polynom_21  (lambdaReg2_21),
++      // Inputs: precomputed nonzero flags
++      .polynom_0   (lambdaNzReg2_0),
++      .polynom_1   (lambdaNzReg2_1),
++      .polynom_2   (lambdaNzReg2_2),
++      .polynom_3   (lambdaNzReg2_3),
++      .polynom_4   (lambdaNzReg2_4),
++      .polynom_5   (lambdaNzReg2_5),
++      .polynom_6   (lambdaNzReg2_6),
++      .polynom_7   (lambdaNzReg2_7),
++      .polynom_8   (lambdaNzReg2_8),
++      .polynom_9   (lambdaNzReg2_9),
++      .polynom_10  (lambdaNzReg2_10),
++      .polynom_11  (lambdaNzReg2_11),
++      .polynom_12  (lambdaNzReg2_12),
++      .polynom_13  (lambdaNzReg2_13),
++      .polynom_14  (lambdaNzReg2_14),
++      .polynom_15  (lambdaNzReg2_15),
++      .polynom_16  (lambdaNzReg2_16),
++      .polynom_17  (lambdaNzReg2_17),
++      .polynom_18  (lambdaNzReg2_18),
++      .polynom_19  (lambdaNzReg2_19),
++      .polynom_20  (lambdaNzReg2_20),
++      .polynom_21  (lambdaNzReg2_21),
+       // Outputs
+       .degree      (degreeLambda)
+    );
+@@ -1302,9 +1452,9 @@
+          degreeOmegaReg  <= 5'd0;
+          degreeLambdaReg <= 5'd0;
+       end
+-      else if ((enable == 1'b1) && (doneShiftReg == 1'b1)) begin
+-         degreeOmegaReg  <= degreeOmega;
+-         degreeLambdaReg <= degreeLambda;
++      else if ((enable == 1'b1) && (startReg[2] == 1'b1)) begin
++         degreeOmegaReg  <= omDegreePipelined;
++         degreeLambdaReg <= lmDegreePipelined;
+       end
+    end
+ 

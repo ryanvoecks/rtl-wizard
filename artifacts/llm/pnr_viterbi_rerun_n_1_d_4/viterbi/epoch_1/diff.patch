@@ -1,0 +1,155 @@
+--- a/viterbi_core.v
++++ b/viterbi_core.v
+@@ -18,7 +18,7 @@
+ // Additional Comments: 
+ //
+ //////////////////////////////////////////////////////////////////////////////////
+-module viterbi_core #(parameter WIDTH_BM = 9,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6)(
++module viterbi_core #(parameter WIDTH_BM = 8,SRC_ADDR_W = 12 , DST_ADDR_W = 12,W_TB_ADDR=6)(
+     input clk_i,
+     input rst_an_i,
+     input rst_sync_i,
+--- a/BMU.v
++++ b/BMU.v
+@@ -20,7 +20,7 @@
+ // Additional Comments: 
+ //
+ //////////////////////////////////////////////////////////////////////////////////
+-module BMU  #(parameter WIDTH_BM = 9 ) (
++module BMU  #(parameter WIDTH_BM = 8 ) (
+     input clk_i,
+     input rst_an_i,
+     input rst_sync_i,    
+--- a/ACS.v
++++ b/ACS.v
+@@ -18,7 +18,7 @@
+ // Additional Comments: 
+ //
+ //////////////////////////////////////////////////////////////////////////////////
+-module ACS #(parameter WIDTH_BM = 9) (
++module ACS #(parameter WIDTH_BM = 8) (
+     input clk_i,
+     input rst_an_i,
+     input rst_sync_i,
+@@ -48,6 +48,8 @@
+     wire signed [WIDTH_BM-1:0] pm_high_s;
+     wire signed [WIDTH_BM-1:0] pm_low_s;
+     wire signed [WIDTH_BM-1:0] bm_s;
++    wire signed [WIDTH_BM:0] pm_low_full;
++    wire signed [WIDTH_BM:0] pm_high_full;
+     //wire signed [WIDTH_BM-1:0] init_prev_s;
+     //wire signed [WIDTH_BM-1:0] init_state0_s;
+     
+@@ -77,8 +79,11 @@
+ 	 assign prev_low_tmp_s  =  $signed(prev_low_i);
+     assign prev_high_tmp_s =  $signed(prev_high_s);
+     assign bm_s        = $signed(bm_i);
+-    assign pm_low_s    = prev_low_tmp_s + bm_s;
+-    assign pm_high_s   = prev_high_tmp_s - bm_s;
++    assign pm_low_full  = $signed({prev_low_tmp_s[WIDTH_BM-1],  prev_low_tmp_s})  + $signed({bm_s[WIDTH_BM-1], bm_s});
++    assign pm_high_full = $signed({prev_high_tmp_s[WIDTH_BM-1], prev_high_tmp_s}) - $signed({bm_s[WIDTH_BM-1], bm_s});
++    // Saturate at -128: underflow when sign bit set but bit[WIDTH_BM-1]=0
++    assign pm_low_s  = (pm_low_full[WIDTH_BM]  & ~pm_low_full[WIDTH_BM-1])  ? {1'b1, {(WIDTH_BM-1){1'b0}}} : pm_low_full[WIDTH_BM-1:0];
++    assign pm_high_s = (pm_high_full[WIDTH_BM] & ~pm_high_full[WIDTH_BM-1]) ? {1'b1, {(WIDTH_BM-1){1'b0}}} : pm_high_full[WIDTH_BM-1:0];
+     
+     
+     
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -18,7 +18,7 @@
+ // Additional Comments: 
+ //
+ //////////////////////////////////////////////////////////////////////////////////
+-module pm_normalize #(parameter WIDTH_BM = 9)(
++module pm_normalize #(parameter WIDTH_BM = 8)(
+     input clk_i,
+     input rst_an_i,
+     input rst_sync_i,
+@@ -180,7 +180,8 @@
+     
+ reg signed [WIDTH_BM-1:0] pm_nom_r[63:0];
+ reg [63:0] pm_update_en_s;
+-reg signed [WIDTH_BM-1:0] final_max_matric_s;
++wire signed [WIDTH_BM-1:0] final_max_matric_s;
++reg  signed [WIDTH_BM-1:0] final_max_sub_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+@@ -374,47 +375,52 @@
+ generate
+    for(i=0;i<64;i=i+1)
+    begin:pm_reg
+-     always@(posedge clk_i or negedge rst_an_i) 
+-       if(!rst_an_i) 
+-         pm_nom_r[i] <= 0;    
+-      else if(rst_sync_i) 
+-         pm_nom_r[i] <= 0; 
++     // Clamp condition derived from inputs in parallel with subtraction:
++     // pm_i - max < -128  iff  pm_i[7]=1 & pm_i[6]=0 & pm_i[5:0] < max[5:0]
++     wire clamp_s = pm_i_signed_s[i][WIDTH_BM-1] & ~pm_i_signed_s[i][WIDTH_BM-2]
++                  & (pm_i_signed_s[i][WIDTH_BM-3:0] < final_max_matric_s[WIDTH_BM-3:0]);
++     wire signed [WIDTH_BM-1:0] pm_diff_s = pm_i_signed_s[i]
++                                           - $signed({2'b00, final_max_matric_s[5:0]});
++     always@(posedge clk_i or negedge rst_an_i)
++       if(!rst_an_i)
++         pm_nom_r[i] <= 0;
++      else if(rst_sync_i)
++         pm_nom_r[i] <= 0;
+ 		else if(frame_start_i) begin
+ 		   if(tail_biting_en_i ) pm_nom_r[i] <= 0;
+          else if(i==0) pm_nom_r[i] <= 0;
+          else pm_nom_r[i] <= Initial_Lower;
+-      end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
+-         
+-     end     
+- 
++      end
++      else if(en_i & pm_update_en_s[i])
++         if(clamp_s)
++            pm_nom_r[i] <= {1'b1, {(WIDTH_BM-1){1'b0}}};
++         else
++            pm_nom_r[i] <= pm_diff_s;
++
++     end
++
+ endgenerate
+ 
+ assign max_state_index_o = max_state_index_r;
+ 
+ always@(posedge clk_i or negedge rst_an_i) begin
+-       if(!rst_an_i) 
+-         max_state_index_r <= 0;      
+-      else if(rst_sync_i) 
+-         max_state_index_r <= 0; 
+-      else if(en_i)  
++       if(!rst_an_i)
++         max_state_index_r <= 0;
++      else if(rst_sync_i)
++         max_state_index_r <= 0;
++      else if(en_i)
+          max_state_index_r <=  final_state_index_s;
+    end
+    
++ // Put the timing-critical 64-state path through only 1 mux stage
+  always@(*) begin
+    case(register_num_i)
+-   2'b00: final_max_matric_s = nom_matric_64_s ;
+-   2'b01: final_max_matric_s = nom_matric_32_s ;
+-   2'b10: final_max_matric_s = nom_matric_16_s ;
+-   default: final_max_matric_s = nom_matric_8_s ;
++   2'b01: final_max_sub_s = nom_matric_32_s ;
++   2'b10: final_max_sub_s = nom_matric_16_s ;
++   default: final_max_sub_s = nom_matric_8_s ;
+    endcase
+  end
++ assign final_max_matric_s = (register_num_i == 2'b00) ? nom_matric_64_s : final_max_sub_s ;
+  
+   always@(*) begin
+    case(register_num_i)

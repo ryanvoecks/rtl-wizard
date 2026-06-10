@@ -1,0 +1,4 @@
+tb timed out after 600s
+iverilog sr_wb2: built (warnings -> testbench/iverilog_sr_wb2.stderr, 677 lines)
+iverilog bist2: built (warnings -> testbench/iverilog_bist2.stderr, 678 lines)
+iverilog ecc3: built (warnings -> testbench/iverilog_ecc3.stderr, 676 lines)

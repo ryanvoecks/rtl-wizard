@@ -29,10 +29,29 @@ from common.config import LLM_RESULTS
 os.environ.setdefault("ANTHROPIC_API_KEY", "fake")
 
 # Eval config
-MAX_PARALLEL_SESSIONS = 3
+# PNR-feedback runs: the iterative solver re-runs the FULL ORFS P&R flow between
+# rounds (heavy), so parallelism is capped at 2 to stay within this host's RAM.
+MAX_PARALLEL_SESSIONS = 2
 MODEL = "anthropic/claude-sonnet-4-6"
-EPOCHS = 3
+EPOCHS = 1
 SOLVER = claude_code_iterative_solver
+
+# Three .eval runs, 4 designs each (12 designs total). Same groupings as the
+# prior synth_/predict_ runs so the PNR results line up for comparison.
+GROUPS: list[tuple[str, list[str]]] = [
+    (
+        "pnr_aes_sha512_doublefpu_bitonicsorter_n_1_d_4",
+        ["aes", "sha512", "double_fpu", "bitonic_sorter"],
+    ),
+    (
+        "pnr_e203_reedsolomon_systolictpu_viterbi_n_1_d_4",
+        ["e203", "reed_solomon", "systolic_tpu", "viterbi"],
+    ),
+    (
+        "pnr_verilogaxi_uberddr3_wbdma_jpegencoder_n_1_d_4",
+        ["verilog_axi", "uberddr3", "wb_dma", "jpeg_encoder"],
+    ),
+]
 
 
 async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
@@ -54,19 +73,20 @@ async def run(run_dir: Path, task: Task, **kwargs: Any) -> None:
 
 async def main_async() -> None:
     """We need to run this async to allow shared MCPService __aenter__ and __aexit__"""
-    run_dir = LLM_RESULTS / "predict_e203_reedsolomon_systolictpu_viterbi_n_3_d_4"
-    run_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output dir: {run_dir}", flush=True)
-
+    # One shared container for all groups (keeps the single OAUTH session alive).
     async with Container():
-        await run(
-            run_dir,
-            optimize_timing(str(run_dir), SOLVER()),
-            model=MODEL,
-            max_samples=MAX_PARALLEL_SESSIONS,
-            epochs=EPOCHS,
-            sample_id=["e203", "reed_solomon", "systolic_tpu", "viterbi"],
-        )
+        for dirname, sample_ids in GROUPS:
+            run_dir = LLM_RESULTS / dirname
+            run_dir.mkdir(parents=True, exist_ok=True)
+            print(f"Output dir: {run_dir}", flush=True)
+            await run(
+                run_dir,
+                optimize_timing(str(run_dir), SOLVER()),
+                model=MODEL,
+                max_samples=MAX_PARALLEL_SESSIONS,
+                epochs=EPOCHS,
+                sample_id=sample_ids,
+            )
 
 
 def main() -> None:
