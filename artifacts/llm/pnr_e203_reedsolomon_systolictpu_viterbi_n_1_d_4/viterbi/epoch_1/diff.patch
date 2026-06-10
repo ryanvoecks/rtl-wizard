@@ -1,0 +1,57 @@
+--- a/pm_normalize.v
++++ b/pm_normalize.v
+@@ -183,6 +183,9 @@
+ reg signed [WIDTH_BM-1:0] final_max_matric_s;
+ reg [5:0]  final_state_index_s;
+ reg [5:0] max_state_index_r;
++reg signed [WIDTH_BM-1:0] final_max_r;
++reg [5:0]  final_state_r;
++reg en_s2_r;
+ wire [5:0] state_8_0_s , state_8_1_s ,  state_8_2_s ,  state_8_3_s ; 
+ wire [5:0] state_16_0_s, state_16_1_s,  state_16_2_s,  state_16_3_s ; 
+ wire [5:0] state_24_0_s, state_24_1_s,  state_24_2_s,  state_24_3_s ; 
+@@ -384,20 +387,16 @@
+          else if(i==0) pm_nom_r[i] <= 0;
+          else pm_nom_r[i] <= Initial_Lower;
+       end			
+-      else if(en_i & pm_update_en_s[i]) 
+-         if((pm_i_signed_s[i]-final_max_matric_s)>Initial_Upper)      
+-            pm_nom_r[i] <= Initial_Upper;
+-           else if((pm_i_signed_s[i]-final_max_matric_s)<Initial_Lower)
+-            pm_nom_r[i] <= -128;//Initial_Lower;    
+-         else           
+-            pm_nom_r[i] <=pm_i_signed_s[i]-final_max_matric_s;
++      else if(en_s2_r & pm_update_en_s[i])
++         if((pm_i_signed_s[i]-final_max_r)<Initial_Lower)
++            pm_nom_r[i] <= -128;//Initial_Lower;
++         else
++            pm_nom_r[i] <= pm_i_signed_s[i]-final_max_r;
+          
+      end     
+- 
++
+ endgenerate
+-
+ assign max_state_index_o = max_state_index_r;
+-
+ always@(posedge clk_i or negedge rst_an_i) begin
+        if(!rst_an_i) 
+          max_state_index_r <= 0;      
+@@ -407,6 +406,7 @@
+          max_state_index_r <=  final_state_index_s;
+    end
+    
++
+  always@(*) begin
+    case(register_num_i)
+    2'b00: final_max_matric_s = nom_matric_64_s ;
+@@ -631,4 +631,9 @@
+     
+     assign max_state_s = max_matric_2nd_01_s  > max_matric_2nd_00_s  ? state_2nd_01_s : state_2nd_00_s;
+     assign max_matric_s = max_matric_2nd_01_s > max_matric_2nd_00_s ? max_matric_2nd_01_s : max_matric_2nd_00_s ;
+-endmodule    +always@(posedge clk_i or negedge rst_an_i) begin
++  if(!rst_an_i) begin en_s2_r<=0; final_max_r<=0; final_state_r<=0; end
++  else if(rst_sync_i) begin en_s2_r<=0; final_max_r<=0; final_state_r<=0; end
++  else begin en_s2_r<=en_i; if(en_i) begin final_max_r<=final_max_matric_s; final_state_r<=final_state_index_s; end end
++end
++endmodule

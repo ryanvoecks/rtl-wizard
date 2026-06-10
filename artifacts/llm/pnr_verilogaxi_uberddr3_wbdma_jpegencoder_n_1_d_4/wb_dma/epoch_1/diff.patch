@@ -1,0 +1,62 @@
+--- a/wb_dma_de.v
++++ b/wb_dma_de.v
+@@ -249,6 +249,8 @@
+ 
+ reg		mast0_drdy_r;
+ reg		paused;
++reg	[2:1]	csr_sel_r;	// Registered copy of csr[2:1] for data path
++reg		m0_we_r;	// Registered copy of m0_we for data path
+ 
+ reg		de_fetch_descr;		// Indicates that we are fetching a descriptor
+ ////////////////////////////////////////////////////////////////////
+@@ -419,8 +421,8 @@
+ 	rd_ack_r <= #1 read_r;
+ 
+ // Data Path
+-assign mast0_dout = m0_we ? {20'h0, tsz_cnt} : csr[2] ? mast1_din : mast0_din;
+-assign mast1_dout = csr[2] ? mast1_din : mast0_din;
++assign mast0_dout = m0_we_r ? {20'h0, tsz_cnt} : csr_sel_r[2] ? mast1_din : mast0_din;
++assign mast1_dout = csr_sel_r[2] ? mast1_din : mast0_din;
+ 
+ // Address Path
+ always @(posedge clk)
+@@ -454,6 +456,12 @@
+ always @(posedge clk)
+ 	mast0_drdy_r <= #1 mast0_drdy;
+ 
++always @(posedge clk)
++	csr_sel_r <= #1 csr[2:1];
++
++always @(posedge clk)
++	m0_we_r <= #1 m0_we;
++
+ assign	de_ack = dma_done;
+ 
+ ////////////////////////////////////////////////////////////////////
+@@ -462,8 +470,8 @@
+ //
+ 
+ always @(posedge clk or negedge rst)
+-	if(!rst)	state <= #1 IDLE;
+-	else		state <= #1 next_state;
++	if(!rst)	begin state <= #1 IDLE; paused <= #1 1'b0; end
++	else		begin state <= #1 next_state; paused <= #1 (next_state == PAUSE); end
+ 
+ always @(state or pause_req or dma_abort_r or de_start or rd_ack or wr_ack or
+ 	done or ptr_valid or use_ed or mast0_drdy or mast0_drdy_r or csr or nd)
+@@ -483,7 +491,6 @@
+ 	ptr_adr_low = 2'h0;
+ 	ptr_set = 1'b0;
+ 	ld_desc_sel = 1'b0;
+-	paused = 1'b0;
+ 
+ 	case(state)		// synopsys parallel_case full_case
+ 
+@@ -500,7 +507,6 @@
+ 
+ 	   PAUSE:
+ 	     begin
+-		paused = 1'b1;
+ 		if(!pause_req)		next_state = IDLE;
+ 	     end
+ 
