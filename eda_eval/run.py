@@ -25,7 +25,7 @@ from common.config import (
     RunConfig,
 )
 from common.targets import resolve_target
-from eda_eval.cache import EDA_CACHE, link, lookup, publish
+from eda_eval.cache import EDA_CACHE, EXIT_CODE_FILE, link, lookup, publish
 
 SDC_TEMPLATE = EDA_EVAL / "templates" / "constraint.sdc.template"
 MAKEFILE_TEMPLATE = EDA_EVAL / "templates" / "Makefile.template"
@@ -140,6 +140,7 @@ def run_job(run: RunConfig) -> int:
             stderr=subprocess.STDOUT,
         ).returncode
     prune(work_run)
+    (work_dir / EXIT_CODE_FILE).write_text(f"{rc}\n")
     final = publish(work_dir, run)
     link(run.output_dir, final)
     return rc

@@ -4,15 +4,19 @@ from common.config import StudyConfig, TargetConfig
 from common.designs import (
     aes_reference,
     bitonic_sorter_reference,
+    cordic_reference,
     double_fpu_reference,
     e203_reference,
+    fir_reference,
     jpeg_encoder_reference,
+    modexp_reference,
     reed_solomon_reference,
     sha512_reference,
     systolic_tpu_reference,
     uberddr3_reference,
     verilog_axi_reference,
     viterbi_reference,
+    wb_conmax_reference,
     wb_dma_reference,
 )
 
@@ -93,6 +97,32 @@ uberddr3_target = TargetConfig(
     cfg=StudyConfig(),
 )
 
+fir_target = TargetConfig(
+    design=fir_reference,
+    period_ns=1.2153,
+    cfg=StudyConfig(),
+)
+
+cordic_target = TargetConfig(
+    design=cordic_reference,
+    period_ns=0.5745,
+    cfg=StudyConfig(),
+)
+
+# Calibrator backed off utilization from the 60 default on GRT-0116
+wb_conmax_target = TargetConfig(
+    design=wb_conmax_reference,
+    period_ns=0.9592,
+    target_utilization=40,
+    cfg=StudyConfig(),
+)
+
+modexp_target = TargetConfig(
+    design=modexp_reference,
+    period_ns=0.6230,
+    cfg=StudyConfig(),
+)
+
 
 # All calibrated RTL implementation targets
 all_targets = [
@@ -108,6 +138,10 @@ all_targets = [
     viterbi_target,
     e203_target,
     uberddr3_target,
+    fir_target,
+    cordic_target,
+    wb_conmax_target,
+    modexp_target,
 ]
 
 
