@@ -56,8 +56,10 @@ from components.claude_env import SANDBOX_RTL_ROOT, ClaudeEnv, build_diff_from_e
 from components.container import TIMEOUT_RC, current_container
 from components.mcp_servers import (
     OUTPUT_LIMIT,
+    PNR_REPORT,
+    SYNTH_REPORT,
+    ReportKind,
     _format_check,
-    _synth_report_df,
     make_server,
     wns_path_from_df,
 )
@@ -86,6 +88,9 @@ class SolverVariant:
     instructions: str
     include_initial_report: bool = False
     edit_rounds: int = 1
+    # Single source of truth for every report this solver shows: the initial
+    # report and each round's feedback both run and label this same flow.
+    report: ReportKind = SYNTH_REPORT
 
 
 def _resolve_model() -> str:
@@ -405,10 +410,11 @@ def _build_feedback(
     diff: str,
     prev_summary: str,
     prev_wns_path: tuple[float, str] | None,
+    report: ReportKind,
 ) -> tuple[str, tuple[float, str] | None]:
     """Format the next round's feedback: the previous round's final message, a
     WNS comparison (previous vs current round start), then the testbench result
-    and post-synth logical-paths report for the current RTL."""
+    and `report`'s logical-paths report for the current RTL."""
     design = synth_target.design
 
     tb_log, tb_rc = evaluate_testbench(design, diff)
@@ -416,15 +422,15 @@ def _build_feedback(
 
     cur_wns_path: tuple[float, str] | None = None
     try:
-        df = _synth_report_df(synth_target, diff)
-        synth_rpt = df.to_string(index=False)
+        df = report.df(synth_target, diff)
+        rpt = df.to_string(index=False)
         cur_wns_path = wns_path_from_df(df)
     except Exception as e:
-        synth_rpt = f"[synth error] {type(e).__name__}: {e}"
-    if len(synth_rpt) > OUTPUT_LIMIT:
-        synth_rpt = (
-            synth_rpt[-OUTPUT_LIMIT:]
-            + f"\n[synth report truncated to last {OUTPUT_LIMIT} chars]"
+        rpt = f"[{report.label} error] {type(e).__name__}: {e}"
+    if len(rpt) > OUTPUT_LIMIT:
+        rpt = (
+            rpt[-OUTPUT_LIMIT:]
+            + f"\n[{report.label} report truncated to last {OUTPUT_LIMIT} chars]"
         )
 
     summary_block = prev_summary.strip() or "[no summary provided]"
@@ -433,9 +439,9 @@ def _build_feedback(
         f"{summary_block}\n\n"
         f"{_format_wns_progress(prev_wns_path, cur_wns_path)}\n\n"
         "Your current RTL was checked against the hidden testbench and "
-        "synthesised through ORFS.\n\n"
+        "re-run through the ORFS flow.\n\n"
         f"```\n{tb_block}\n```\n\n"
-        f"Post-synth logical-paths report:\n```\n{synth_rpt}\n```\n\n"
+        f"{report.label.capitalize()} logical-paths report:\n```\n{rpt}\n```\n\n"
         "Continue optimising the design."
     )
     return message, cur_wns_path
@@ -587,6 +593,7 @@ def claude_code_oauth(
                         cur_diff,
                         prev_summary,
                         prev_wns_path,
+                        variant.report,
                     )
                     prev_wns_path = cur_wns_path
 
@@ -660,14 +667,14 @@ def _make_solver(variant: SolverVariant) -> Solver:
         prompt = task_prompt
         initial_wns_path: tuple[float, str] | None = None
         if variant.include_initial_report:
-            df = await asyncio.to_thread(_synth_report_df, synth_target)
-            report = df.to_string(index=False)
+            df = await asyncio.to_thread(variant.report.df, synth_target, "")
+            report_str = df.to_string(index=False)
             initial_wns_path = wns_path_from_df(df)
             prompt += (
-                "\n\nA post-synth logical-paths report for the unmodified "
-                "design follows. It ranks register-to-register path groups "
-                "by slack and includes the area/power totals.\n\n"
-                f"```\n{report}\n```"
+                f"\n\nA {variant.report.label} logical-paths report for the "
+                "unmodified design follows. It ranks register-to-register path "
+                "groups by slack and includes the area/power totals.\n\n"
+                f"```\n{report_str}\n```"
             )
         prompt += f"\n\n{variant.instructions}"
         state.messages = [ChatMessageUser(content=prompt)]
@@ -762,7 +769,8 @@ def claude_code_single_feedback_solver() -> Solver:
 @solver
 def claude_code_iterative_solver() -> Solver:
     """Iterative mode with a fixed number of feedback rounds. After each round the
-    testbench and synth are run against the current RTL and results are fed back."""
+    testbench and full P&R flow are run against the current RTL and results are
+    fed back."""
 
     instructions = (
         "# IMPORTANT INSTRUCTIONS\n"
@@ -772,7 +780,8 @@ def claude_code_iterative_solver() -> Solver:
         "benefit to making multiple improvements per round**. As soon as you have made "
         "and verified your edit, submit your response with a brief summary of the "
         "edit. After you submit your response, your current RTL is automatically "
-        "synthesised, and the timing report is passed to you for the next round.\n\n"
+        "placed and routed, and the post-route timing report is passed to you for "
+        "the next round.\n\n"
         "You have an MCP tool to verify your edits as you go:\n"
         "- `run_testbench`: checks your current RTL for functional correctness and "
         "synthesisability. Use it to confirm edits are safe.\n\n"
@@ -786,6 +795,7 @@ def claude_code_iterative_solver() -> Solver:
         instructions=instructions,
         edit_rounds=ITERATIVE_ROUNDS,
         include_initial_report=True,
+        report=PNR_REPORT,
     )
 
     return _make_solver(iterative_config)

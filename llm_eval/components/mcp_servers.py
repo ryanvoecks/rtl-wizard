@@ -11,14 +11,15 @@ instance. The network transport is handled separately by `mcp_connect.py`.
 import asyncio
 import shutil
 import tempfile
-from dataclasses import replace
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import pandas as pd
 from mcp.server.fastmcp import FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 
-from common.config import SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
+from common.config import ALL_FLOW_TARGETS, SYNTH_FLOW_TARGETS, RunConfig, TargetConfig
 from components.claude_env import ClaudeEnv, build_diff_from_env
 from components.scorers import _design_copy, evaluate_synthesis, evaluate_testbench
 from eda_eval.analyse import analyse
@@ -26,6 +27,7 @@ from eda_eval.run import run_job
 
 OUTPUT_LIMIT = 20_000  # Truncate overly long tool outputs
 CHECK_TAIL_LINES = 15  # run_testbench: keep only the last N lines of each check's log
+PNR_THREADS = 4  # ORFS cores for the post-route iterative-feedback report
 
 
 def _format_check(label: str, rc: int, log: str) -> str:
@@ -38,35 +40,45 @@ def _format_check(label: str, rc: int, log: str) -> str:
     return header + log
 
 
-def _synth_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame:
-    """Apply `diff` to a copy of the design root, drive the ORFS synth flow
-    into a fresh tempdir, then run analyse and return its logical-paths
-    report as a DataFrame (ranked worst-slack first). Both the design copy and
-    the ORFS output dir are removed before returning so repeated tool calls
-    don't fill the host disk."""
+def _flow_report_df(
+    synth_target: TargetConfig,
+    diff: str = "",
+    *,
+    flow_targets: tuple[str, ...] = SYNTH_FLOW_TARGETS,
+    num_threads: int = 1,
+    apply_correction: bool = True,
+) -> pd.DataFrame:
+    """Apply `diff` to a copy of the design root, drive the ORFS flow
+    (`flow_targets` on `num_threads` cores) into a fresh tempdir, then run
+    analyse and return its logical-paths report as a DataFrame (ranked
+    worst-slack first). `analyse` keys off the latest produced stage, so a
+    synth-only `flow_targets` yields a post-synth (zero-RC) report and a full
+    P&R one yields a post-route report. Both the design copy and the ORFS
+    output dir are removed before returning so repeated tool calls don't fill
+    the host disk."""
 
     # Create a modified target for the agent's RTL
     with _design_copy(synth_target.design, diff) as patched_root:
         patched_design = replace(synth_target.design, root=patched_root)
         patched_target = replace(synth_target, design=patched_design)
 
-        # Run synthesis into a fresh tempdir. run_job replaces output_dir with
+        # Run the flow into a fresh tempdir. run_job replaces output_dir with
         # a symlink into the content-addressed EDA cache.
         output_dir = Path(tempfile.mkdtemp())
         try:
             run = RunConfig(
                 synth_target=patched_target,
                 output_dir=output_dir,
-                flow_targets=SYNTH_FLOW_TARGETS,
-                num_threads=1,
+                flow_targets=flow_targets,
+                num_threads=num_threads,
             )
             rc = run_job(run)
             if rc != 0:
                 log_path = output_dir / "flow.log"
                 log = log_path.read_text() if log_path.is_file() else ""
-                raise RuntimeError(f"[synth failed] [rc={rc}]\n{log}")
+                raise RuntimeError(f"[flow failed] [rc={rc}]\n{log}")
 
-            return analyse(run, apply_correction=True)
+            return analyse(run, apply_correction=apply_correction)
         finally:
             # Drop just the symlink (or the dir, if run_job failed before
             # linking); never the cache entry it points at.
@@ -74,6 +86,41 @@ def _synth_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame
                 output_dir.unlink()
             else:
                 shutil.rmtree(output_dir, ignore_errors=True)
+
+
+def _synth_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame:
+    """Post-synth (zero-RC) logical-paths report: synth-only flow on one core
+    with the corrector-aware extractor. Used by the `synth_report` MCP tool
+    and the one-shot initial report."""
+    return _flow_report_df(synth_target, diff)
+
+
+def _pnr_report_df(synth_target: TargetConfig, diff: str = "") -> pd.DataFrame:
+    """Post-route logical-paths report: full ORFS P&R on `PNR_THREADS` cores
+    with the raw (uncorrected) post-parasitics slacks. Used by the iterative
+    solver's per-round feedback."""
+    return _flow_report_df(
+        synth_target,
+        diff,
+        flow_targets=ALL_FLOW_TARGETS,
+        num_threads=PNR_THREADS,
+        apply_correction=False,
+    )
+
+
+@dataclass(frozen=True)
+class ReportKind:
+    """A logical-paths report generator paired with the stage label used in
+    prompts. A solver references a single `ReportKind` for both its initial
+    report and its per-round feedback, so the two can never describe or run
+    different ORFS flows."""
+
+    df: Callable[[TargetConfig, str], pd.DataFrame]
+    label: str  # human-readable stage, e.g. "post-synth" / "post-route"
+
+
+SYNTH_REPORT = ReportKind(_synth_report_df, "post-synth")
+PNR_REPORT = ReportKind(_pnr_report_df, "post-route")
 
 
 def _synth_and_report(synth_target: TargetConfig, diff: str = "") -> str:
