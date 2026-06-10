@@ -42,6 +42,8 @@ UTIL_FLOOR = 30  # Below this, the calibrator gives up on IO-bound designs
 
 # Hard fail from OpenROAD's IO placer when die perimeter can't fit IO pins
 PPL_IO_OVERFLOW = re.compile(r"\[ERROR PPL-0024\]")
+# Hard fail from OpenROAD's global router when nets can't be routed
+GRT_CONGESTION = re.compile(r"\[ERROR GRT-0116\]")
 
 
 def _is_io_pin_overflow(output_dir: Path) -> bool:
@@ -50,6 +52,16 @@ def _is_io_pin_overflow(output_dir: Path) -> bool:
     if not log.exists():
         return False
     return bool(PPL_IO_OVERFLOW.search(log.read_text(errors="replace")))
+
+
+def _is_density_failure(output_dir: Path) -> bool:
+    """True if `flow.log` shows a failure that lowering utilization can
+    fix: IO pin overflow (PPL-0024) or global-route congestion (GRT-0116)."""
+    log = output_dir / "flow.log"
+    if not log.exists():
+        return False
+    text = log.read_text(errors="replace")
+    return bool(PPL_IO_OVERFLOW.search(text) or GRT_CONGESTION.search(text))
 
 
 def iter_output_dir(
@@ -186,13 +198,13 @@ def main() -> None:
                     "output_dir": str(anchor_dir),
                 }
             )
-            if _is_io_pin_overflow(anchor_dir):
-                print(f"  FAILED (PPL-0024 IO overflow) at U={util:.0f}")
+            if _is_density_failure(anchor_dir):
+                print(f"  FAILED (density: PPL-0024/GRT-0116) at U={util:.0f}")
                 util = round(util - UTIL_STEP)
                 if util < UTIL_FLOOR:
                     raise RuntimeError(
                         f"calibration gave up: util backed off below "
-                        f"{UTIL_FLOOR} (IO pins still don't fit)"
+                        f"{UTIL_FLOOR} (design still too dense)"
                     ) from exc
                 print(f"  reducing utilization to U={util:.0f}")
             else:
@@ -220,8 +232,9 @@ def main() -> None:
 
     failed_total = 0
     for i in range(PNR_PASSES):
-        # Two backoffs, classified by parsing the flow log: PPL-0024 ->
-        # lower util (and persist it); other failures -> lower pressure.
+        # Two backoffs, classified by parsing the flow log: density
+        # errors (PPL-0024 IO overflow / GRT-0116 congestion) -> lower
+        # util (and persist it); other failures -> lower pressure.
         while True:
             t = t_anchor / pressure
             print(
@@ -254,7 +267,7 @@ def main() -> None:
                 )
                 failed_total += 1
                 print(f"  FAILED: {exc}")
-                if _is_io_pin_overflow(output_dir):
+                if _is_density_failure(output_dir):
                     util = round(util - UTIL_STEP)
                     if util < UTIL_FLOOR:
                         raise RuntimeError(

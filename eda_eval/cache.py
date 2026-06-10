@@ -29,6 +29,7 @@ from common.config import EDA_RUNS, DesignConfig, RunConfig
 
 EDA_CACHE = EDA_RUNS / "_cache"
 RTL_SUFFIXES = {".v", ".sv", ".vh", ".svh"}
+EXIT_CODE_FILE = "exit_code"
 
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _LINE_COMMENT = re.compile(r"//[^\n]*")
@@ -108,11 +109,17 @@ def _locked() -> Iterator[None]:
 
 
 def lookup(run: RunConfig) -> Path | None:
-    """Return the cached directory for a completed `run`, or None on miss."""
+    """Return the cached directory for a successful `run`, or None on
+    miss. Failed runs (non-zero `exit_code` file) are treated as misses
+    so the caller re-runs the flow; legacy entries without the file are
+    accepted on the assumption they predate the marker."""
     target = cache_path(run)
-    if target.is_dir() and (target / RunConfig.FILENAME).is_file():
-        return target
-    return None
+    if not (target.is_dir() and (target / RunConfig.FILENAME).is_file()):
+        return None
+    rc_file = target / EXIT_CODE_FILE
+    if rc_file.is_file() and rc_file.read_text().strip() != "0":
+        return None
+    return target
 
 
 def publish(work_dir: Path, run: RunConfig) -> Path:
