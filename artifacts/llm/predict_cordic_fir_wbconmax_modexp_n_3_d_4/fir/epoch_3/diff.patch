@@ -1,0 +1,118 @@
+--- a/filt_fir.v
++++ b/filt_fir.v
+@@ -24,47 +24,73 @@
+   localparam c_coeff_2       = (gp_symm) ? `DIV(gp_coeff_length, 2) : gp_coeff_length;
+   
+   wire signed [gp_coeff_length*c_mul_oup_width-1:0]     w_mul;
+-  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add; 
++  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add;
+   wire signed [gp_coeff_width-1:0]                      c_coeff [0:c_coeff_2-1];
+-// -------------------------------------------------------------------  
++  wire signed [gp_inp_width-1:0]                        r_i_data;
++// -------------------------------------------------------------------
+   genvar i;
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   `include "filt_coeff.v"
+ // -------------------------------------------------------------------
++  // Input register: moves multiplier off primary-input critical path
++  dff #(
++    .gp_data_width (gp_inp_width)
++  ) FIR_INP_DFF (
++    .i_rst_an (i_rst_an),
++    .i_ena    (i_ena),
++    .i_clk    (i_clk),
++    .i_data   (i_data),
++    .o_data   (r_i_data)
++  );
++
+   generate
+     /******************************/
+-    /* TRANSPOSED-FORM FIR FILTER */  
+-    /******************************/    
++    /* TRANSPOSED-FORM FIR FILTER */
++    /******************************/
+     if (gp_tf_df)
+       begin:g_fir_tf
+         wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_dly_tf;
++        wire signed [gp_coeff_length*c_mul_oup_width-1:0]     r_mul;
+         for (i=0; i<gp_coeff_length; i=i+1)
+ 	  begin: g_fir
+ 	    if (gp_symm)
+ 	      begin: g_fir_symm
+ 	        if (i<c_coeff_2)
+ 	          begin: g_fir_0_n_2
+-                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[i];
++                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = r_i_data * c_coeff[i];
+ 	          end
+                 else
+ 	          begin: g_fir_n_2_n
+-                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[gp_coeff_length-1-i];
++                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = r_i_data * c_coeff[gp_coeff_length-1-i];
+                   end
+ 	      end
+ 	    else
+ 	      begin: g_fir_unsymm
+-	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[i];
++	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = r_i_data * c_coeff[i];
+ 	      end
+-	      
++
++            // Pipeline register after multiplier: breaks multiply+add into two reg-to-reg paths
++            begin: g_fir_mul_pipe
++              dff #(
++                .gp_data_width (c_mul_oup_width)
++              ) FIR_MUL_DFF (
++                .i_rst_an (i_rst_an),
++                .i_ena    (i_ena),
++                .i_clk    (i_clk),
++                .i_data   (w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]),
++                .o_data   (r_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width])
++              );
++            end
++
+ 	    if (i==gp_coeff_length-1)
+ 	      begin: g_fir_add_last
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);  
++                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(r_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
+ 	      end
+             else
+ 	      begin: g_fir_add
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(r_dly_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width]);
++                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(r_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(r_dly_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width]);
+               end
+-	      
++
+ 	    if (i>0)
+               begin: g_fir_dly_tf
+                 dff #(
+@@ -77,7 +103,7 @@
+                   .o_data   (r_dly_tf[i*c_add_oup_width-1 -: c_add_oup_width])
+                 );
+               end
+-	  end//FOR	
++	  end//FOR
+       end//IF_TF
+     /**************************/
+     /* DIRECT-FORM FIR FILTER */  
+@@ -142,9 +168,17 @@
+   endgenerate
+ 
+ generate
+-  if (gp_tf_df)
+-    assign o_data = w_add[c_add_oup_width-1:0];
+-  else
++  if (gp_tf_df) begin: g_out
++    dff #(
++      .gp_data_width (gp_oup_width)
++    ) FIR_OUT_DFF (
++      .i_rst_an (i_rst_an),
++      .i_ena    (i_ena),
++      .i_clk    (i_clk),
++      .i_data   (w_add[gp_oup_width-1:0]),
++      .o_data   (o_data)
++    );
++  end else
+     assign o_data = w_add[gp_coeff_length*c_add_oup_width-1 -: gp_oup_width];
+ endgenerate
+   

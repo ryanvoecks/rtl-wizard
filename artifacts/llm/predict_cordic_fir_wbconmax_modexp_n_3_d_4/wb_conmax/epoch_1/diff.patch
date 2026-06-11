@@ -1,0 +1,175 @@
+--- a/wb_conmax_rf.v
++++ b/wb_conmax_rf.v
+@@ -296,13 +296,13 @@
+ assign e_wb_sel_o  = i_wb_sel_i;
+ assign e_wb_data_o = i_wb_data_i;
+ 
+-assign e_wb_cyc_o  = rf_sel ? 1'b0 : i_wb_cyc_i;
+-assign e_wb_stb_o  = i_wb_stb_i;
++assign e_wb_cyc_o  = rf_ack ? 1'b0 : i_wb_cyc_i;
++assign e_wb_stb_o  = rf_sel ? 1'b0 : i_wb_stb_i;
+ assign e_wb_we_o   = i_wb_we_i;
+ 
+-assign i_wb_data_o = rf_sel ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
+-assign i_wb_ack_o  = rf_sel ? rf_ack  : e_wb_ack_i;
+-assign i_wb_err_o  = rf_sel ? 1'b0    : e_wb_err_i;
+-assign i_wb_rty_o  = rf_sel ? 1'b0    : e_wb_rty_i;
++assign i_wb_data_o = rf_ack ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
++assign i_wb_ack_o  = rf_ack ? 1'b1    : e_wb_ack_i;
++assign i_wb_err_o  = rf_ack ? 1'b0    : e_wb_err_i;
++assign i_wb_rty_o  = rf_ack ? 1'b0    : e_wb_rty_i;
+ 
+ endmodule
+--- a/wb_conmax_slave_if.v
++++ b/wb_conmax_slave_if.v
+@@ -239,6 +239,7 @@
+ wire	[2:0]		mast_sel_simple;
+ wire	[2:0]		mast_sel_pe;
+ wire	[2:0]		mast_sel;
++reg	[2:0]		mast_sel_r;
+ 
+ reg			next;
+ reg			m0_cyc_r, m1_cyc_r, m2_cyc_r, m3_cyc_r;
+@@ -248,6 +249,9 @@
+ //
+ // Select logic
+ //
++
++always @(posedge clk_i)
++	mast_sel_r <= #1 mast_sel;
+ 
+ always @(posedge clk_i)
+ 	next <= #1 ~wb_cyc_o;
+@@ -291,9 +295,9 @@
+ // Address & Data Pass
+ //
+ 
+-always @(mast_sel or m0_addr_i or m1_addr_i or m2_addr_i or m3_addr_i
++always @(mast_sel_r or m0_addr_i or m1_addr_i or m2_addr_i or m3_addr_i
+ 	or m4_addr_i or m5_addr_i or m6_addr_i or m7_addr_i)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_addr_o = m0_addr_i;
+ 	   3'd1: wb_addr_o = m1_addr_i;
+ 	   3'd2: wb_addr_o = m2_addr_i;
+@@ -305,9 +309,9 @@
+ 	   default: wb_addr_o = {aw{1'bx}};
+ 	endcase
+ 
+-always @(mast_sel or m0_sel_i or m1_sel_i or m2_sel_i or m3_sel_i
++always @(mast_sel_r or m0_sel_i or m1_sel_i or m2_sel_i or m3_sel_i
+ 	or m4_sel_i or m5_sel_i or m6_sel_i or m7_sel_i)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_sel_o = m0_sel_i;
+ 	   3'd1: wb_sel_o = m1_sel_i;
+ 	   3'd2: wb_sel_o = m2_sel_i;
+@@ -319,9 +323,9 @@
+ 	   default: wb_sel_o = {sw{1'bx}};
+ 	endcase
+ 
+-always @(mast_sel or m0_data_i or m1_data_i or m2_data_i or m3_data_i
++always @(mast_sel_r or m0_data_i or m1_data_i or m2_data_i or m3_data_i
+ 	or m4_data_i or m5_data_i or m6_data_i or m7_data_i)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_data_o = m0_data_i;
+ 	   3'd1: wb_data_o = m1_data_i;
+ 	   3'd2: wb_data_o = m2_data_i;
+@@ -347,9 +351,9 @@
+ // Control Signal Pass
+ //
+ 
+-always @(mast_sel or m0_we_i or m1_we_i or m2_we_i or m3_we_i
++always @(mast_sel_r or m0_we_i or m1_we_i or m2_we_i or m3_we_i
+ 	or m4_we_i or m5_we_i or m6_we_i or m7_we_i)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_we_o = m0_we_i;
+ 	   3'd1: wb_we_o = m1_we_i;
+ 	   3'd2: wb_we_o = m2_we_i;
+@@ -385,11 +389,11 @@
+ always @(posedge clk_i)
+ 	m7_cyc_r <= #1 m7_cyc_i;
+ 
+-always @(mast_sel or m0_cyc_i or m1_cyc_i or m2_cyc_i or m3_cyc_i
++always @(mast_sel_r or m0_cyc_i or m1_cyc_i or m2_cyc_i or m3_cyc_i
+ 	or m4_cyc_i or m5_cyc_i or m6_cyc_i or m7_cyc_i
+ 	or m0_cyc_r or m1_cyc_r or m2_cyc_r or m3_cyc_r
+ 	or m4_cyc_r or m5_cyc_r or m6_cyc_r or m7_cyc_r)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_cyc_o = m0_cyc_i & m0_cyc_r;
+ 	   3'd1: wb_cyc_o = m1_cyc_i & m1_cyc_r;
+ 	   3'd2: wb_cyc_o = m2_cyc_i & m2_cyc_r;
+@@ -401,9 +405,9 @@
+ 	   default: wb_cyc_o = 1'b0;
+ 	endcase
+ 
+-always @(mast_sel or m0_stb_i or m1_stb_i or m2_stb_i or m3_stb_i
++always @(mast_sel_r or m0_stb_i or m1_stb_i or m2_stb_i or m3_stb_i
+ 	or m4_stb_i or m5_stb_i or m6_stb_i or m7_stb_i)
+-	case(mast_sel)	// synopsys parallel_case
++	case(mast_sel_r)	// synopsys parallel_case
+ 	   3'd0: wb_stb_o = m0_stb_i;
+ 	   3'd1: wb_stb_o = m1_stb_i;
+ 	   3'd2: wb_stb_o = m2_stb_i;
+@@ -415,32 +419,32 @@
+ 	   default: wb_stb_o = 1'b0;
+ 	endcase
+ 
+-assign m0_ack_o = (mast_sel==3'd0) & wb_ack_i;
+-assign m1_ack_o = (mast_sel==3'd1) & wb_ack_i;
+-assign m2_ack_o = (mast_sel==3'd2) & wb_ack_i;
+-assign m3_ack_o = (mast_sel==3'd3) & wb_ack_i;
+-assign m4_ack_o = (mast_sel==3'd4) & wb_ack_i;
+-assign m5_ack_o = (mast_sel==3'd5) & wb_ack_i;
+-assign m6_ack_o = (mast_sel==3'd6) & wb_ack_i;
+-assign m7_ack_o = (mast_sel==3'd7) & wb_ack_i;
+-
+-assign m0_err_o = (mast_sel==3'd0) & wb_err_i;
+-assign m1_err_o = (mast_sel==3'd1) & wb_err_i;
+-assign m2_err_o = (mast_sel==3'd2) & wb_err_i;
+-assign m3_err_o = (mast_sel==3'd3) & wb_err_i;
+-assign m4_err_o = (mast_sel==3'd4) & wb_err_i;
+-assign m5_err_o = (mast_sel==3'd5) & wb_err_i;
+-assign m6_err_o = (mast_sel==3'd6) & wb_err_i;
+-assign m7_err_o = (mast_sel==3'd7) & wb_err_i;
+-
+-assign m0_rty_o = (mast_sel==3'd0) & wb_rty_i;
+-assign m1_rty_o = (mast_sel==3'd1) & wb_rty_i;
+-assign m2_rty_o = (mast_sel==3'd2) & wb_rty_i;
+-assign m3_rty_o = (mast_sel==3'd3) & wb_rty_i;
+-assign m4_rty_o = (mast_sel==3'd4) & wb_rty_i;
+-assign m5_rty_o = (mast_sel==3'd5) & wb_rty_i;
+-assign m6_rty_o = (mast_sel==3'd6) & wb_rty_i;
+-assign m7_rty_o = (mast_sel==3'd7) & wb_rty_i;
++assign m0_ack_o = (mast_sel_r==3'd0) & wb_ack_i;
++assign m1_ack_o = (mast_sel_r==3'd1) & wb_ack_i;
++assign m2_ack_o = (mast_sel_r==3'd2) & wb_ack_i;
++assign m3_ack_o = (mast_sel_r==3'd3) & wb_ack_i;
++assign m4_ack_o = (mast_sel_r==3'd4) & wb_ack_i;
++assign m5_ack_o = (mast_sel_r==3'd5) & wb_ack_i;
++assign m6_ack_o = (mast_sel_r==3'd6) & wb_ack_i;
++assign m7_ack_o = (mast_sel_r==3'd7) & wb_ack_i;
++
++assign m0_err_o = (mast_sel_r==3'd0) & wb_err_i;
++assign m1_err_o = (mast_sel_r==3'd1) & wb_err_i;
++assign m2_err_o = (mast_sel_r==3'd2) & wb_err_i;
++assign m3_err_o = (mast_sel_r==3'd3) & wb_err_i;
++assign m4_err_o = (mast_sel_r==3'd4) & wb_err_i;
++assign m5_err_o = (mast_sel_r==3'd5) & wb_err_i;
++assign m6_err_o = (mast_sel_r==3'd6) & wb_err_i;
++assign m7_err_o = (mast_sel_r==3'd7) & wb_err_i;
++
++assign m0_rty_o = (mast_sel_r==3'd0) & wb_rty_i;
++assign m1_rty_o = (mast_sel_r==3'd1) & wb_rty_i;
++assign m2_rty_o = (mast_sel_r==3'd2) & wb_rty_i;
++assign m3_rty_o = (mast_sel_r==3'd3) & wb_rty_i;
++assign m4_rty_o = (mast_sel_r==3'd4) & wb_rty_i;
++assign m5_rty_o = (mast_sel_r==3'd5) & wb_rty_i;
++assign m6_rty_o = (mast_sel_r==3'd6) & wb_rty_i;
++assign m7_rty_o = (mast_sel_r==3'd7) & wb_rty_i;
+ 
+ endmodule
+ 

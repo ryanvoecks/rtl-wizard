@@ -1,0 +1,25 @@
+--- a/cordic_p2r.v
++++ b/cordic_p2r.v
+@@ -50,7 +50,7 @@
+ 			OW=18,	// The number of output bits to produce
+ 			NSTAGES=21,
+ 			// XTRA= 3,// Extra bits for internal precision
+-			WW=21,	// Our working bit-width
++			WW=19,	// Our working bit-width
+ 			PW=25	// Bits in our phase variables
+ 		// }}}
+ 	) (
+--- a/cordic_r2p.v
++++ b/cordic_r2p.v
+@@ -49,9 +49,9 @@
+ 		// {{{
+ 		localparam	IW=18,	// The number of bits in our inputs
+ 			OW=18,// The number of output bits to produce
+-			NSTAGES=23,
++			NSTAGES=20,
+ 			// XTRA= 4,// Extra bits for internal precision
+-			WW=26,	// Our working bit-width
++			WW=25,	// Our working bit-width
+ 			PW=26	// Bits in our phase variables
+ 		// }}}
+ 	) (

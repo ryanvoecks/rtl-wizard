@@ -1,0 +1,203 @@
+--- a/modexp_core.v
++++ b/modexp_core.v
+@@ -93,11 +93,11 @@
+   //----------------------------------------------------------------
+   // Internal constant and parameter definitions.
+   //----------------------------------------------------------------
+-  localparam MONTPROD_SELECT_ONE_NR = 3'h0;
+-  localparam MONTPROD_SELECT_X_NR   = 3'h1;
+-  localparam MONTPROD_SELECT_Z_P    = 3'h2;
+-  localparam MONTPROD_SELECT_P_P    = 3'h3;
+-  localparam MONTPROD_SELECT_Z_ONE  = 3'h4;
++  localparam MONTPROD_SELECT_ONE_NR = 5'b00001;
++  localparam MONTPROD_SELECT_X_NR   = 5'b00010;
++  localparam MONTPROD_SELECT_Z_P    = 5'b00100;
++  localparam MONTPROD_SELECT_P_P    = 5'b01000;
++  localparam MONTPROD_SELECT_Z_ONE  = 5'b10000;
+ 
+   localparam MONTPROD_DEST_Z        = 2'b00;
+   localparam MONTPROD_DEST_P        = 2'b01;
+@@ -126,8 +126,8 @@
+   reg          ready_new;
+   reg          ready_we;
+ 
+-  reg [2 : 0]  montprod_select_reg;
+-  reg [2 : 0]  montprod_select_new;
++  reg [4 : 0]  montprod_select_reg;
++  reg [4 : 0]  montprod_select_new;
+   reg          montprod_select_we;
+   reg [1 : 0]  montprod_dest_reg;
+   reg [1 : 0]  montprod_dest_new;
+@@ -147,6 +147,8 @@
+   reg          loop_counter_we;
+ 
+   reg [07 : 0] E_word_index;
++  reg [07 : 0] E_word_reg;
++  reg [07 : 0] E_word_new;
+   reg [04 : 0] E_bit_index;
+   reg          last_iteration;
+ 
+@@ -385,6 +387,7 @@
+           one_reg             <= 32'h0;
+           b_one_reg           <= 32'h0;
+           loop_counter_reg    <= 13'b0;
++          E_word_reg          <= 8'h0;
+           ei_reg              <= 1'b0;
+           residue_valid_reg   <= 1'b0;
+           exponation_mode_reg <= EXPONATION_MODE_SECRET_SECURE;
+@@ -410,6 +413,8 @@
+           if (loop_counter_we)
+             loop_counter_reg <= loop_counter_new;
+ 
++          E_word_reg <= E_word_new;
++
+           if (ei_we)
+             ei_reg <= ei_new;
+ 
+@@ -666,13 +671,30 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : exponent_process
+-      // Accessing new instead of reg - pick up update at
+-      // CTRL_ITERATE_NEW to remove a pipeline stall.
+-      E_word_index  = length_m1 - loop_counter_new[ 12 : 5 ];
+-
+-      E_bit_index   = loop_counter_reg[ 04 : 0 ];
+-
+-      exponent_mem_int_rd_addr = E_word_index;
++      E_bit_index  = loop_counter_reg[ 04 : 0 ];
++
++      // Compute E_word_new: tracks which exponent word to prefetch next.
++      // In CALCULATE_P0: load length_m1 (MSW).
++      // In ITERATE_END when lower 5 bits overflow: step to next word.
++      E_word_new = E_word_reg;
++      case (modexp_ctrl_reg)
++        CTRL_CALCULATE_P0:
++          E_word_new = length_m1;
++
++        CTRL_ITERATE_END:
++          if (loop_counter_reg[4 : 0] == 5'b11111)
++            E_word_new = E_word_reg - 1'b1;
++
++        default: ;
++      endcase
++
++      // Use E_word_new as the read address so the prefetch is correct in
++      // the same cycle (CTRL_ITERATE_END) that the word index changes.
++      // E_word_new is either E_word_reg unchanged (simple reg→addr path)
++      // or E_word_reg-1 (8-bit decrement, much faster than original
++      // 13-bit add + 8-bit subtract from loop_counter_new).
++      E_word_index = E_word_new;
++      exponent_mem_int_rd_addr = E_word_new;
+ 
+       ei_new = exponent_mem_int_rd_data[ E_bit_index ];
+ 
+--- a/montprod.v
++++ b/montprod.v
+@@ -65,20 +65,20 @@
+   //----------------------------------------------------------------
+   localparam DEBUG = 0;
+ 
+-  localparam CTRL_IDLE           = 4'h0;
+-  localparam CTRL_INIT_S         = 4'h1;
+-  localparam CTRL_LOOP_INIT      = 4'h2;
+-  localparam CTRL_LOOP_ITER      = 4'h3;
+-  localparam CTRL_LOOP_BQ        = 4'h4;
+-  localparam CTRL_L_CALC_SM      = 4'h5;
+-  localparam CTRL_L_STALLPIPE_SM = 4'h6;
+-  localparam CTRL_L_CALC_SA      = 4'h7;
+-  localparam CTRL_L_STALLPIPE_SA = 4'h8;
+-  localparam CTRL_L_CALC_SDIV2   = 4'h9;
+-  localparam CTRL_L_STALLPIPE_D2 = 4'hA;
+-  localparam CTRL_L_STALLPIPE_ES = 4'hB;
+-  localparam CTRL_EMIT_S         = 4'hC;
+-  localparam CTRL_DONE           = 4'hD;
++  localparam CTRL_IDLE           = 14'b00_0000_0000_0001;
++  localparam CTRL_INIT_S         = 14'b00_0000_0000_0010;
++  localparam CTRL_LOOP_INIT      = 14'b00_0000_0000_0100;
++  localparam CTRL_LOOP_ITER      = 14'b00_0000_0000_1000;
++  localparam CTRL_LOOP_BQ        = 14'b00_0000_0001_0000;
++  localparam CTRL_L_CALC_SM      = 14'b00_0000_0010_0000;
++  localparam CTRL_L_STALLPIPE_SM = 14'b00_0000_0100_0000;
++  localparam CTRL_L_CALC_SA      = 14'b00_0000_1000_0000;
++  localparam CTRL_L_STALLPIPE_SA = 14'b00_0001_0000_0000;
++  localparam CTRL_L_CALC_SDIV2   = 14'b00_0010_0000_0000;
++  localparam CTRL_L_STALLPIPE_D2 = 14'b00_0100_0000_0000;
++  localparam CTRL_L_STALLPIPE_ES = 14'b00_1000_0000_0000;
++  localparam CTRL_EMIT_S         = 14'b01_0000_0000_0000;
++  localparam CTRL_DONE           = 14'b10_0000_0000_0000;
+ 
+   localparam SMUX_0            = 2'h0;
+   localparam SMUX_ADD_SM       = 2'h1;
+@@ -100,8 +100,8 @@
+   reg          ready_new;
+   reg          ready_we;
+ 
+-  reg [3 : 0]  montprod_ctrl_reg;
+-  reg [3 : 0]  montprod_ctrl_new;
++  reg [13 : 0] montprod_ctrl_reg;
++  reg [13 : 0] montprod_ctrl_new;
+   reg          montprod_ctrl_we;
+ 
+   reg  [1 : 0] s_mux_new;
+@@ -114,6 +114,10 @@
+   reg [07 : 0] s_mem_wr_addr;
+   wire [31 : 0] s_mem_read_data;
+ 
++  reg [31 : 0] s_mem_data_pipe;
++  reg          s_mem_we_pipe2;
++  reg [07 : 0] s_mem_wr_addr_pipe2;
++
+   reg          q; //q = (s - b * A) & 1
+   reg          q_reg;
+   reg          b; //b: bit of B
+@@ -178,9 +182,9 @@
+                      .clk(clk),
+                      .read_addr(s_mem_addr),
+                      .read_data(s_mem_read_data),
+-                     .wr(s_mem_we),
+-                     .write_addr(s_mem_wr_addr),
+-                     .write_data(s_mem_new)
++                     .wr(s_mem_we_pipe2),
++                     .write_addr(s_mem_wr_addr_pipe2),
++                     .write_data(s_mem_data_pipe)
+                     );
+ 
+ 
+@@ -248,6 +252,9 @@
+           s_mux_reg         <= SMUX_0;
+           s_mem_we          <= 1'b0;
+           s_mem_wr_addr     <= 8'h0;
++          s_mem_data_pipe     <= 32'h0;
++          s_mem_we_pipe2      <= 1'b0;
++          s_mem_wr_addr_pipe2 <= 8'h0;
+           B_bit_index_reg   <= 5'h0;
+         end
+       else
+@@ -261,8 +268,11 @@
+              end
+ 
+           s_mem_wr_addr <= s_mem_addr;
+-
+           s_mem_we <= s_mem_we_new;
++
++          s_mem_data_pipe     <= s_mem_new;
++          s_mem_we_pipe2      <= s_mem_we;
++          s_mem_wr_addr_pipe2 <= s_mem_wr_addr;
+ 
+           word_index <= word_index_new;
+           word_index_prev <= word_index;
+--- a/blockmem1r1w.v
++++ b/blockmem1r1w.v
+@@ -60,7 +60,10 @@
+       if (wr)
+         mem[write_addr] <= write_data;
+ 
+-      tmp_read_data <= mem[read_addr];
++      if (wr && (write_addr == read_addr))
++        tmp_read_data <= write_data;
++      else
++        tmp_read_data <= mem[read_addr];
+     end
+ 
+ endmodule // blockmem1r1w

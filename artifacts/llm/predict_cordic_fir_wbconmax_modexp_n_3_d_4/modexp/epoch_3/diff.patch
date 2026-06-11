@@ -1,0 +1,589 @@
+--- a/modexp.v
++++ b/modexp.v
+@@ -260,136 +260,126 @@
+ 
+       if (cs)
+         begin
+-          case (address[11 : 8])
+-            GENERAL_PREFIX:
+-              begin
+-                if (we)
+-                  begin
+-                    case (address[7 : 0])
+-                      ADDR_CTRL:
+-                        begin
+-                          start_new = write_data[0];
+-                        end
+-
+-                      ADDR_MODULUS_LENGTH:
+-                        begin
+-                          modulus_length_we = 1'b1;
+-                        end
+-
+-                      ADDR_EXPONENT_LENGTH:
+-                        begin
+-                          exponent_length_we = 1'b1;
+-                        end
+-
+-                      ADDR_MODULUS_PTR_RST:
+-                        begin
+-                          modulus_mem_api_rst = 1'b1;
+-                        end
+-
+-                      ADDR_MODULUS_DATA:
+-                        begin
+-                          modulus_mem_api_cs = 1'b1;
+-                          modulus_mem_api_wr = 1'b1;
+-                        end
+-
+-                      ADDR_EXPONENT_PTR_RST:
+-                        begin
+-                          exponent_mem_api_rst = 1'b1;
+-                        end
+-
+-                      ADDR_EXPONENT_DATA:
+-                        begin
+-                          exponent_mem_api_cs = 1'b1;
+-                          exponent_mem_api_wr = 1'b1;
+-                        end
+-
+-                      ADDR_MESSAGE_PTR_RST:
+-                        begin
+-                          message_mem_api_rst = 1'b1;
+-                        end
+-
+-                      ADDR_MESSAGE_DATA:
+-                        begin
+-                          message_mem_api_cs = 1'b1;
+-                          message_mem_api_wr = 1'b1;
+-                        end
+-
+-                      ADDR_RESULT_PTR_RST:
+-                        begin
+-                          result_mem_api_rst = 1'b1;
+-                        end
+-
+-                      default:
+-                        begin
+-                        end
+-                    endcase // case (address[7 : 0])
+-                  end
+-                else
+-                  begin
+-                    case (address[7 : 0])
+-                      ADDR_NAME0:
+-                        tmp_read_data = CORE_NAME0;
+-
+-                      ADDR_NAME1:
+-                        tmp_read_data = CORE_NAME1;
+-
+-                      ADDR_VERSION:
+-                        tmp_read_data = CORE_VERSION;
+-
+-                      ADDR_CTRL:
+-                        tmp_read_data = {31'h00000000, start_reg};
+-
+-                      ADDR_STATUS:
+-                        tmp_read_data = {31'h00000000, ready};
+-
+-                      ADDR_CYCLES_HIGH:
+-                        tmp_read_data = cycles[63 : 32];
+-
+-                      ADDR_CYCLES_LOW:
+-                        tmp_read_data = cycles[31 : 0];
+-
+-                      ADDR_MODULUS_LENGTH:
+-                        tmp_read_data = {24'h000000, modulus_length_reg};
+-
+-                      ADDR_EXPONENT_LENGTH:
+-                        tmp_read_data = {24'h000000, exponent_length_reg};
+-
+-                      ADDR_MODULUS_DATA:
+-                        begin
+-                          modulus_mem_api_cs = 1'b1;
+-                          tmp_read_data      = modulus_mem_api_read_data;
+-                        end
+-
+-                      ADDR_EXPONENT_DATA:
+-                        begin
+-                          exponent_mem_api_cs = 1'b1;
+-                          tmp_read_data       = exponent_mem_api_read_data;
+-                        end
+-
+-                      ADDR_MESSAGE_DATA:
+-                        begin
+-                          message_mem_api_cs = 1'b1;
+-                          tmp_read_data      = message_mem_api_read_data;
+-                        end
+-
+-                      ADDR_RESULT_DATA:
+-                        begin
+-                          result_mem_api_cs = 1'b1;
+-                          tmp_read_data     = result_mem_api_read_data;
+-                        end
+-
+-                      default:
+-                        begin
+-                        end
+-                    endcase // case (address[7 : 0])
+-                  end
+-              end
+-
+-            default:
+-              begin
+-
+-              end
+-          endcase // case (address[11 : 8])
++          if (we)
++            begin
++              case (address[7 : 0])
++                ADDR_CTRL:
++                  begin
++                    start_new = write_data[0];
++                  end
++
++                ADDR_MODULUS_LENGTH:
++                  begin
++                    modulus_length_we = 1'b1;
++                  end
++
++                ADDR_EXPONENT_LENGTH:
++                  begin
++                    exponent_length_we = 1'b1;
++                  end
++
++                ADDR_MODULUS_PTR_RST:
++                  begin
++                    modulus_mem_api_rst = 1'b1;
++                  end
++
++                ADDR_MODULUS_DATA:
++                  begin
++                    modulus_mem_api_cs = 1'b1;
++                    modulus_mem_api_wr = 1'b1;
++                  end
++
++                ADDR_EXPONENT_PTR_RST:
++                  begin
++                    exponent_mem_api_rst = 1'b1;
++                  end
++
++                ADDR_EXPONENT_DATA:
++                  begin
++                    exponent_mem_api_cs = 1'b1;
++                    exponent_mem_api_wr = 1'b1;
++                  end
++
++                ADDR_MESSAGE_PTR_RST:
++                  begin
++                    message_mem_api_rst = 1'b1;
++                  end
++
++                ADDR_MESSAGE_DATA:
++                  begin
++                    message_mem_api_cs = 1'b1;
++                    message_mem_api_wr = 1'b1;
++                  end
++
++                ADDR_RESULT_PTR_RST:
++                  begin
++                    result_mem_api_rst = 1'b1;
++                  end
++
++                default:
++                  begin
++                  end
++              endcase // case (address[7 : 0])
++            end
++          else
++            begin
++              case (address[7 : 0])
++                ADDR_NAME0:
++                  tmp_read_data = CORE_NAME0;
++
++                ADDR_NAME1:
++                  tmp_read_data = CORE_NAME1;
++
++                ADDR_VERSION:
++                  tmp_read_data = CORE_VERSION;
++
++                ADDR_CTRL:
++                  tmp_read_data = {31'h00000000, start_reg};
++
++                ADDR_STATUS:
++                  tmp_read_data = {31'h00000000, ready};
++
++                ADDR_CYCLES_HIGH:
++                  tmp_read_data = cycles[63 : 32];
++
++                ADDR_CYCLES_LOW:
++                  tmp_read_data = cycles[31 : 0];
++
++                ADDR_MODULUS_LENGTH:
++                  tmp_read_data = {24'h000000, modulus_length_reg};
++
++                ADDR_EXPONENT_LENGTH:
++                  tmp_read_data = {24'h000000, exponent_length_reg};
++
++                ADDR_MODULUS_DATA:
++                  begin
++                    modulus_mem_api_cs = 1'b1;
++                    tmp_read_data      = modulus_mem_api_read_data;
++                  end
++
++                ADDR_EXPONENT_DATA:
++                  begin
++                    exponent_mem_api_cs = 1'b1;
++                    tmp_read_data       = exponent_mem_api_read_data;
++                  end
++
++                ADDR_MESSAGE_DATA:
++                  begin
++                    message_mem_api_cs = 1'b1;
++                    tmp_read_data      = message_mem_api_read_data;
++                  end
++
++                ADDR_RESULT_DATA:
++                  begin
++                    result_mem_api_cs = 1'b1;
++                    tmp_read_data     = result_mem_api_read_data;
++                  end
++
++                default:
++                  begin
++                  end
++              endcase // case (address[7 : 0])
++            end
+         end // if (cs)
+     end // api
+ 
+--- a/modexp_core.v
++++ b/modexp_core.v
+@@ -113,6 +113,7 @@
+   localparam CTRL_ITERATE_END       = 4'h7;
+   localparam CTRL_CALCULATE_ZN      = 4'h8;
+   localparam CTRL_DONE              = 4'h9;
++  localparam CTRL_ITERATE_PREFETCH  = 4'hA;
+ 
+   //for rsa, c=M^65537 etc, there is no need to slow down to hide the exponent
+   localparam EXPONATION_MODE_SECRET_SECURE = 1'b0;
+@@ -129,6 +130,7 @@
+   reg [2 : 0]  montprod_select_reg;
+   reg [2 : 0]  montprod_select_new;
+   reg          montprod_select_we;
++  reg [4 : 0]  montprod_select_oh_reg;
+   reg [1 : 0]  montprod_dest_reg;
+   reg [1 : 0]  montprod_dest_new;
+   reg          montprod_dest_we;
+@@ -378,9 +380,10 @@
+     begin
+       if (!reset_n)
+         begin
+-          ready_reg           <= 1'b1;
+-          montprod_select_reg <= MONTPROD_SELECT_ONE_NR;
+-          montprod_dest_reg   <= MONTPROD_DEST_NOWHERE;
++          ready_reg              <= 1'b1;
++          montprod_select_reg    <= MONTPROD_SELECT_ONE_NR;
++          montprod_select_oh_reg <= 5'b00001;
++          montprod_dest_reg      <= MONTPROD_DEST_NOWHERE;
+           modexp_ctrl_reg     <= CTRL_IDLE;
+           one_reg             <= 32'h0;
+           b_one_reg           <= 32'h0;
+@@ -404,6 +407,8 @@
+           if (montprod_select_we)
+             montprod_select_reg <= montprod_select_new;
+ 
++          montprod_select_oh_reg <= (5'b00001 << montprod_select_reg);
++
+           if (montprod_dest_we)
+             montprod_dest_reg <= montprod_dest_new;
+ 
+@@ -466,7 +471,9 @@
+           cycle_ctr_low_new = cycle_ctr_low_reg + 1'b1;
+           cycle_ctr_low_we  = 1'b1;
+ 
+-          if (cycle_ctr_low_new == 32'h00000000)
++          // Use all-ones detect (AND-reduce) instead of checking low_new==0,
++          // removing the full 32-bit adder from the high-counter update path.
++          if (&cycle_ctr_low_reg)
+             begin
+               cycle_ctr_high_new  = cycle_ctr_high_reg + 1'b1;
+               cycle_ctr_high_we   = 1'b1;
+@@ -553,32 +560,33 @@
+       p_mem_rd1_addr                 = montprod_opb_addr;
+ 
+       montprod_opm_data = modulus_mem_int_rd_data;
+-      case (montprod_select_reg)
+-        MONTPROD_SELECT_ONE_NR:
++      // Use pre-decoded one-hot register so binary→mux decode is off critical path
++      case (1'b1)
++        montprod_select_oh_reg[0]: // ONE_NR
+           begin
+             montprod_opa_data  = one_reg;
+             montprod_opb_data  = residue_mem_montprod_read_data;
+           end
+ 
+-        MONTPROD_SELECT_X_NR:
++        montprod_select_oh_reg[1]: // X_NR
+           begin
+             montprod_opa_data  = message_mem_int_rd_data;
+             montprod_opb_data  = residue_mem_montprod_read_data;
+           end
+ 
+-        MONTPROD_SELECT_Z_P:
++        montprod_select_oh_reg[2]: // Z_P
+           begin
+             montprod_opa_data  = result_mem_int_rd_data;
+             montprod_opb_data  = p_mem_rd1_data;
+           end
+ 
+-        MONTPROD_SELECT_P_P:
++        montprod_select_oh_reg[3]: // P_P
+           begin
+             montprod_opa_data  = p_mem_rd0_data;
+             montprod_opb_data  = p_mem_rd1_data;
+           end
+ 
+-        MONTPROD_SELECT_Z_ONE:
++        montprod_select_oh_reg[4]: // Z_ONE
+           begin
+             montprod_opa_data  = result_mem_int_rd_data;
+             montprod_opb_data  = b_one_reg;
+@@ -589,7 +597,7 @@
+             montprod_opa_data  = 32'h00000000;
+             montprod_opb_data  = 32'h00000000;
+           end
+-      endcase // case (montprod_selcect_reg)
++      endcase // case (montprod_select_oh_reg)
+     end
+ 
+ 
+@@ -666,9 +674,10 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : exponent_process
+-      // Accessing new instead of reg - pick up update at
+-      // CTRL_ITERATE_NEW to remove a pipeline stall.
+-      E_word_index  = length_m1 - loop_counter_new[ 12 : 5 ];
++      // Use loop_counter_reg directly (CTRL_ITERATE_PREFETCH provides the
++      // extra stall cycle so the memory address is set one cycle before
++      // CTRL_ITERATE needs the data, without the +1 adder on the path).
++      E_word_index  = length_m1 - loop_counter_reg[ 12 : 5 ];
+ 
+       E_bit_index   = loop_counter_reg[ 04 : 0 ];
+ 
+@@ -769,7 +778,7 @@
+           begin
+             if (montprod_ready == 1'b1)
+               begin
+-                modexp_ctrl_new = CTRL_ITERATE;
++                modexp_ctrl_new = CTRL_ITERATE_PREFETCH;
+                 modexp_ctrl_we  = 1;
+               end
+           end
+@@ -816,7 +825,7 @@
+           begin
+             if (!last_iteration)
+               begin
+-                modexp_ctrl_new = CTRL_ITERATE;
++                modexp_ctrl_new = CTRL_ITERATE_PREFETCH;
+                 modexp_ctrl_we  = 1;
+               end
+             else
+@@ -831,6 +840,14 @@
+               end
+           end
+ 
++        CTRL_ITERATE_PREFETCH:
++          begin
++            // One stall cycle: exponent_mem address is set combinatorially
++            // from loop_counter_reg (now updated), data ready next cycle.
++            modexp_ctrl_new = CTRL_ITERATE;
++            modexp_ctrl_we  = 1;
++          end
++
+         CTRL_CALCULATE_ZN:
+           begin
+             if (montprod_ready)
+--- a/montprod.v
++++ b/montprod.v
+@@ -77,8 +77,11 @@
+   localparam CTRL_L_CALC_SDIV2   = 4'h9;
+   localparam CTRL_L_STALLPIPE_D2 = 4'hA;
+   localparam CTRL_L_STALLPIPE_ES = 4'hB;
+-  localparam CTRL_EMIT_S         = 4'hC;
+-  localparam CTRL_DONE           = 4'hD;
++  localparam CTRL_EMIT_S             = 4'hC;
++  localparam CTRL_DONE               = 4'hD;
++  localparam CTRL_L_STALLPIPE_SM2    = 5'h10;
++  localparam CTRL_L_STALLPIPE_SA2    = 5'h0E;
++  localparam CTRL_L_STALLPIPE_D3     = 5'h0F;
+ 
+   localparam SMUX_0            = 2'h0;
+   localparam SMUX_ADD_SM       = 2'h1;
+@@ -100,8 +103,8 @@
+   reg          ready_new;
+   reg          ready_we;
+ 
+-  reg [3 : 0]  montprod_ctrl_reg;
+-  reg [3 : 0]  montprod_ctrl_new;
++  reg [4 : 0]  montprod_ctrl_reg;
++  reg [4 : 0]  montprod_ctrl_new;
+   reg          montprod_ctrl_we;
+ 
+   reg  [1 : 0] s_mux_new;
+@@ -142,6 +145,12 @@
+   reg          reset_word_index_LSW;
+   reg          reset_word_index_MSW;
+ 
++  // Extra pipeline stage to break adder -> s_mem critical path
++  reg [31 : 0] s_mem_data_pipe;
++  reg [07 : 0] s_mem_wr_addr2;
++  reg          s_mem_we2;
++  reg          last_loop_reg;
++
+ 
+   //----------------------------------------------------------------
+   // Wires.
+@@ -178,9 +187,9 @@
+                      .clk(clk),
+                      .read_addr(s_mem_addr),
+                      .read_data(s_mem_read_data),
+-                     .wr(s_mem_we),
+-                     .write_addr(s_mem_wr_addr),
+-                     .write_data(s_mem_new)
++                     .wr(s_mem_we2),
++                     .write_addr(s_mem_wr_addr2),
++                     .write_data(s_mem_data_pipe)
+                     );
+ 
+ 
+@@ -261,8 +270,16 @@
+              end
+ 
+           s_mem_wr_addr <= s_mem_addr;
++          s_mem_wr_addr2 <= s_mem_wr_addr;
+ 
+           s_mem_we <= s_mem_we_new;
++          s_mem_we2 <= s_mem_we;
++          s_mem_data_pipe <= s_mem_new;
++
++          if (montprod_ctrl_reg == CTRL_LOOP_INIT)
++            last_loop_reg <= 1'b0;
++          else if (montprod_ctrl_reg == CTRL_L_STALLPIPE_D2)
++            last_loop_reg <= (loop_counter == 13'h0);
+ 
+           word_index <= word_index_new;
+           word_index_prev <= word_index;
+@@ -481,7 +498,7 @@
+ 
+         CTRL_LOOP_INIT:
+           begin
+-            montprod_ctrl_new = CTRL_LOOP_ITER;
++            montprod_ctrl_new = CTRL_L_STALLPIPE_D3;
+             montprod_ctrl_we  = 1'b1;
+           end
+ 
+@@ -513,6 +530,12 @@
+ 
+         CTRL_L_STALLPIPE_SM:
+           begin
++            montprod_ctrl_new = CTRL_L_STALLPIPE_SM2;
++            montprod_ctrl_we = 1'b1;
++          end
++
++        CTRL_L_STALLPIPE_SM2:
++          begin
+             montprod_ctrl_new = CTRL_L_CALC_SA;
+             montprod_ctrl_we = 1'b1;
+             reset_word_index_LSW = 1'b1;
+@@ -530,6 +553,13 @@
+ 
+         CTRL_L_STALLPIPE_SA:
+           begin
++            montprod_ctrl_new = CTRL_L_STALLPIPE_SA2;
++            montprod_ctrl_we = 1'b1;
++            reset_word_index_MSW = 1'b1;
++          end
++
++        CTRL_L_STALLPIPE_SA2:
++          begin
+             montprod_ctrl_new = CTRL_L_CALC_SDIV2;
+             montprod_ctrl_we = 1'b1;
+             reset_word_index_MSW = 1'b1;
+@@ -547,10 +577,16 @@
+ 
+         CTRL_L_STALLPIPE_D2:
+           begin
++            montprod_ctrl_new = CTRL_L_STALLPIPE_D3;
++            montprod_ctrl_we = 1'b1;
++          end
++
++        CTRL_L_STALLPIPE_D3:
++          begin
+             montprod_ctrl_new = CTRL_LOOP_ITER; //loop
+             montprod_ctrl_we = 1'b1;
+             reset_word_index_LSW = 1'b1;
+-            if (loop_counter == 0)
++            if (last_loop_reg)
+               begin
+                 montprod_ctrl_new = CTRL_L_STALLPIPE_ES;
+                 montprod_ctrl_we = 1'b1;
+--- a/adder32.v
++++ b/adder32.v
+@@ -2,7 +2,9 @@
+ //
+ // adder32.v
+ // ---------
+-// 32bit adder with carry in / carry out
++// 32bit carry-select adder with carry in / carry out.
++// Uses 4 x 8-bit sections computed in parallel to reduce critical
++// path depth compared to a ripple-carry implementation.
+ //
+ //
+ // Author: Peter Magnusson
+@@ -44,11 +46,39 @@
+    output wire [31 : 0] sum,
+    output wire          carry_out);
+ 
+-   reg [32 : 0] adder_result;
++  // 4-way carry-select adder: 8-bit sections all computed in parallel.
++  // Section 0 uses the real carry_in; sections 1-3 pre-compute for
++  // both carry=0 and carry=1 and select based on the propagated carry.
+ 
+-   assign sum = adder_result[31:0];
+-   assign carry_out = adder_result[32];
++  // Section 0: bits [7:0] – depends on actual carry_in
++  wire [8:0] s0 = {1'b0, a[7:0]} + {1'b0, b[7:0]} + {8'b0, carry_in};
+ 
+-   always @(a, b, carry_in)
+-     adder_result = {1'b0, a} + {1'b0, b} + {32'b0, carry_in};
++  // Section 1: bits [15:8] – two parallel additions
++  wire [8:0] s1_nc = {1'b0, a[15:8]} + {1'b0, b[15:8]};
++  wire [8:0] s1_c  = {1'b0, a[15:8]} + {1'b0, b[15:8]} + 9'd1;
++
++  // Section 2: bits [23:16] – two parallel additions
++  wire [8:0] s2_nc = {1'b0, a[23:16]} + {1'b0, b[23:16]};
++  wire [8:0] s2_c  = {1'b0, a[23:16]} + {1'b0, b[23:16]} + 9'd1;
++
++  // Section 3: bits [31:24] – two parallel additions
++  wire [8:0] s3_nc = {1'b0, a[31:24]} + {1'b0, b[31:24]};
++  wire [8:0] s3_c  = {1'b0, a[31:24]} + {1'b0, b[31:24]} + 9'd1;
++
++  // Carry chain: serial but only through fast 2:1 muxes
++  wire c0 = s0[8];
++  wire c1 = c0 ? s1_c[8] : s1_nc[8];
++  wire c2 = c1 ? s2_c[8] : s2_nc[8];
++
++  assign sum = {c2 ? s3_c[7:0] : s3_nc[7:0],
++                c1 ? s2_c[7:0] : s2_nc[7:0],
++                c0 ? s1_c[7:0] : s1_nc[7:0],
++                s0[7:0]};
++
++  assign carry_out = c2 ? s3_c[8] : s3_nc[8];
++
+ endmodule
++
++//======================================================================
++// EOF adder32.v
++//======================================================================

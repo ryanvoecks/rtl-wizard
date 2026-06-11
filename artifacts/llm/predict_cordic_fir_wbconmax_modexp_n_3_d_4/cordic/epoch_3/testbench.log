@@ -1,0 +1,5 @@
+cordic_r2p.v:186: warning: ignoring out of bounds l-value array access cordic_angle[20].
+cordic_r2p.v:187: warning: ignoring out of bounds l-value array access cordic_angle[21].
+cordic_r2p.v:188: warning: ignoring out of bounds l-value array access cordic_angle[22].
+checked rot=3999 vec=4000  max_err: rot=5.259 mag=0.564 phase=140.983
+CORDIC TB PASSED (4000 vectors, both modes, with stalls)
