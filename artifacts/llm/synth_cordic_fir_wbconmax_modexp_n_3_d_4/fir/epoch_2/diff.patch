@@ -1,0 +1,252 @@
+--- a/filt_fir.v
++++ b/filt_fir.v
+@@ -7,7 +7,7 @@
+   parameter gp_inp_width         = 16,                              // Set input data width
+   parameter gp_coeff_length      = 80,
+   parameter gp_coeff_width       = 16,
+-  parameter gp_tf_df             = 1,                              // 1-> TF, 0-> DF   
++  parameter gp_tf_df             = 1,                              // 1-> TF, 0-> DF
+   parameter gp_symm              = 1,
+   parameter gp_oup_width         = gp_inp_width+gp_coeff_width+$clog2(gp_coeff_length)
+ ) (
+@@ -22,22 +22,28 @@
+   localparam c_add_oup_width = c_mul_oup_width + $clog2(gp_coeff_length);
+   localparam c_filler_length = c_add_oup_width - c_mul_oup_width;
+   localparam c_coeff_2       = (gp_symm) ? `DIV(gp_coeff_length, 2) : gp_coeff_length;
+-  
++
+   wire signed [gp_coeff_length*c_mul_oup_width-1:0]     w_mul;
+-  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add; 
+   wire signed [gp_coeff_width-1:0]                      c_coeff [0:c_coeff_2-1];
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   genvar i;
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   `include "filt_coeff.v"
+ // -------------------------------------------------------------------
+   generate
+     /******************************/
+-    /* TRANSPOSED-FORM FIR FILTER */  
+-    /******************************/    
++    /* TRANSPOSED-FORM FIR FILTER */
++    /******************************/
+     if (gp_tf_df)
+       begin:g_fir_tf
+-        wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_dly_tf;
++        wire [c_add_oup_width-1:0] r_cs_sum   [(gp_coeff_length-1):1];
++        wire [c_add_oup_width-1:0] r_cs_carry [(gp_coeff_length-1):1];
++        // Registered multiply outputs for taps 1..N-1.
++        // Separates the multiply from the CS compressor on the i_data->DFF path.
++        // Stage i=1 is made combinational (no DFF) to keep overall filter latency
++        // the same: each tap k still sees exactly k DFFs from input to output.
++        wire [c_mul_oup_width-1:0] r_mul_tf   [gp_coeff_length:1];
++
+         for (i=0; i<gp_coeff_length; i=i+1)
+ 	  begin: g_fir
+ 	    if (gp_symm)
+@@ -48,54 +54,100 @@
+ 	          end
+                 else
+ 	          begin: g_fir_n_2_n
+-                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[gp_coeff_length-1-i];
++                    // alias to mirror tap's already-computed product (shares the multiplier)
++                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = w_mul[(gp_coeff_length-i)*c_mul_oup_width-1 -: c_mul_oup_width];
+                   end
+ 	      end
+ 	    else
+ 	      begin: g_fir_unsymm
+ 	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[i];
+ 	      end
+-	      
+-	    if (i==gp_coeff_length-1)
+-	      begin: g_fir_add_last
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);  
+-	      end
+-            else
+-	      begin: g_fir_add
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(r_dly_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width]);
+-              end
+-	      
+-	    if (i>0)
+-              begin: g_fir_dly_tf
+-                dff #(
+-                  .gp_data_width (c_add_oup_width)
+-                ) FIR_TF_DFF (
+-                  .i_rst_an (i_rst_an),
+-	          .i_ena    (i_ena),
+-	          .i_clk    (i_clk),
+-                  .i_data   (w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width]),
+-                  .o_data   (r_dly_tf[i*c_add_oup_width-1 -: c_add_oup_width])
++
++            if (i > 0)
++	      begin: g_fir_dly_tf
++                // Multiply pipeline register: i_data -> multiply -> MUL_DFF
++                // Critical path to this DFF is just the multiply (no adder).
++                dff #(.gp_data_width(c_mul_oup_width)) MUL_DFF (
++                  .i_rst_an(i_rst_an), .i_ena(i_ena), .i_clk(i_clk),
++                  .i_data (w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]),
++                  .o_data (r_mul_tf[i+1])
+                 );
+-              end
+-	  end//FOR	
++
++                // Sign-extend the REGISTERED product
++                wire [c_add_oup_width-1:0] w_mul_ext;
++                assign w_mul_ext = {{c_filler_length{r_mul_tf[i+1][c_mul_oup_width-1]}},
++                                    r_mul_tf[i+1]};
++
++                if (i == gp_coeff_length-1)
++                  begin: g_fir_cs_last
++                    // Last tap: store registered product (carry = 0).
++                    dff #(.gp_data_width(c_add_oup_width)) CS_SUM_DFF (
++                      .i_rst_an(i_rst_an), .i_ena(i_ena), .i_clk(i_clk),
++                      .i_data (w_mul_ext),
++                      .o_data (r_cs_sum[i])
++                    );
++                    dff #(.gp_data_width(c_add_oup_width)) CS_CARRY_DFF (
++                      .i_rst_an(i_rst_an), .i_ena(i_ena), .i_clk(i_clk),
++                      .i_data ({c_add_oup_width{1'b0}}),
++                      .o_data (r_cs_carry[i])
++                    );
++                  end
++                else if (i == 1)
++                  begin: g_fir_cs_wire
++                    // Stage 1: combinational (no DFF). Compensates for the MUL_DFF
++                    // added above, keeping tap-k delay = k cycles.
++                    wire [c_add_oup_width-1:0] cs_maj_w;
++                    assign r_cs_sum[1]   = w_mul_ext ^ r_cs_sum[2] ^ r_cs_carry[2];
++                    assign cs_maj_w      = (w_mul_ext & r_cs_sum[2]) |
++                                           (w_mul_ext & r_cs_carry[2]) |
++                                           (r_cs_sum[2] & r_cs_carry[2]);
++                    assign r_cs_carry[1] = {cs_maj_w[c_add_oup_width-2:0], 1'b0};
++                  end
++                else
++                  begin: g_fir_cs_mid
++                    // 3:2 compressor on registered inputs: O(1) depth, no multiply.
++                    wire [c_add_oup_width-1:0] cs_maj;
++                    wire [c_add_oup_width-1:0] new_cs_sum;
++                    wire [c_add_oup_width-1:0] new_cs_carry;
++
++                    assign new_cs_sum   = w_mul_ext ^ r_cs_sum[i+1] ^ r_cs_carry[i+1];
++                    assign cs_maj       = (w_mul_ext & r_cs_sum[i+1]) |
++                                         (w_mul_ext & r_cs_carry[i+1]) |
++                                         (r_cs_sum[i+1] & r_cs_carry[i+1]);
++                    assign new_cs_carry = {cs_maj[c_add_oup_width-2:0], 1'b0};
++
++                    dff #(.gp_data_width(c_add_oup_width)) CS_SUM_DFF (
++                      .i_rst_an(i_rst_an), .i_ena(i_ena), .i_clk(i_clk),
++                      .i_data (new_cs_sum),
++                      .o_data (r_cs_sum[i])
++                    );
++                    dff #(.gp_data_width(c_add_oup_width)) CS_CARRY_DFF (
++                      .i_rst_an(i_rst_an), .i_ena(i_ena), .i_clk(i_clk),
++                      .i_data (new_cs_carry),
++                      .o_data (r_cs_carry[i])
++                    );
++                  end
++	      end
++	  end//FOR
+       end//IF_TF
+     /**************************/
+-    /* DIRECT-FORM FIR FILTER */  
++    /* DIRECT-FORM FIR FILTER */
+     /**************************/
+     else
+       begin: g_fir_df
+         wire signed [gp_coeff_length*gp_inp_width-1:0]       r_dly_df;
++        wire signed [gp_coeff_length*c_add_oup_width-1:0]    w_add_df;
+ 	if (gp_symm)
+ 	  begin: g_fir_symm
+ 	    for (i=0; i<gp_coeff_length; i=i+1)
+               begin: g_mul
+ 		if (i<c_coeff_2)
+ 	          begin: g_fir_0_n_2
+-                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[i];
++                    assign w_add_df[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[i];
+ 	          end
+                 else
+ 	          begin: g_fir_n_2_n
+-                    assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[gp_coeff_length-1-i];
++                    assign w_add_df[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[gp_coeff_length-1-i];
+                   end
+               end//FOR
+ 	  end
+@@ -103,24 +155,12 @@
+ 	  begin: g_fir_unsymm
+ 	    for (i=0; i<gp_coeff_length; i=i+1)
+ 	      begin: g_mul
+-	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[i];
++	        assign w_add_df[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[i];
+               end//FOR
+ 	  end//ELSE_UNSYMM
+-	
++
+ 	for (i=0; i<gp_coeff_length; i=i+1)
+-	  begin: g_add    
+-	    if (i==0)
+-	      begin: g_fir_add_first
+-	        assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
+-	      end
+-	    else
+-	      begin: g_fir_add
+-	        assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(w_add[i*c_add_oup_width-1 -: c_add_oup_width]);
+-	      end
+-	  end//FOR
+-	
+-	for (i=0; i<gp_coeff_length; i=i+1)
+-	  begin: g_dly 
++	  begin: g_dly
+ 	    if (i==0)
+ 	      begin: g_fir_dly_first
+ 	        assign  r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width] = i_data;
+@@ -136,16 +176,42 @@
+                   .i_data   (r_dly_df[i*gp_inp_width-1 -: gp_inp_width]),
+                   .o_data   (r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width])
+                 );
+-              end	    
+-	  end//FOR    
++              end
++	  end//FOR
+       end
+   endgenerate
+ 
+ generate
+-  if (gp_tf_df)
+-    assign o_data = w_add[c_add_oup_width-1:0];
+-  else
+-    assign o_data = w_add[gp_coeff_length*c_add_oup_width-1 -: gp_oup_width];
++  if (gp_tf_df) begin
++    wire [c_add_oup_width-1:0] w_mul0_ext;
++    assign w_mul0_ext = {{c_filler_length{w_mul[c_mul_oup_width-1]}}, w_mul[c_mul_oup_width-1:0]};
++    // Explicit CSA at output: 3 operands → (sum, carry) → single 2-to-1 CPA.
++    // Prevents Yosys from emitting two sequential carry-propagate adds.
++    wire [c_add_oup_width-1:0] w_out_csa_sum;
++    wire [c_add_oup_width-1:0] w_out_csa_maj;
++    wire [c_add_oup_width-1:0] w_out_csa_carry;
++    assign w_out_csa_sum   = w_mul0_ext ^ g_fir_tf.r_cs_sum[1] ^ g_fir_tf.r_cs_carry[1];
++    assign w_out_csa_maj   = (w_mul0_ext & g_fir_tf.r_cs_sum[1])   |
++                             (w_mul0_ext & g_fir_tf.r_cs_carry[1]) |
++                             (g_fir_tf.r_cs_sum[1] & g_fir_tf.r_cs_carry[1]);
++    assign w_out_csa_carry = {w_out_csa_maj[c_add_oup_width-2:0], 1'b0};
++    assign o_data = $signed(w_out_csa_sum) + $signed(w_out_csa_carry);
++  end else begin
++    // DF: accumulate all products in a linear chain and output the last sum
++    wire signed [gp_coeff_length*c_add_oup_width-1:0] w_add_chain;
++    genvar j;
++    for (j=0; j<gp_coeff_length; j=j+1)
++      begin: g_add
++        if (j==0)
++          assign w_add_chain[(j+1)*c_add_oup_width-1 -: c_add_oup_width] =
++            g_fir_df.w_add_df[(j+1)*c_add_oup_width-1 -: c_add_oup_width];
++        else
++          assign w_add_chain[(j+1)*c_add_oup_width-1 -: c_add_oup_width] =
++            $signed(g_fir_df.w_add_df[(j+1)*c_add_oup_width-1 -: c_add_oup_width]) +
++            $signed(w_add_chain[j*c_add_oup_width-1 -: c_add_oup_width]);
++      end
++    assign o_data = w_add_chain[gp_coeff_length*c_add_oup_width-1 -: gp_oup_width];
++  end
+ endgenerate
+-  
++
+ endmodule

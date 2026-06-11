@@ -1,0 +1,40 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "opencores",
+    "name": "wb_conmax",
+    "variant": "reference",
+    "root": "/workspace/external/wb_conmax",
+    "rtl_dir": "rtl/verilog",
+    "rtl_files": [
+      "wb_conmax_defines.v",
+      "wb_conmax_arb.v",
+      "wb_conmax_master_if.v",
+      "wb_conmax_msel.v",
+      "wb_conmax_pri_dec.v",
+      "wb_conmax_pri_enc.v",
+      "wb_conmax_rf.v",
+      "wb_conmax_slave_if.v",
+      "wb_conmax_top.v"
+    ],
+    "top_module": "wb_conmax_top",
+    "test_script": "/workspace/common/scripts/wb_conmax.sh",
+    "tb_timeout_s": 240,
+    "clock_port": "clk_i",
+    "include_dirs": [
+      "rtl/verilog"
+    ]
+  },
+  "period_ns": 0.9592,
+  "target_utilization": 40
+}

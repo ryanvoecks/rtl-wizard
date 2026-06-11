@@ -1,0 +1,100 @@
+--- a/filt_fir.v
++++ b/filt_fir.v
+@@ -37,7 +37,10 @@
+     /******************************/    
+     if (gp_tf_df)
+       begin:g_fir_tf
+-        wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_dly_tf;
++        // CSA representation: partial sum stored as (sum, carry) pair per stage.
++        // Eliminates carry-propagate adder from the DFF-to-DFF timing path.
++        wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_sum_tf;
++        wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_carry_tf;
+         for (i=0; i<gp_coeff_length; i=i+1)
+ 	  begin: g_fir
+ 	    if (gp_symm)
+@@ -55,18 +58,11 @@
+ 	      begin: g_fir_unsymm
+ 	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[i];
+ 	      end
+-	      
++
+ 	    if (i==gp_coeff_length-1)
+ 	      begin: g_fir_add_last
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);  
+-	      end
+-            else
+-	      begin: g_fir_add
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(r_dly_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width]);
+-              end
+-	      
+-	    if (i>0)
+-              begin: g_fir_dly_tf
++                // Last tap: product only, no prior partial sum
++                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
+                 dff #(
+                   .gp_data_width (c_add_oup_width)
+                 ) FIR_TF_DFF (
+@@ -74,10 +70,61 @@
+ 	          .i_ena    (i_ena),
+ 	          .i_clk    (i_clk),
+                   .i_data   (w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width]),
+-                  .o_data   (r_dly_tf[i*c_add_oup_width-1 -: c_add_oup_width])
++                  .o_data   (r_sum_tf[i*c_add_oup_width-1 -: c_add_oup_width])
++                );
++                assign r_carry_tf[i*c_add_oup_width-1 -: c_add_oup_width] = {c_add_oup_width{1'b0}};
++	      end
++            else if (i==0)
++	      begin: g_fir_add
++                // Output tap: 3-to-2 CSA on (w_mul, r_sum, r_carry) then CPA
++                // Precompute DFF-based terms to limit w_a fanout to 1 XOR + 1 AND
++                wire signed [c_add_oup_width-1:0] w_a;
++                wire [c_add_oup_width-1:0] w_xpre, w_sc, w_sor, w_s, w_cg, w_k;
++                assign w_a    = $signed(w_mul[c_mul_oup_width-1:0]);
++                assign w_xpre = r_sum_tf[c_add_oup_width-1:0] ^ r_carry_tf[c_add_oup_width-1:0];
++                assign w_sc   = r_sum_tf[c_add_oup_width-1:0] & r_carry_tf[c_add_oup_width-1:0];
++                assign w_sor  = r_sum_tf[c_add_oup_width-1:0] | r_carry_tf[c_add_oup_width-1:0];
++                assign w_s    = w_a ^ w_xpre;
++                assign w_cg   = (w_a & w_sor) | w_sc;
++                assign w_k    = {w_cg[c_add_oup_width-2:0], 1'b0};
++                assign w_add[c_add_oup_width-1:0] = w_s + w_k;
++              end
++	    else
++	      begin: g_fir_add
++                // Internal tap: 3-to-2 CSA, result stored in sum/carry DFF pair
++                // Precompute DFF-based terms to limit w_a fanout to 1 XOR + 1 AND
++                wire signed [c_add_oup_width-1:0] w_a;
++                wire [c_add_oup_width-1:0] w_xpre, w_sc, w_sor, w_s, w_cg, w_k;
++                assign w_a    = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
++                assign w_xpre = r_sum_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width] ^
++                                r_carry_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width];
++                assign w_sc   = r_sum_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width] &
++                                r_carry_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width];
++                assign w_sor  = r_sum_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width] |
++                                r_carry_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width];
++                assign w_s    = w_a ^ w_xpre;
++                assign w_cg   = (w_a & w_sor) | w_sc;
++                assign w_k    = {w_cg[c_add_oup_width-2:0], 1'b0};
++                dff #(
++                  .gp_data_width (c_add_oup_width)
++                ) FIR_TF_DFF (
++                  .i_rst_an (i_rst_an),
++	          .i_ena    (i_ena),
++	          .i_clk    (i_clk),
++                  .i_data   (w_s),
++                  .o_data   (r_sum_tf[i*c_add_oup_width-1 -: c_add_oup_width])
++                );
++                dff #(
++                  .gp_data_width (c_add_oup_width)
++                ) FIR_TF_DFF_C (
++                  .i_rst_an (i_rst_an),
++	          .i_ena    (i_ena),
++	          .i_clk    (i_clk),
++                  .i_data   (w_k),
++                  .o_data   (r_carry_tf[i*c_add_oup_width-1 -: c_add_oup_width])
+                 );
+               end
+-	  end//FOR	
++	  end//FOR
+       end//IF_TF
+     /**************************/
+     /* DIRECT-FORM FIR FILTER */  

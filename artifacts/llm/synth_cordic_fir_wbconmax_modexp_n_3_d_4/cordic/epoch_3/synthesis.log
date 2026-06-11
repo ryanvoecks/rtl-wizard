@@ -1,0 +1,6 @@
+Warning: Replacing memory \ph with list of registers. See cordic_p2r.v:244, cordic_p2r.v:123, cordic_p2r.v:116
+Warning: Replacing memory \yv with list of registers. See cordic_p2r.v:243, cordic_p2r.v:122, cordic_p2r.v:115
+Warning: Replacing memory \xv with list of registers. See cordic_p2r.v:242, cordic_p2r.v:121, cordic_p2r.v:114
+Warning: Replacing memory \ph with list of registers. See cordic_r2p.v:205, cordic_r2p.v:120, cordic_r2p.v:112
+Warning: Replacing memory \yv with list of registers. See cordic_r2p.v:204, cordic_r2p.v:119, cordic_r2p.v:111
+Warning: Replacing memory \xv with list of registers. See cordic_r2p.v:203, cordic_r2p.v:118, cordic_r2p.v:110
