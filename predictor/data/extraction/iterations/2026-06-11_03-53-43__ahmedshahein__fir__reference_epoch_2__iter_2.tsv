@@ -1,0 +1,17 @@
+# start	end	slack_synth_ns	slack_route_ns
+i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	-2.291400	-0.416316
+i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	-2.170900	-0.385537
+i_data[I]	o_data[I]	-1.010900	-0.694639
+i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	-0.114100	0.391007
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	o_data[I]	-0.068400	-0.377778
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	o_data[I]	-0.064200	-0.370522
+i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	0.383000	0.526584
+i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	0.383600	0.526992
+i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	0.402400	0.555696
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	0.842000	0.820419
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	0.847600	0.825014
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	0.947400	0.909770
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_SUM_DFF.r_data[J]	0.954700	0.955978
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	0.957300	0.917040
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_mid.CS_CARRY_DFF.r_data[J]	0.998700	0.985136
+g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	1.029200	1.021088

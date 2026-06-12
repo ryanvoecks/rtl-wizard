@@ -1,0 +1,27 @@
+# stage	1_synth
+# top_module	filt_fir
+# top_n	100
+# kind	blocks
+# skip_async	1
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-0.7427	i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	i_data[15]	g_fir_tf.g_fir[39].g_fir_dly_tf.MUL_DFF.r_data[27]$_DFFE_PN0P_/D
+2	-0.7090	i_data[I]	o_data[I]	i_data[4]	o_data[37]
+3	-0.5895	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	o_data[I]	g_fir_tf.g_fir[59].g_fir_dly_tf.MUL_DFF.r_data[0]$_DFFE_PN0P_/Q	o_data[31]
+4	-0.0821	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	o_data[I]	g_fir_tf.g_fir[2].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[1]$_DFFE_PN0P_/Q	o_data[37]
+5	-0.0764	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	o_data[I]	g_fir_tf.g_fir[2].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[1]$_DFFE_PN0P_/Q	o_data[37]
+6	-0.0715	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[10].g_fir_dly_tf.MUL_DFF.r_data[19]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[10].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[19]$_DFFE_PN0P_/D
+7	0.0220	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[10].g_fir_dly_tf.MUL_DFF.r_data[19]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[56].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[38]$_DFFE_PN0P_/D
+8	0.0584	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	g_fir_tf.g_fir[10].g_fir_dly_tf.MUL_DFF.r_data[19]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[10].g_fir_dly_tf.MUL_DFF.r_data[19]$_DFFE_PN0P_/D
+9	0.3506	i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	i_ena	g_fir_tf.g_fir[11].g_fir_dly_tf.MUL_DFF.r_data[20]$_DFFE_PN0P_/D
+10	0.3667	i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	i_ena	g_fir_tf.g_fir[25].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/D
+11	0.3673	i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	i_ena	g_fir_tf.g_fir[11].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[7]$_DFFE_PN0P_/D
+12	0.3791	i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	i_ena	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/D
+13	0.4154	g_fir_tf.g_fir[I].g_fir_dly_tf.MUL_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[59].g_fir_dly_tf.MUL_DFF.r_data[0]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/D
+14	0.8952	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[72].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[37]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[71].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[38]$_DFFE_PN0P_/D
+15	0.9153	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[5].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[38]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[4].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[38]$_DFFE_PN0P_/D
+16	0.9450	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[78].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/D
+17	0.9454	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_SUM_DFF.r_data[K]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[75].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_SUM_DFF.r_data[37]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[74].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[35]$_DFFE_PN0P_/D
+18	0.9524	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[10].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[18]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[9].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[19]$_DFFE_PN0P_/D
+19	0.9983	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.genblkJ.g_fir_cs_mid.CS_CARRY_DFF.r_data[K]	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[78].g_fir_dly_tf.genblk1.g_fir_cs_mid.CS_CARRY_DFF.r_data[1]$_DFFE_PN0P_/D
+20	1.0276	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[J]	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[79].g_fir_dly_tf.g_fir_cs_last.CS_SUM_DFF.r_data[0]$_DFFE_PN0P_/D

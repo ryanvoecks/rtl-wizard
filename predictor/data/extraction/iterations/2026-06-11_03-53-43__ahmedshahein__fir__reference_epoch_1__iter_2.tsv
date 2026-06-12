@@ -1,0 +1,17 @@
+# start	end	slack_synth_ns	slack_route_ns
+i_data[I]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	-2.257300	-0.437227
+i_data[I]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	-2.136900	-0.417767
+i_data[I]	o_data[I]	-1.259900	-0.644792
+i_data[I]	g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	-0.444100	0.400940
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	o_data[I]	0.010000	-0.320475
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	o_data[I]	0.014200	-0.316015
+i_ena	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	0.362000	0.444458
+i_ena	g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	0.368100	0.482928
+i_ena	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	0.375800	0.444684
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	0.850200	0.843107
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	0.850600	0.848062
+g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	0.939400	0.958026
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF.r_data[K]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	0.946800	0.892245
+g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	0.953300	0.906809
+g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[I].genblkJ.g_fir_add.FIR_TF_DFF_C.r_data[K]	0.997200	0.991994
+g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_add_last.FIR_TF_DFF.r_data[J]	1.029200	1.025658

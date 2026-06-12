@@ -1,0 +1,75 @@
+# stage	1_synth
+# top_module	cordic_engine
+# top_n	100
+# kind	blocks
+# skip_async	1
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-0.5459	i_xval[I]	u_vec.xv[I][J]	i_xval[1]	u_vec.xv[0][22]$_SDFFE_PP0P_/D
+2	-0.4952	i_xval[I]	u_vec.yv[I][J]	i_xval[1]	u_vec.yv[0][22]$_SDFFE_PP0P_/D
+3	-0.4540	u_vec.yv[I][J]	u_vec.yv[I][J]	u_vec.yv[18][24]$_SDFFE_PP0P_/Q	u_vec.yv[19][23]$_SDFFE_PP0P_/D
+4	-0.4538	u_vec.yv[I][J]	u_vec.xv[I][J]	u_vec.yv[6][10]$_SDFFE_PP0P_/QN	u_vec.xv[7][21]$_SDFFE_PP0P_/D
+5	-0.3846	u_vec.xv[I][J]	u_vec.yv[I][J]	u_vec.xv[11][15]$_SDFFE_PP0P_/QN	u_vec.yv[12][22]$_SDFFE_PP0P_/D
+6	-0.3552	u_rot.ph[I][J]	u_rot.xv[I][J]	u_rot.ph[3][24]$_SDFFE_PP0P_/Q	u_rot.xv[4][18]$_SDFFE_PP0P_/D
+7	-0.3271	u_rot.yv[I][J]	u_rot.xv[I][J]	u_rot.yv[17][19]$_SDFFE_PP0P_/QN	u_rot.xv[18][19]$_SDFFE_PP0P_/D
+8	-0.3151	i_yval[I]	u_vec.xv[I][J]	i_yval[2]	u_vec.xv[0][24]$_SDFFE_PP0P_/D
+9	-0.3021	u_rot.ph[I][J]	u_rot.yv[I][J]	u_rot.ph[3][24]$_SDFFE_PP0P_/Q	u_rot.yv[4][19]$_SDFFE_PP0P_/D
+10	-0.3007	i_yval[I]	u_vec.yv[I][J]	i_yval[2]	u_vec.yv[0][21]$_SDFFE_PP0P_/D
+11	-0.2749	u_vec.yv[I][J]	u_vec.ph[I][J]	u_vec.yv[16][24]$_SDFFE_PP0P_/Q	u_vec.ph[17][25]$_SDFFE_PP0P_/D
+12	-0.2741	u_rot.xv[I][J]	u_rot.yv[I][J]	u_rot.xv[0][4]$_SDFFE_PP0P_/QN	u_rot.yv[1][19]$_SDFFE_PP0P_/D
+13	-0.2404	u_rot.ph[I][J]	u_rot.ph[I][J]	u_rot.ph[14][24]$_SDFFE_PP0P_/QN	u_rot.ph[15][21]$_SDFFE_PP0P_/D
+14	-0.2347	i_xval[I]	u_rot.yv[I][J]	i_xval[1]	u_rot.yv[0][17]$_SDFFE_PP0P_/D
+15	-0.2304	u_vec.xv[I][J]	u_vec.xv[I][J]	u_vec.xv[1][4]$_SDFFE_PP0P_/QN	u_vec.xv[2][24]$_SDFFE_PP0P_/D
+16	-0.2276	i_xval[I]	u_rot.xv[I][J]	i_xval[8]	u_rot.xv[0][16]$_SDFFE_PP0P_/D
+17	-0.2190	i_yval[I]	u_rot.yv[I][J]	i_yval[9]	u_rot.yv[0][17]$_SDFFE_PP0P_/D
+18	-0.2039	i_yval[I]	u_rot.xv[I][J]	i_yval[9]	u_rot.xv[0][15]$_SDFFE_PP0P_/D
+19	-0.1365	u_vec.ph[I][J]	u_vec.ph[I][J]	u_vec.ph[6][2]$_SDFFE_PP0P_/Q	u_vec.ph[7][25]$_SDFFE_PP0P_/D
+20	-0.1165	u_rot.xv[I][J]	u_rot.xv[I][J]	u_rot.xv[3][0]$_SDFFE_PP0P_/Q	u_rot.xv[4][18]$_SDFFE_PP0P_/D
+21	-0.0819	i_phase[I]	u_rot.xv[I][J]	i_phase[23]	u_rot.xv[0][10]$_SDFFE_PP0P_/D
+22	-0.0740	i_xval[I]	u_vec.ph[I][J]	i_xval[17]	u_vec.ph[0][25]$_SDFFE_PP0P_/D
+23	-0.0739	i_ce	u_vec.ph[I][J]	i_ce	u_vec.ph[18][25]$_SDFFE_PP0P_/D
+24	-0.0725	i_phase[I]	u_rot.yv[I][J]	i_phase[23]	u_rot.yv[0][19]$_SDFFE_PP0P_/D
+25	-0.0638	u_rot.yv[I][J]	u_rot.yv[I][J]	u_rot.yv[14][0]$_SDFFE_PP0P_/QN	u_rot.yv[15][18]$_SDFFE_PP0P_/D
+26	-0.0603	i_ce	u_vec.xv[I][J]	i_ce	u_vec.xv[13][22]$_SDFFE_PP0P_/D
+27	-0.0579	i_ce	u_rot.yv[I][J]	i_ce	u_rot.yv[0][10]$_SDFFE_PP0P_/D
+28	-0.0576	i_ce	u_rot.ph[I][J]	i_ce	u_rot.ph[16][18]$_SDFFE_PP0P_/D
+29	-0.0573	i_ce	u_rot.xv[I][J]	i_ce	u_rot.xv[13][19]$_SDFFE_PP0P_/D
+30	-0.0573	i_ce	u_vec.yv[I][J]	i_ce	u_vec.yv[7][15]$_SDFFE_PP0P_/D
+31	-0.0519	i_ce	u_vec.o_mag[I]	i_ce	u_vec.o_mag[17]$_SDFFE_PP0P_/D
+32	-0.0494	i_reset	u_vec.ph[I][J]	i_reset	u_vec.ph[18][25]$_SDFFE_PP0P_/D
+33	-0.0489	i_reset	u_vec.xv[I][J]	i_reset	u_vec.xv[13][22]$_SDFFE_PP0P_/D
+34	-0.0459	i_reset	u_rot.xv[I][J]	i_reset	u_rot.xv[13][19]$_SDFFE_PP0P_/D
+35	-0.0459	i_reset	u_vec.yv[I][J]	i_reset	u_vec.yv[7][15]$_SDFFE_PP0P_/D
+36	-0.0458	i_reset	u_rot.ph[I][J]	i_reset	u_rot.ph[4][24]$_SDFFE_PP0P_/D
+37	-0.0436	i_ce	u_rot.o_yval[I]	i_ce	u_rot.o_yval[1]$_SDFFE_PP0P_/D
+38	-0.0411	i_ce	u_rot.o_xval[I]	i_ce	u_rot.o_xval[13]$_SDFFE_PP0P_/D
+39	-0.0359	i_reset	u_rot.yv[I][J]	i_reset	u_rot.yv[15][12]$_SDFFE_PP0P_/D
+40	-0.0266	i_reset	u_vec.o_mag[I]	i_reset	u_vec.o_mag[0]$_SDFFE_PP0P_/D
+41	-0.0264	i_ce	u_vec.ax[I]	i_ce	u_vec.ax[0]$_SDFFE_PP0P_/D
+42	-0.0178	i_ce	u_vec.o_phase[I]	i_ce	u_vec.o_phase[0]$_SDFFE_PP0P_/D
+43	-0.0177	i_ce	u_rot.o_aux	i_ce	u_rot.o_aux$_SDFFE_PP0P_/D
+44	-0.0036	i_yval[I]	u_vec.ph[I][J]	i_yval[17]	u_vec.ph[0][25]$_SDFFE_PP0P_/D
+45	0.0008	u_vec.xv[I][J]	u_vec.o_mag[I]	u_vec.xv[21][8]$_SDFFE_PP0P_/Q	u_vec.o_mag[12]$_SDFFE_PP0P_/D
+46	0.0161	i_phase[I]	u_rot.ph[I][J]	i_phase[22]	u_rot.ph[0][22]$_SDFFE_PP0P_/D
+47	0.0229	i_reset	u_vec.ax[I]	i_reset	u_vec.ax[0]$_SDFFE_PP0P_/D
+48	0.0286	u_rot.yv[I][J]	u_rot.o_yval[I]	u_rot.yv[21][2]$_SDFFE_PP0P_/Q	u_rot.o_yval[10]$_SDFFE_PP0P_/D
+49	0.0294	i_reset	u_rot.o_xval[I]	i_reset	u_rot.o_xval[0]$_SDFFE_PP0P_/D
+50	0.0294	i_reset	u_rot.o_yval[I]	i_reset	u_rot.o_yval[0]$_SDFFE_PP0P_/D
+51	0.0398	i_reset	u_vec.o_phase[I]	i_reset	u_vec.o_phase[0]$_SDFFE_PP0P_/D
+52	0.0647	i_reset	u_rot.o_aux	i_reset	u_rot.o_aux$_SDFFE_PP0P_/D
+53	0.0749	u_rot.xv[I][J]	u_rot.o_xval[I]	u_rot.xv[21][6]$_SDFFE_PP0P_/Q	u_rot.o_xval[15]$_SDFFE_PP0P_/D
+54	0.2397	u_rot.o_aux	o_vec_aux	u_rot.o_aux$_SDFFE_PP0P_/Q	o_vec_aux
+55	0.2574	u_rot.o_aux	o_rot_aux	u_rot.o_aux$_SDFFE_PP0P_/Q	o_rot_aux
+56	0.2593	u_rot.o_xval[I]	o_rot_xval[I]	u_rot.o_xval[0]$_SDFFE_PP0P_/Q	o_rot_xval[0]
+57	0.2593	u_rot.o_yval[I]	o_rot_yval[I]	u_rot.o_yval[0]$_SDFFE_PP0P_/Q	o_rot_yval[0]
+58	0.2594	u_vec.o_phase[I]	o_vec_phase[I]	u_vec.o_phase[0]$_SDFFE_PP0P_/Q	o_vec_phase[0]
+59	0.2594	u_vec.o_mag[I]	o_vec_mag[I]	u_vec.o_mag[12]$_SDFFE_PP0P_/Q	o_vec_mag[12]
+60	0.2758	i_aux	u_vec.ax[I]	i_aux	u_vec.ax[0]$_SDFFE_PP0P_/D
+61	0.3690	u_rot.o_xval[I]	u_rot.o_xval[I]	u_rot.o_xval[0]$_SDFFE_PP0P_/Q	u_rot.o_xval[0]$_SDFFE_PP0P_/D
+62	0.3690	u_rot.o_yval[I]	u_rot.o_yval[I]	u_rot.o_yval[0]$_SDFFE_PP0P_/Q	u_rot.o_yval[0]$_SDFFE_PP0P_/D
+63	0.4027	u_vec.o_mag[I]	u_vec.o_mag[I]	u_vec.o_mag[17]$_SDFFE_PP0P_/Q	u_vec.o_mag[17]$_SDFFE_PP0P_/D
+64	0.4084	u_vec.ax[I]	u_vec.ax[I]	u_vec.ax[21]$_SDFFE_PP0P_/Q	u_vec.ax[21]$_SDFFE_PP0P_/D
+65	0.4105	u_rot.o_aux	u_rot.o_aux	u_rot.o_aux$_SDFFE_PP0P_/Q	u_rot.o_aux$_SDFFE_PP0P_/D
+66	0.4128	u_vec.o_phase[I]	u_vec.o_phase[I]	u_vec.o_phase[25]$_SDFFE_PP0P_/Q	u_vec.o_phase[25]$_SDFFE_PP0P_/D
+67	0.4135	u_vec.ph[I][J]	u_vec.o_phase[I]	u_vec.ph[21][22]$_SDFFE_PP0P_/Q	u_vec.o_phase[22]$_SDFFE_PP0P_/D
+68	0.4135	u_vec.ax[I]	u_rot.o_aux	u_vec.ax[21]$_SDFFE_PP0P_/Q	u_rot.o_aux$_SDFFE_PP0P_/D

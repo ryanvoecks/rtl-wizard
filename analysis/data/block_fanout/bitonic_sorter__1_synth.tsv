@@ -1,0 +1,13 @@
+# stage	1_synth
+# top_module	bitonic_sort
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.1829	data_in[I]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	4352	7680	1.400	3
+2	-0.1829	data_in[I]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	4352	7680	1.400	3
+3	-0.1155	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	7680	15360	1.400	3
+4	-0.1155	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	7680	15360	1.400	3
+5	-0.1148	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	7680	15360	1.400	3
+6	-0.1148	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	7680	15360	1.400	3
+7	0.1449	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.H[N]	data_out[I]	4352	7680	1.400	3
+8	0.1449	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.COMP[M].comp_inst.L[N]	data_out[I]	4352	7680	1.400	3

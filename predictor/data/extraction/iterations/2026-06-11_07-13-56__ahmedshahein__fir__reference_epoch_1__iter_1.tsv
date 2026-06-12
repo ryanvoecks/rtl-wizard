@@ -1,0 +1,6 @@
+# start	end	slack_synth_ns	slack_route_ns
+i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	-2.275800	-0.664850
+i_data[I]	o_data[I]	-0.947200	-0.591441
+g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	o_data[I]	0.005900	-0.195353
+g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	0.353100	0.314286
+i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	0.374800	0.467323

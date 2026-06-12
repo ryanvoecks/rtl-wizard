@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	sha512
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-1.0818	core.w_mem_inst.w_mem[I][J]	core.a_reg[I]	1088	2176	1.382	4
+2	-0.8883	core.w_mem_inst.w_mem[I][J]	core.e_reg[I]	1088	2176	1.412	4
+3	-0.7251	core.w_mem_inst.w_ctr_reg[I]	core.a_reg[I]	71	142	1.141	5
+4	-0.6660	core.round_ctr_reg[I]	core.a_reg[I]	71	142	1.028	3
+5	-0.5677	core.w_mem_inst.w_ctr_reg[I]	core.e_reg[I]	71	142	1.599	5
+6	-0.5085	core.round_ctr_reg[I]	core.e_reg[I]	71	142	1.486	3
+7	-0.3816	core.e_reg[I]	core.a_reg[I]	128	256	1.254	3
+8	-0.3371	core.f_reg[I]	core.a_reg[I]	128	256	1.492	5
+9	-0.3301	core.g_reg[I]	core.a_reg[I]	128	256	1.500	5
+10	-0.2241	core.e_reg[I]	core.e_reg[I]	128	256	1.508	3
+11	-0.2129	address[I]	read_data[I]	40	0	0.000	0
+12	-0.1796	core.f_reg[I]	core.e_reg[I]	128	256	1.746	5
+13	-0.1727	core.g_reg[I]	core.e_reg[I]	128	256	1.754	5
+14	-0.0274	address[I]	error	9	0	0.000	0
+15	-0.0140	core.h_reg[I]	core.a_reg[I]	128	256	1.254	4
+16	0.1239	we	read_data[I]	33	0	0.000	0
+17	0.1435	core.h_reg[I]	core.e_reg[I]	128	256	1.508	4
+18	0.1452	cs	read_data[I]	33	0	0.000	0
+19	0.2105	we	error	2	0	0.000	0
+20	0.2537	cs	error	2	0	0.000	0
+21	0.3231	address[I]	block_reg[I][J]	1032	2048	1.500	3
+22	0.3982	address[I]	work_factor_num_reg[I]	40	64	1.500	3
+23	0.4753	core.w_mem_inst.w_mem[I][J]	core.w_mem_inst.w_mem[I][J]	2048	4096	1.406	4
+24	0.5135	core.a_reg[I]	core.a_reg[I]	128	256	1.000	3
+25	0.5415	address[I]	work_factor_reg	9	2	2.000	3

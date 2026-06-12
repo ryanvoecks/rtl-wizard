@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	ddr3_controller
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.3957	lane[I]	dq_target_index[I][J]	51	102	1.078	3
+2	-0.3747	i_wb_addr[I]	stageI_do_pre	26	4	0.750	2
+3	-0.3469	lane[I]	dqs_target_index[I]	9	18	1.444	3
+4	-0.3136	lane[I]	added_read_pipe[I]	11	22	1.727	3
+5	-0.3096	i_wb_cyc	stageI_do_pre	3	4	0.750	2
+6	-0.2757	lane[I]	o_phy_idelay_dqs_cntvaluein[I]	8	6	2.333	3
+7	-0.2640	lane[I]	o_phy_odelay_data_cntvaluein[I]	8	6	2.333	3
+8	-0.2640	lane[I]	o_phy_odelay_dqs_cntvaluein[I]	8	6	2.333	3
+9	-0.2404	i_wb_addr[I]	stageI_do_act	26	4	1.000	2
+10	-0.2398	i_wb_cyc	stageI_do_act	3	4	1.000	2
+11	-0.2079	lane[I]	idelay_dqs_cntvaluein[I][J]	43	86	1.093	3
+12	-0.2046	lane[I]	o_phy_idelay_data_cntvaluein[I]	8	6	2.333	3
+13	-0.2023	lane[I]	o_phy_write_leveling_calib	4	8	1.875	3
+14	-0.1988	i_phy_iserdes_bitslip_reference[I]	o_phy_write_leveling_calib	65	2	0.500	1
+15	-0.1948	lane[I]	state_calibrate[I]	8	16	1.938	4
+16	-0.1913	lane[I]	sample_clk_repeat[I]	7	14	2.214	4
+17	-0.1912	i_phy_iserdes_bitslip_reference[I]	state_calibrate[I]	69	10	1.700	4
+18	-0.1882	lane[I]	data_start_index[I][J]	59	118	0.847	3
+19	-0.1878	i_phy_iserdes_bitslip_reference[I]	sample_clk_repeat[I]	68	8	2.125	4
+20	-0.1803	stageI_do_wr_or_rd	o_wb_stall_int_q	2	4	2.000	4
+21	-0.1771	state_calibrate[I]	write_test_address_counter[I]	29	58	1.534	4
+22	-0.1770	stageI_next_bank[J]	stageI_do_wr_or_rd	4	8	1.250	3
+23	-0.1763	stageI_do_pre	o_wb_stall_int_q	3	6	1.500	4
+24	-0.1760	dqs_start_index[I]	state_calibrate[I]	11	22	1.364	4
+25	-0.1748	stageI_bank[J]	stageI_do_wr_or_rd	7	14	1.286	3

@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	tpu_top
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.6451	systolic.weight_queue[I][J]	systolic.matrix_mul_ID[J][K]	1856	3712	1.394	6
+2	-0.6440	systolic.data_queue[I][J]	systolic.matrix_mul_ID[J][K]	1856	3712	1.273	6
+3	-0.2896	systolic_controll.matrix_index[I]	_I_	38947	45871	1.922	18
+4	-0.1692	systolic_controll.matrix_index[I]	write_out.sram_wdata_c[I]	134	268	0.257	10
+5	-0.1618	systolic_controll.matrix_index[I]	write_out.sram_wdata_a[I]	134	268	0.257	10
+6	0.0075	systolic_controll.cycle_num[I]	systolic.matrix_mul_ID[J][K]	1353	2706	1.552	6
+7	0.0163	srstn	_I_	38942	45859	1.921	18
+8	0.0613	srstn	write_out.sram_wdata_c[I]	129	256	0.000	0
+9	0.0692	systolic.matrix_mul_ID[J][K]	systolic.matrix_mul_ID[J][K]	2688	5376	1.544	6
+10	0.0733	srstn	write_out.sram_wdata_a[I]	129	256	0.000	0
+11	0.1201	systolic.matrix_mul_ID[J][K]	write_out.sram_wdata_a[I]	1472	2944	1.410	6
+12	0.1202	systolic.matrix_mul_ID[J][K]	write_out.sram_wdata_c[I]	1472	2944	1.410	6
+13	0.1382	systolic.matrix_mul_ID[J][K]	_I_	40285	48547	1.900	18
+14	0.1403	srstn	write_out.sram_waddr_a[I]	7	12	0.000	0
+15	0.1448	srstn	write_out.sram_waddr_c[I]	7	12	0.000	0
+16	0.1709	systolic_controll.cycle_num[I]	_I_	38950	45877	1.921	18
+17	0.1943	srstn	systolic.matrix_mul_ID[J][K]	1345	2688	1.544	6
+18	0.2160	systolic_controll.cycle_num[I]	write_out.sram_wdata_c[I]	137	274	0.179	6
+19	0.2173	srstn	write_out.sram_write_enable_cI	2	2	0.000	0
+20	0.2245	srstn	write_out.sram_write_enable_aI	2	2	0.000	0
+21	0.2280	systolic_controll.cycle_num[I]	write_out.sram_wdata_a[I]	137	274	0.179	6
+22	0.2326	srstn	systolic_controll.state[I]	5	8	1.250	2
+23	0.2387	srstn	systolic_controll.cycle_num[I]	10	18	2.722	6
+24	0.2418	srstn	systolic_controll.tpu_done	2	2	0.000	0
+25	0.2536	srstn	systolic.data_queue[I][J]	513	1024	0.562	2

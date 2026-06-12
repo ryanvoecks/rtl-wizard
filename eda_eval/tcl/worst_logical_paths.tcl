@@ -224,6 +224,104 @@ proc find_worst_logical_blocks {out_path top_n stage spef set_rc top_module {ski
 }
 
 
+# Batched variant of `_find_worst_logical`. Pulls `batch_size` paths per
+# `find_timing_paths` call rather than 1; dedupes the batch in python's
+# `seen` dict and applies one `set_false_path` per unique (selector pair)
+# at the end of each batch. Functionally equivalent to the unbatched proc
+# but with O(top_n / batch_size) STA queries instead of O(top_n) -- the
+# same pattern as worst_corrected_blocks.tcl.
+proc _find_worst_logical_batched {out_path top_n stage spef set_rc top_module kind {batch_size 25} {include_full 0}} {
+    setup_parasitics $stage $spef $set_rc
+
+    set fh [open $out_path w]
+    puts $fh "# stage\t$stage"
+    puts $fh "# top_module\t$top_module"
+    puts $fh "# top_n\t$top_n"
+    if {$kind ne "paths"}     { puts $fh "# kind\t$kind" }
+    if {$batch_size ne "1"}   { puts $fh "# batch_size\t$batch_size" }
+    if {$include_full ne "0"} { puts $fh "# include_full\t$include_full" }
+    if {$include_full} {
+        puts $fh "# rank\tworst_slack_ns\tstart\tend\tstart_full\tend_full"
+    } else {
+        puts $fh "# rank\tworst_slack_ns\tstart\tend"
+    }
+
+    set written 0
+    set seen [dict create]
+    set iter 0
+    # Cap to keep an empty/async-dominated queue from spinning forever.
+    set max_iters [expr {$top_n * 2 + 500}]
+    while {$written < $top_n && $iter < $max_iters} {
+        incr iter
+        set paths [find_timing_paths -path_delay max \
+                                     -group_path_count $batch_size \
+                                     -endpoint_path_count 1 \
+                                     -slack_max 1e30 \
+                                     -sort_by_slack]
+        if {[llength $paths] == 0} break
+
+        # batch_masks: keyed by the actual selector glob pair so different
+        # yosys cell-type variants of the same logical block (DFF / DFFE /
+        # DFFSR) each contribute their own false-path mask. Value is the
+        # representative {sp ep} pair used to build the selectors.
+        set batch_masks [dict create]
+        foreach p $paths {
+            if {$written >= $top_n} break
+
+            set sp [sta::get_property [sta::get_property $p startpoint] full_name]
+            set ep [sta::get_property [sta::get_property $p endpoint]   full_name]
+            set slack [sta::get_property $p slack]
+
+            if {$kind eq "blocks"} {
+                set sp_base [block_base $sp]
+                set ep_base [block_base $ep]
+                set sp_inst [expr {[string match "*/*" $sp] ? [regsub {/[^/]+$} $sp {}] : $sp}]
+                set ep_inst [expr {[string match "*/*" $ep] ? [regsub {/[^/]+$} $ep {}] : $ep}]
+                set mask_key [list [block_glob $sp_inst] [block_glob $ep_inst]]
+            } else {
+                set sp_base [reg_base $sp]
+                set ep_base [reg_base $ep]
+                set sp_inst [expr {[string match "*/*" $sp] ? [regsub {/[^/]+$} $sp {}] : $sp}]
+                set ep_inst [expr {[string match "*/*" $ep] ? [regsub {/[^/]+$} $ep {}] : $ep}]
+                set mask_key [list [bus_glob $sp_inst] [bus_glob $ep_inst]]
+            }
+            if {![dict exists $batch_masks $mask_key]} {
+                dict set batch_masks $mask_key [list $sp $ep]
+            }
+
+            set key [list $sp_base $ep_base]
+            if {[dict exists $seen $key]} continue
+            dict set seen $key 1
+            incr written
+            if {$include_full} {
+                puts $fh "$written\t[format %.4f $slack]\t$sp_base\t$ep_base\t$sp\t$ep"
+            } else {
+                puts $fh "$written\t[format %.4f $slack]\t$sp_base\t$ep_base"
+            }
+        }
+
+        dict for {k v} $batch_masks {
+            lassign $v sp ep
+            if {$kind eq "blocks"} {
+                set_false_path -from [block_selector $sp] -to [block_selector $ep]
+            } else {
+                set_false_path -from [path_selector $sp] -to [path_selector $ep]
+            }
+        }
+    }
+    close $fh
+    puts "WLP: wrote $written logical $kind (batched=$batch_size, iters=$iter) to $out_path"
+}
+
+proc find_worst_logical_paths_batched {out_path top_n stage spef set_rc top_module {batch_size 25} {include_full 0}} {
+    _find_worst_logical_batched $out_path $top_n $stage $spef $set_rc $top_module paths $batch_size $include_full
+}
+
+proc find_worst_logical_blocks_batched {out_path top_n stage spef set_rc top_module {batch_size 25} {include_full 0}} {
+    _find_worst_logical_batched $out_path $top_n $stage $spef $set_rc $top_module blocks $batch_size $include_full
+}
+
+
 # Per-net fanout = number of load (input-direction) pins on the net. The driver
 # (output pin or input port) is excluded.
 proc _net_fanout {net} {
@@ -320,4 +418,121 @@ proc find_block_fanouts {out_path top_n stage spef set_rc top_module} {
     }
     close $fh
     puts "BFO: wrote $written block-fanout rows to $out_path"
+}
+
+# Same block-discovery loop as find_block_fanouts, but for each discovered
+# (sp_sel, ep_sel) block also enumerates every timing path between the two
+# selectors (one worst path per endpoint by default) and emits one row per
+# (block_rank, path_idx, net_on_path). The fanout value is the load-pin count
+# of the driver net for each output pin along the path -- so a net appears
+# once per path that traverses it (i.e. the per-path-decomposition view).
+proc find_block_path_net_fanouts {out_path top_n stage spef set_rc top_module
+                                  {endpoint_path_count 1}
+                                  {group_path_count 100000}} {
+    setup_parasitics $stage $spef $set_rc
+
+    set fh [open $out_path w]
+    puts $fh "# stage\t$stage"
+    puts $fh "# top_module\t$top_module"
+    puts $fh "# top_n\t$top_n"
+    puts $fh "# kind\tblock_path_net_fanout"
+    puts $fh "# endpoint_path_count\t$endpoint_path_count"
+    puts $fh "# group_path_count\t$group_path_count"
+    puts $fh "# rank\tpath_idx\tnet_name\tfanout"
+
+    set written 0
+    for {set i 1} {$i <= $top_n} {incr i} {
+        set p0 [lindex [find_timing_paths -path_delay max \
+                                          -group_path_count 1 \
+                                          -endpoint_path_count 1 \
+                                          -slack_max 1e30 \
+                                          -sort_by_slack] 0]
+        if {$p0 eq ""} break
+
+        set sp [sta::get_property [sta::get_property $p0 startpoint] full_name]
+        set ep [sta::get_property [sta::get_property $p0 endpoint]   full_name]
+        set sp_sel [block_selector $sp]
+        set ep_sel [block_selector $ep]
+
+        # Enumerate every timing path inside this block (sp_sel -> ep_sel).
+        # endpoint_path_count = 1 gives one worst path per endpoint; raise it
+        # to capture combinational alternatives to the same endpoint.
+        set block_paths [find_timing_paths -path_delay max \
+                                           -from $sp_sel -to $ep_sel \
+                                           -group_path_count $group_path_count \
+                                           -endpoint_path_count $endpoint_path_count \
+                                           -slack_max 1e30 \
+                                           -sort_by_slack]
+
+        set pidx 0
+        foreach pe $block_paths {
+            set path [$pe path]
+            foreach pin [$path pins] {
+                if {[sta::get_property $pin direction] ne "output"} continue
+                set net ""
+                catch {set net [get_nets -of_objects $pin]}
+                if {$net eq "" || $net eq "NULL"} continue
+                set fanout [_net_fanout $net]
+                set nname ""
+                catch {set nname [get_full_name $net]}
+                if {$nname eq ""} { set nname "?" }
+                puts $fh "$i\t$pidx\t$nname\t$fanout"
+                incr written
+            }
+            incr pidx
+        }
+
+        # Mask the block so the next outer iteration surfaces a different one.
+        set_false_path -from $sp_sel -to $ep_sel
+    }
+    close $fh
+    puts "BPN: wrote $written block-path-net rows to $out_path"
+}
+
+# Top-N raw critical paths (no block grouping): pull the N worst paths by
+# slack via a single find_timing_paths call (one worst path per endpoint),
+# decompose each into per-net fanouts, and emit one row per (path_idx, net).
+proc find_top_path_net_fanouts {out_path top_n stage spef set_rc top_module} {
+    setup_parasitics $stage $spef $set_rc
+
+    set fh [open $out_path w]
+    puts $fh "# stage\t$stage"
+    puts $fh "# top_module\t$top_module"
+    puts $fh "# top_n\t$top_n"
+    puts $fh "# kind\ttop_path_net_fanout"
+    puts $fh "# path_idx\tslack_ns\tnet_name\tfanout"
+
+    # group_path_count caps per path group, so multi-group designs return more
+    # than top_n total. -sort_by_slack sorts the combined list globally, so
+    # slicing the first top_n gives the true worst-N by slack.
+    set paths [find_timing_paths -path_delay max \
+                                 -group_path_count $top_n \
+                                 -endpoint_path_count 1 \
+                                 -slack_max 1e30 \
+                                 -sort_by_slack]
+    if {[llength $paths] > $top_n} {
+        set paths [lrange $paths 0 [expr {$top_n - 1}]]
+    }
+
+    set written 0
+    set pidx 0
+    foreach pe $paths {
+        set path [$pe path]
+        set slack [sta::get_property $pe slack]
+        foreach pin [$path pins] {
+            if {[sta::get_property $pin direction] ne "output"} continue
+            set net ""
+            catch {set net [get_nets -of_objects $pin]}
+            if {$net eq "" || $net eq "NULL"} continue
+            set fanout [_net_fanout $net]
+            set nname ""
+            catch {set nname [get_full_name $net]}
+            if {$nname eq ""} { set nname "?" }
+            puts $fh "$pidx\t[format %.4f $slack]\t$nname\t$fanout"
+            incr written
+        }
+        incr pidx
+    }
+    close $fh
+    puts "TPN: wrote $written top-path-net rows from $pidx paths to $out_path"
 }

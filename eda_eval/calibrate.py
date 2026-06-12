@@ -39,6 +39,7 @@ PRESSURE_STEP = 0.10  # Pressure backoff per non-IO flow failure
 PRESSURE_FLOOR = 1.0  # Below this, the calibrator gives up
 UTIL_STEP = 10  # Utilization (percent) backoff per IO-pin overflow failure
 UTIL_FLOOR = 30  # Below this, the calibrator gives up on IO-bound designs
+ANCHOR_DOUBLINGS_PER_UTIL = 5  # T-doublings to attempt at one U before backing off U
 
 # Hard fail from OpenROAD's IO placer when die perimeter can't fit IO pins
 PPL_IO_OVERFLOW = re.compile(r"\[ERROR PPL-0024\]")
@@ -163,14 +164,18 @@ def main() -> None:
     )
 
     # Step 1: find a period at which P&R completes. Start tight at
-    # `cfg.anchor_period_ns` and double on any non-IO failure; back off
-    # utilization on IO-pin overflow. The first passing pass becomes the
-    # anchor that the constant-pressure sweep zooms in on.
+    # `cfg.anchor_period_ns`; on each failure, double T up to
+    # `ANCHOR_DOUBLINGS_PER_UTIL` times. If still failing after that
+    # many doublings, drop U by `UTIL_STEP` and restart the doubling
+    # ladder from `cfg.anchor_period_ns`. The first passing pass
+    # becomes the anchor that the constant-pressure sweep zooms in on.
     print(
         f"\nStep 1: anchor P&R starting at T={cfg.anchor_period_ns} ns "
-        f"(double on failure until pass)"
+        f"(double on failure up to {ANCHOR_DOUBLINGS_PER_UTIL}x, "
+        f"then reduce U)"
     )
     period = cfg.anchor_period_ns
+    doublings = 0
     anchor_attempts: list[dict] = []
     attempt = 0
     while True:
@@ -198,19 +203,31 @@ def main() -> None:
                     "output_dir": str(anchor_dir),
                 }
             )
-            if _is_density_failure(anchor_dir):
-                print(f"  FAILED (density: PPL-0024/GRT-0116) at U={util:.0f}")
+            if doublings < ANCHOR_DOUBLINGS_PER_UTIL:
+                print(f"  FAILED at T={period:.4f} ns")
+                period *= 2
+                doublings += 1
+                print(
+                    f"  doubling period to T={period:.4f} ns "
+                    f"({doublings}/{ANCHOR_DOUBLINGS_PER_UTIL})"
+                )
+            else:
+                print(
+                    f"  FAILED at T={period:.4f} ns after "
+                    f"{ANCHOR_DOUBLINGS_PER_UTIL} doublings at U={util:.0f}"
+                )
                 util = round(util - UTIL_STEP)
                 if util < UTIL_FLOOR:
                     raise RuntimeError(
                         f"calibration gave up: util backed off below "
                         f"{UTIL_FLOOR} (design still too dense)"
                     ) from exc
-                print(f"  reducing utilization to U={util:.0f}")
-            else:
-                print(f"  FAILED at T={period:.4f} ns")
-                period *= 2
-                print(f"  doubling period to T={period:.4f} ns")
+                period = cfg.anchor_period_ns
+                doublings = 0
+                print(
+                    f"  reducing utilization to U={util:.0f} and "
+                    f"restarting doubling from T={period:.4f} ns"
+                )
         attempt += 1
     anchor_period = period
     anchor_ws = _require_finite(m1, "route_ws_ns")

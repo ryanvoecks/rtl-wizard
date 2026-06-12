@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	axi_crossbar_wrap_8x8
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.6004	sI_axi_araddr[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	336	160	1.756	4
+2	-0.5722	sI_axi_araddr[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	296	80	1.800	3
+3	-0.5705	sI_axi_awaddr[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	336	160	1.756	4
+4	-0.5530	sI_axi_awaddr[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	296	80	1.800	3
+5	-0.4888	sI_axi_arid[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	144	160	1.756	4
+6	-0.4814	sI_axi_arvalid	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	88	160	1.756	4
+7	-0.4759	mI_axi_rid[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	168	160	1.756	4
+8	-0.4727	sI_axi_awid[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	144	160	1.756	4
+9	-0.4606	sI_axi_arid[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	104	80	1.800	3
+10	-0.4532	sI_axi_arvalid	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	48	80	1.800	3
+11	-0.4499	sI_axi_awvalid	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	88	160	1.756	4
+12	-0.4490	mI_axi_bid[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	168	160	1.756	4
+13	-0.4434	sI_axi_awid[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	104	80	1.800	3
+14	-0.4327	mI_axi_rlast	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	88	160	1.756	4
+15	-0.4273	mI_axi_rvalid	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	88	160	1.756	4
+16	-0.4214	mI_axi_rlast	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	48	80	1.800	3
+17	-0.4199	sI_axi_awvalid	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	48	80	1.800	3
+18	-0.4159	mI_axi_rvalid	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	48	80	1.800	3
+19	-0.4104	mI_axi_bvalid	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	88	160	1.756	4
+20	-0.3985	mI_axi_bvalid	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.trans_count_reg[J]	48	80	1.800	3
+21	-0.3601	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].b_arb_inst.grant_encoded_reg[J]	axi_crossbar_inst.axi_crossbar_wr_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	112	224	1.513	4
+22	-0.3419	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].r_arb_inst.grant_encoded_reg[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_count_reg[J][K]	112	224	1.549	4
+23	-0.3114	mI_axi_rid[J]	axi_crossbar_inst.axi_crossbar_rd_inst.m_ifaces[I].a_arb_inst.mask_reg[J]	152	128	1.195	4
+24	-0.3075	sI_axi_araddr[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_id_reg[J][K]	384	256	1.500	3
+25	-0.3075	sI_axi_araddr[J]	axi_crossbar_inst.axi_crossbar_rd_inst.s_ifaces[I].addr_inst.thread_m_reg[J][K]	304	96	1.000	2

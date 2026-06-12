@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	aes
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.3879	core.enc_block.sword_ctr_reg[I]	core.keymem.key_mem[I][J]	1922	3844	0.997	3
+2	-0.3450	core.aes_core_ctrl_reg[I]	core.keymem.key_mem[I][J]	1923	3846	0.995	4
+3	-0.3418	init_reg	core.keymem.key_mem[I][J]	1921	3842	0.995	2
+4	-0.3383	core.enc_block.block_wI_reg[J]	core.keymem.key_mem[I][J]	2048	4096	0.967	4
+5	-0.3288	core.enc_block.enc_ctrl_reg[I]	core.keymem.key_mem[I][J]	1924	3848	0.994	3
+6	-0.3230	core.dec_block.sword_ctr_reg[I]	core.dec_block.block_wI_reg[J]	130	260	1.635	4
+7	-0.3220	core.enc_block.sword_ctr_reg[I]	core.keymem.prev_keyI_reg[J]	258	516	0.988	5
+8	-0.2980	core.enc_block.round_ctr_reg[I]	core.dec_block.block_wI_reg[J]	132	264	1.598	4
+9	-0.2878	core.dec_block.round_ctr_reg[I]	core.dec_block.block_wI_reg[J]	132	264	1.633	4
+10	-0.2827	encdec_reg	core.dec_block.block_wI_reg[J]	129	258	1.609	4
+11	-0.2804	init_reg	core.keymem.prev_keyI_reg[J]	257	514	0.977	5
+12	-0.2713	core.aes_core_ctrl_reg[I]	core.keymem.prev_keyI_reg[J]	259	518	0.975	5
+13	-0.2695	core.enc_block.block_wI_reg[J]	core.keymem.prev_keyI_reg[J]	384	768	0.831	5
+14	-0.2685	core.enc_block.enc_ctrl_reg[I]	core.keymem.prev_keyI_reg[J]	260	520	0.971	5
+15	-0.2645	core.keymem.prev_keyI_reg[J]	core.keymem.key_mem[I][J]	2176	4352	0.992	5
+16	-0.2482	core.dec_block.dec_ctrl_reg[I]	core.dec_block.block_wI_reg[J]	132	264	1.595	4
+17	-0.2055	core.keymem.prev_keyI_reg[J]	core.keymem.prev_keyI_reg[J]	512	1024	0.975	5
+18	-0.1792	core.enc_block.sword_ctr_reg[I]	core.enc_block.block_wI_reg[J]	130	260	0.577	4
+19	-0.1517	address[I]	read_data[I]	40	0	0.000	0
+20	-0.1516	init_reg	core.enc_block.block_wI_reg[J]	129	258	0.550	4
+21	-0.1463	core.aes_core_ctrl_reg[I]	core.enc_block.block_wI_reg[J]	131	262	0.553	4
+22	-0.1397	core.enc_block.enc_ctrl_reg[I]	core.enc_block.block_wI_reg[J]	132	264	0.549	4
+23	-0.1383	core.dec_block.block_wI_reg[J]	core.dec_block.block_wI_reg[J]	256	512	1.617	4
+24	-0.1267	core.enc_block.block_wI_reg[J]	core.enc_block.block_wI_reg[J]	256	512	0.543	4
+25	-0.0619	core.keymem.prev_keyI_reg[J]	core.enc_block.block_wI_reg[J]	384	768	0.831	5

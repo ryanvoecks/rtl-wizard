@@ -1,0 +1,8 @@
+# stage	1_synth
+# top_module	filt_fir
+# top_n	100
+# kind	blocks
+# skip_async	1
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-0.0390	i_data[I]	o_data[I]	i_data[8]	o_data[15]

@@ -1,0 +1,82 @@
+# stage	1_synth
+# top_module	wb_conmax_top
+# top_n	100
+# kind	blocks
+# skip_async	1
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-0.2385	mI_addr_i[J]	mI_data_o[J]	m6_addr_i[29]	m6_data_o[27]
+2	-0.2075	mI_addr_i[J]	mI_ack_o	m2_addr_i[31]	m2_ack_o
+3	-0.2056	mI_addr_i[J]	sI_stb_o	m2_addr_i[28]	s15_stb_o
+4	-0.2024	mI_addr_i[J]	mI_rty_o	m2_addr_i[30]	m2_rty_o
+5	-0.1931	mI_addr_i[J]	mI_err_o	m2_addr_i[29]	m2_err_o
+6	-0.1646	mI_addr_i[J]	sI_addr_o[J]	m2_addr_i[2]	s15_addr_o[2]
+7	-0.0809	mI_stb_i	sI_stb_o	m5_stb_i	s8_stb_o
+8	-0.0798	sI_data_i[J]	mI_data_o[J]	s12_data_i[12]	m6_data_o[12]
+9	-0.0434	mI_data_i[J]	sI_data_o[J]	m1_data_i[12]	s15_data_o[12]
+10	-0.0391	sI_ack_i	mI_ack_o	s15_ack_i	m6_ack_o
+11	-0.0283	mI_sel_i[J]	sI_sel_o[J]	m6_sel_i[1]	s7_sel_o[1]
+12	-0.0274	mI_we_i	sI_we_o	m2_we_i	s11_we_o
+13	0.0036	sI_err_i	mI_err_o	s9_err_i	m4_err_o
+14	0.0036	sI_rty_i	mI_rty_o	s13_rty_i	m2_rty_o
+15	0.0506	rf.rf_ack	mI_data_o[J]	rf.rf_ack$_DFF_P_/Q	m6_data_o[31]
+16	0.0652	mI_addr_i[J]	rf.confI[J]	m2_addr_i[2]	rf.conf15[1]$_DFFE_PP0P_/D
+17	0.0701	mI_addr_i[J]	rf.rf_dout[I]	m2_addr_i[2]	rf.rf_dout[13]$_SDFF_PN0_/D
+18	0.0746	rf.rf_ack	mI_err_o	rf.rf_ack$_DFF_P_/Q	m6_err_o
+19	0.0754	rf.rf_ack	mI_rty_o	rf.rf_ack$_DFF_P_/Q	m2_rty_o
+20	0.0772	sI.mast_sel_r[J]	sI_stb_o	s15.mast_sel_r[0]$_DFF_P_/Q	s15_stb_o
+21	0.1102	mI_addr_i[J]	mI.sJ_cyc_o	m6_addr_i[29]	m6.s9_cyc_o$_DFFE_PP0N_/D
+22	0.1116	mI_addr_i[J]	rf.rf_we	m2_addr_i[28]	rf.rf_we$_DFF_P_/D
+23	0.1130	sI.mast_sel_r[J]	sI_addr_o[J]	s15.mast_sel_r[0]$_DFF_P_/Q	s15_addr_o[2]
+24	0.1227	mI_addr_i[J]	rf.rf_ack	m2_addr_i[28]	rf.rf_ack$_DFF_P_/D
+25	0.1506	sI.mast_sel_r[J]	sI_data_o[J]	s15.mast_sel_r[0]$_DFF_P_/Q	s15_data_o[10]
+26	0.1559	sI.mast_sel_r[J]	sI_sel_o[J]	s15.mast_sel_r[0]$_DFF_P_/Q	s15_sel_o[0]
+27	0.1672	rf.rf_ack	mI_ack_o	rf.rf_ack$_DFF_P_/Q	m6_ack_o
+28	0.1728	mI.sJ_cyc_o	sI_stb_o	m7.s15_cyc_o$_DFFE_PP0N_/Q	s15_stb_o
+29	0.1827	sI.mast_sel_r[J]	sI_we_o	s14.mast_sel_r[1]$_DFF_P_/Q	s14_we_o
+30	0.2073	sI.mast_sel_r[J]	sI_cyc_o	s15.mast_sel_r[0]$_DFF_P_/Q	s15_cyc_o
+31	0.2135	sI.mast_sel_r[J]	mI_ack_o	s13.mast_sel_r[0]$_DFF_P_/Q	m6_ack_o
+32	0.2295	rf.rf_ack	sI_cyc_o	rf.rf_ack$_DFF_P_/Q	s15_cyc_o
+33	0.2324	sI.mast_sel_r[J]	mI_err_o	s0.mast_sel_r[1]$_DFF_P_/Q	m4_err_o
+34	0.2343	sI.mast_sel_r[J]	mI_rty_o	s7.mast_sel_r[1]$_DFF_P_/Q	m4_rty_o
+35	0.2419	mI_data_i[J]	rf.confI[J]	m1_data_i[12]	rf.conf11[12]$_DFFE_PP0P_/D
+36	0.2466	mI_stb_i	rf.rf_dout[I]	m6_stb_i	rf.rf_dout[13]$_SDFF_PN0_/D
+37	0.2507	mI_stb_i	rf.rf_we	m6_stb_i	rf.rf_we$_DFF_P_/D
+38	0.2509	rf.rf_dout[I]	mI_data_o[J]	rf.rf_dout[2]$_SDFF_PN0_/Q	m2_data_o[2]
+39	0.2551	mI_stb_i	rf.rf_ack	m6_stb_i	rf.rf_ack$_DFF_P_/D
+40	0.2571	mI.sJ_cyc_o	sI_cyc_o	m3.s15_cyc_o$_DFFE_PP0N_/Q	s15_cyc_o
+41	0.2609	sI.mJ_cyc_r	sI_stb_o	s15.m6_cyc_r$_DFF_P_/Q	s15_stb_o
+42	0.2796	mI_stb_i	mI.sJ_cyc_o	m6_stb_i	m6.s0_cyc_o$_DFFE_PP0N_/D
+43	0.3318	rf.confI[J]	sI.msel.arbJ.state[K]	rf.conf2[13]$_DFFE_PP0P_/Q	s2.msel.arb3.state[0]$_DFFE_PP0P_/D
+44	0.3388	sI.mJ_cyc_r	sI_cyc_o	s15.m6_cyc_r$_DFF_P_/Q	s15_cyc_o
+45	0.3389	sI.mast_sel_r[J]	rf.rf_dout[I]	s15.mast_sel_r[0]$_DFF_P_/Q	rf.rf_dout[14]$_SDFF_PN0_/D
+46	0.3425	mI_we_i	rf.rf_we	m5_we_i	rf.rf_we$_DFF_P_/D
+47	0.3468	sI.mast_sel_r[J]	rf.confI[J]	s15.mast_sel_r[0]$_DFF_P_/Q	rf.conf0[0]$_DFFE_PP0P_/D
+48	0.3549	rst_i	sI.msel.pri_out[J]	rst_i	s11.msel.pri_out[1]$_DFF_P_/D
+49	0.3755	mI.sJ_cyc_o	sI.msel.arbJ.state[K]	m6.s2_cyc_o$_DFFE_PP0N_/Q	s2.msel.arb3.state[0]$_DFFE_PP0P_/D
+50	0.3944	sI.mast_sel_r[J]	rf.rf_we	s15.mast_sel_r[0]$_DFF_P_/Q	rf.rf_we$_DFF_P_/D
+51	0.4055	sI.mast_sel_r[J]	rf.rf_ack	s15.mast_sel_r[0]$_DFF_P_/Q	rf.rf_ack$_DFF_P_/D
+52	0.4215	sI.msel.arbJ.state[K]	sI.msel.arbJ.state[K]	s14.msel.arb0.state[1]$_DFFE_PP0P_/Q	s14.msel.arb0.state[0]$_DFFE_PP0P_/D
+53	0.4231	mI_cyc_i	mI.sJ_cyc_o	m0_cyc_i	m0.s10_cyc_o$_DFFE_PP0N_/D
+54	0.4708	mI.sJ_cyc_o	rf.rf_dout[I]	m7.s15_cyc_o$_DFFE_PP0N_/Q	rf.rf_dout[11]$_SDFF_PN0_/D
+55	0.4900	mI.sJ_cyc_o	rf.rf_we	m7.s15_cyc_o$_DFFE_PP0N_/Q	rf.rf_we$_DFF_P_/D
+56	0.5011	mI.sJ_cyc_o	rf.rf_ack	m7.s15_cyc_o$_DFFE_PP0N_/Q	rf.rf_ack$_DFF_P_/D
+57	0.5476	mI.sJ_cyc_o	sI.msel.pri_out[J]	m5.s14_cyc_o$_DFFE_PP0N_/Q	s14.msel.pri_out[1]$_DFF_P_/D
+58	0.5535	sI.mast_sel_r[J]	sI.next	s15.mast_sel_r[0]$_DFF_P_/Q	s15.next$_DFF_P_/D
+59	0.5754	sI.mJ_cyc_r	rf.rf_dout[I]	s15.m3_cyc_r$_DFF_P_/Q	rf.rf_dout[11]$_SDFF_PN0_/D
+60	0.5885	rf.confI[J]	sI.msel.pri_out[J]	rf.conf2[13]$_DFFE_PP0P_/Q	s2.msel.pri_out[1]$_DFF_P_/D
+61	0.5910	sI.mJ_cyc_r	rf.rf_we	s15.m6_cyc_r$_DFF_P_/Q	rf.rf_we$_DFF_P_/D
+62	0.5953	sI.mJ_cyc_r	rf.rf_ack	s15.m6_cyc_r$_DFF_P_/Q	rf.rf_ack$_DFF_P_/D
+63	0.5976	rf.rf_we	rf.confI[J]	rf.rf_we$_DFF_P_/Q	rf.conf10[0]$_DFFE_PP0P_/D
+64	0.6018	rf.confI[J]	rf.rf_dout[I]	rf.conf11[9]$_DFFE_PP0P_/Q	rf.rf_dout[9]$_SDFF_PN0_/D
+65	0.6032	mI.sJ_cyc_o	sI.next	m3.s15_cyc_o$_DFFE_PP0N_/Q	s15.next$_DFF_P_/D
+66	0.6362	sI.msel.arbJ.state[K]	sI.mast_sel_r[J]	s5.msel.arb1.state[2]$_DFFE_PP0P_/Q	s5.mast_sel_r[2]$_DFF_P_/D
+67	0.6399	mI.sJ_cyc_o	mI.sJ_cyc_o	m5.s11_cyc_o$_DFFE_PP0N_/Q	m5.s11_cyc_o$_DFFE_PP0N_/D
+68	0.6558	sI.msel.pri_out[J]	sI.mast_sel_r[J]	s1.msel.pri_out[2]$_DFF_P_/Q	s1.mast_sel_r[1]$_DFF_P_/D
+69	0.6850	sI.mJ_cyc_r	sI.next	s15.m6_cyc_r$_DFF_P_/Q	s15.next$_DFF_P_/D
+70	0.7462	sI.msel.pri_out[J]	sI.msel.pri_out[J]	s2.msel.pri_out[3]$_DFF_P_/Q	s2.msel.pri_out[3]$_DFF_P_/D
+71	0.7465	rf.confI[J]	rf.confI[J]	rf.conf2[13]$_DFFE_PP0P_/Q	rf.conf2[13]$_DFFE_PP0P_/D
+72	0.7481	sI.next	sI.msel.pri_out[J]	s0.next$_DFF_P_/QN	s0.msel.pri_out[1]$_DFF_P_/D
+73	0.8168	mI.sJ_cyc_o	sI.mJ_cyc_r	m1.s0_cyc_o$_DFFE_PP0N_/Q	s0.m1_cyc_r$_DFF_P_/D
+74	0.8298	rf.rf_we	rf.rf_we	rf.rf_we$_DFF_P_/QN	rf.rf_we$_DFF_P_/D
+75	0.8321	rf.rf_ack	rf.rf_ack	rf.rf_ack$_DFF_P_/QN	rf.rf_ack$_DFF_P_/D

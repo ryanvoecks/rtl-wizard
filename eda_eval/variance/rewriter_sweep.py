@@ -33,7 +33,7 @@ from common.config import (
     TargetConfig,
 )
 from common.executor import run_parallel
-from common.targets import all_targets
+from common.targets import all_targets, resolve_target
 from eda_eval.run import run_job
 from eda_eval.variance.rewriter import rewrite_design
 
@@ -87,17 +87,27 @@ def main() -> None:
         default=2,
         help="NUM_CORES exported to each ORFS invocation.",
     )
+    parser.add_argument(
+        "--target",
+        action="append",
+        default=None,
+        help="Restrict the sweep to one target (by `<name>_target` "
+        "variable name in common.targets). Repeatable. Defaults to "
+        "all_targets.",
+    )
     args = parser.parse_args()
+
+    targets = [resolve_target(n) for n in args.target] if args.target else all_targets
 
     batch_ts = time.strftime("%Y-%m-%d_%H-%M-%S")
     batch_dir = EDA_RUNS / batch_ts
     batch_dir.mkdir(parents=True, exist_ok=True)
     print(f"Output dir: {batch_dir}")
 
-    jobs = [(t, s) for t in all_targets for s in SEEDS]
+    jobs = [(t, s) for t in targets for s in SEEDS]
     total = len(jobs)
     print(
-        f"Running {total} jobs ({len(all_targets)} targets x "
+        f"Running {total} jobs ({len(targets)} targets x "
         f"{len(SEEDS)} rewriter seeds), "
         f"parallel_samples={args.parallel_samples}, "
         f"threads_per_run={args.threads_per_run}"

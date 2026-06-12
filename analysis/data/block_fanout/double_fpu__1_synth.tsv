@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	fpu
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.6053	uI.mul_a[J]	uI.product_a[J]	94	188	0.723	3
+2	-0.6033	uI.mul_b[J]	uI.product_a[J]	94	188	0.723	3
+3	-0.5742	uI.mul_a[J]	uI.product_c[J]	94	188	0.739	3
+4	-0.5722	uI.mul_b[J]	uI.product_c[J]	94	188	0.739	3
+5	-0.5585	uI.mul_a[J]	uI.product_b[J]	94	188	0.793	4
+6	-0.5565	uI.mul_b[J]	uI.product_b[J]	94	188	0.793	4
+7	-0.5367	uI.mul_a[J]	uI.product_e[J]	87	174	0.701	3
+8	-0.5348	uI.mul_b[J]	uI.product_e[J]	87	174	0.701	3
+9	-0.5192	uI.mul_a[J]	uI.product_j[J]	84	168	0.720	4
+10	-0.5173	uI.mul_b[J]	uI.product_j[J]	84	168	0.720	4
+11	-0.4616	uI.mul_a[J]	uI.product_g[J]	89	178	0.742	4
+12	-0.4596	uI.mul_b[J]	uI.product_g[J]	89	178	0.742	4
+13	-0.4456	uI.mul_a[J]	uI.product_f[J]	87	174	0.701	3
+14	-0.4436	uI.mul_b[J]	uI.product_f[J]	87	174	0.701	3
+15	-0.3832	uI.mul_a[J]	uI.product_i[J]	82	164	0.689	3
+16	-0.3750	uI.mul_b[J]	uI.product_i[J]	82	164	0.689	3
+17	-0.3295	uI.mul_a[J]	uI.product_h[J]	82	164	0.683	3
+18	-0.3275	uI.mul_b[J]	uI.product_h[J]	82	164	0.683	3
+19	0.1212	uI.dividend_reg[J]	uI.remainder_msb	55	110	2.536	5
+20	0.1281	uI.dividend_reg[J]	uI.dividend_reg[J]	108	216	2.537	5
+21	0.1345	uI.divisor_reg[J]	uI.remainder_msb	54	108	1.694	5
+22	0.1375	uI.dividend_reg[J]	uI.quotient[J]	108	216	1.750	5
+23	0.1387	uI.mul_a[J]	uI.product_d[J]	79	158	0.671	3
+24	0.1387	uI.mul_b[J]	uI.product_d[J]	79	158	0.671	3
+25	0.1415	uI.divisor_reg[J]	uI.dividend_reg[J]	107	214	2.112	5
