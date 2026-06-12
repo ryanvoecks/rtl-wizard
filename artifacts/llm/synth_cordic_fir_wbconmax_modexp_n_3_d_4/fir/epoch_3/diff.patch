@@ -1,0 +1,112 @@
+--- a/filt_fir.v
++++ b/filt_fir.v
+@@ -7,7 +7,7 @@
+   parameter gp_inp_width         = 16,                              // Set input data width
+   parameter gp_coeff_length      = 80,
+   parameter gp_coeff_width       = 16,
+-  parameter gp_tf_df             = 1,                              // 1-> TF, 0-> DF   
++  parameter gp_tf_df             = 1,                              // 1-> TF, 0-> DF
+   parameter gp_symm              = 1,
+   parameter gp_oup_width         = gp_inp_width+gp_coeff_width+$clog2(gp_coeff_length)
+ ) (
+@@ -22,19 +22,19 @@
+   localparam c_add_oup_width = c_mul_oup_width + $clog2(gp_coeff_length);
+   localparam c_filler_length = c_add_oup_width - c_mul_oup_width;
+   localparam c_coeff_2       = (gp_symm) ? `DIV(gp_coeff_length, 2) : gp_coeff_length;
+-  
++
+   wire signed [gp_coeff_length*c_mul_oup_width-1:0]     w_mul;
+-  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add; 
++  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add;
+   wire signed [gp_coeff_width-1:0]                      c_coeff [0:c_coeff_2-1];
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   genvar i;
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   `include "filt_coeff.v"
+ // -------------------------------------------------------------------
+   generate
+     /******************************/
+-    /* TRANSPOSED-FORM FIR FILTER */  
+-    /******************************/    
++    /* TRANSPOSED-FORM FIR FILTER */
++    /******************************/
+     if (gp_tf_df)
+       begin:g_fir_tf
+         wire signed [(gp_coeff_length-1)*c_add_oup_width-1:0] r_dly_tf;
+@@ -55,16 +55,16 @@
+ 	      begin: g_fir_unsymm
+ 	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(i_data) * c_coeff[i];
+ 	      end
+-	      
++
+ 	    if (i==gp_coeff_length-1)
+ 	      begin: g_fir_add_last
+-                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);  
++                assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
+ 	      end
+             else
+ 	      begin: g_fir_add
+                 assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(r_dly_tf[(i+1)*c_add_oup_width-1 -: c_add_oup_width]);
+               end
+-	      
++
+ 	    if (i>0)
+               begin: g_fir_dly_tf
+                 dff #(
+@@ -77,10 +77,10 @@
+                   .o_data   (r_dly_tf[i*c_add_oup_width-1 -: c_add_oup_width])
+                 );
+               end
+-	  end//FOR	
++	  end//FOR
+       end//IF_TF
+     /**************************/
+-    /* DIRECT-FORM FIR FILTER */  
++    /* DIRECT-FORM FIR FILTER */
+     /**************************/
+     else
+       begin: g_fir_df
+@@ -106,9 +106,9 @@
+ 	        assign w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width] = $signed(r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width]) * c_coeff[i];
+               end//FOR
+ 	  end//ELSE_UNSYMM
+-	
++
+ 	for (i=0; i<gp_coeff_length; i=i+1)
+-	  begin: g_add    
++	  begin: g_add
+ 	    if (i==0)
+ 	      begin: g_fir_add_first
+ 	        assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]);
+@@ -118,9 +118,9 @@
+ 	        assign w_add[(i+1)*c_add_oup_width-1 -: c_add_oup_width] = $signed(w_mul[(i+1)*c_mul_oup_width-1 -: c_mul_oup_width]) + $signed(w_add[i*c_add_oup_width-1 -: c_add_oup_width]);
+ 	      end
+ 	  end//FOR
+-	
++
+ 	for (i=0; i<gp_coeff_length; i=i+1)
+-	  begin: g_dly 
++	  begin: g_dly
+ 	    if (i==0)
+ 	      begin: g_fir_dly_first
+ 	        assign  r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width] = i_data;
+@@ -136,8 +136,8 @@
+                   .i_data   (r_dly_df[i*gp_inp_width-1 -: gp_inp_width]),
+                   .o_data   (r_dly_df[(i+1)*gp_inp_width-1 -: gp_inp_width])
+                 );
+-              end	    
+-	  end//FOR    
++              end
++	  end//FOR
+       end
+   endgenerate
+ 
+@@ -147,5 +147,5 @@
+   else
+     assign o_data = w_add[gp_coeff_length*c_add_oup_width-1 -: gp_oup_width];
+ endgenerate
+-  
++
+ endmodule

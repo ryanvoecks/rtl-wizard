@@ -1,0 +1,352 @@
+--- a/wb_conmax_arb.v
++++ b/wb_conmax_arb.v
+@@ -97,7 +97,7 @@
+ 
+ assign	gnt = state;
+ 
+-always@(posedge clk or posedge rst)
++always@(posedge clk)
+ 	if(rst)		state <= #1 grant0;
+ 	else		state <= #1 next_state;
+ 
+--- a/wb_conmax_master_if.v
++++ b/wb_conmax_master_if.v
+@@ -361,6 +361,7 @@
+ reg			wb_err_o;
+ reg			wb_rty_o;
+ wire	[3:0]		slv_sel;
++reg	[3:0]		slv_sel_r;
+ 
+ wire		s0_cyc_o_next, s1_cyc_o_next, s2_cyc_o_next, s3_cyc_o_next;
+ wire		s4_cyc_o_next, s5_cyc_o_next, s6_cyc_o_next, s7_cyc_o_next;
+@@ -378,6 +379,8 @@
+ //
+ 
+ assign slv_sel = wb_addr_i[aw-1:aw-4];
++
++always @(posedge clk_i) slv_sel_r <= #1 slv_sel;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -435,11 +438,11 @@
+ assign s14_data_o = wb_data_i;
+ assign s15_data_o = wb_data_i;
+ 
+-always @(slv_sel or s0_data_i or s1_data_i or s2_data_i or s3_data_i or
++always @(slv_sel_r or s0_data_i or s1_data_i or s2_data_i or s3_data_i or
+ 	s4_data_i or s5_data_i or s6_data_i or s7_data_i or s8_data_i or
+ 	s9_data_i or s10_data_i or s11_data_i or s12_data_i or
+ 	s13_data_i or s14_data_i or s15_data_i)
+-	case(slv_sel)	// synopsys parallel_case
++	case(slv_sel_r)	// synopsys parallel_case
+ 	   4'd0:	wb_data_o = s0_data_i;
+ 	   4'd1:	wb_data_o = s1_data_i;
+ 	   4'd2:	wb_data_o = s2_data_i;
+@@ -498,69 +501,69 @@
+ assign s14_cyc_o_next = (wb_cyc_i & !wb_stb_i) ? s14_cyc_o : ((slv_sel==4'd14) ? wb_cyc_i : 1'b0);
+ assign s15_cyc_o_next = (wb_cyc_i & !wb_stb_i) ? s15_cyc_o : ((slv_sel==4'd15) ? wb_cyc_i : 1'b0);
+ 
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s0_cyc_o <= #1 1'b0; 
+-	else		s0_cyc_o <= #1 s0_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s1_cyc_o <= #1 1'b0; 
+-	else		s1_cyc_o <= #1 s1_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s2_cyc_o <= #1 1'b0; 
+-	else		s2_cyc_o <= #1 s2_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s3_cyc_o <= #1 1'b0; 
+-	else		s3_cyc_o <= #1 s3_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s4_cyc_o <= #1 1'b0; 
+-	else		s4_cyc_o <= #1 s4_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s5_cyc_o <= #1 1'b0; 
+-	else		s5_cyc_o <= #1 s5_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s6_cyc_o <= #1 1'b0; 
+-	else		s6_cyc_o <= #1 s6_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s7_cyc_o <= #1 1'b0; 
+-	else		s7_cyc_o <= #1 s7_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s8_cyc_o <= #1 1'b0; 
+-	else		s8_cyc_o <= #1 s8_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s9_cyc_o <= #1 1'b0; 
+-	else		s9_cyc_o <= #1 s9_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s10_cyc_o <= #1 1'b0; 
+-	else		s10_cyc_o <= #1 s10_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s11_cyc_o <= #1 1'b0; 
+-	else		s11_cyc_o <= #1 s11_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s12_cyc_o <= #1 1'b0; 
+-	else		s12_cyc_o <= #1 s12_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s13_cyc_o <= #1 1'b0; 
+-	else		s13_cyc_o <= #1 s13_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s14_cyc_o <= #1 1'b0; 
+-	else		s14_cyc_o <= #1 s14_cyc_o_next; 
+-
+-always @(posedge clk_i or posedge rst_i) 
+-	if(rst_i)	s15_cyc_o <= #1 1'b0; 
+-	else		s15_cyc_o <= #1 s15_cyc_o_next; 
++always @(posedge clk_i)
++	if(rst_i)	s0_cyc_o <= #1 1'b0;
++	else		s0_cyc_o <= #1 s0_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s1_cyc_o <= #1 1'b0;
++	else		s1_cyc_o <= #1 s1_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s2_cyc_o <= #1 1'b0;
++	else		s2_cyc_o <= #1 s2_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s3_cyc_o <= #1 1'b0;
++	else		s3_cyc_o <= #1 s3_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s4_cyc_o <= #1 1'b0;
++	else		s4_cyc_o <= #1 s4_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s5_cyc_o <= #1 1'b0;
++	else		s5_cyc_o <= #1 s5_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s6_cyc_o <= #1 1'b0;
++	else		s6_cyc_o <= #1 s6_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s7_cyc_o <= #1 1'b0;
++	else		s7_cyc_o <= #1 s7_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s8_cyc_o <= #1 1'b0;
++	else		s8_cyc_o <= #1 s8_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s9_cyc_o <= #1 1'b0;
++	else		s9_cyc_o <= #1 s9_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s10_cyc_o <= #1 1'b0;
++	else		s10_cyc_o <= #1 s10_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s11_cyc_o <= #1 1'b0;
++	else		s11_cyc_o <= #1 s11_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s12_cyc_o <= #1 1'b0;
++	else		s12_cyc_o <= #1 s12_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s13_cyc_o <= #1 1'b0;
++	else		s13_cyc_o <= #1 s13_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s14_cyc_o <= #1 1'b0;
++	else		s14_cyc_o <= #1 s14_cyc_o_next;
++
++always @(posedge clk_i)
++	if(rst_i)	s15_cyc_o <= #1 1'b0;
++	else		s15_cyc_o <= #1 s15_cyc_o_next;
+ 
+ assign s0_stb_o = (slv_sel==4'd0) ? wb_stb_i : 1'b0;
+ assign s1_stb_o = (slv_sel==4'd1) ? wb_stb_i : 1'b0;
+@@ -579,11 +582,11 @@
+ assign s14_stb_o = (slv_sel==4'd14) ? wb_stb_i : 1'b0;
+ assign s15_stb_o = (slv_sel==4'd15) ? wb_stb_i : 1'b0;
+ 
+-always @(slv_sel or s0_ack_i or s1_ack_i or s2_ack_i or s3_ack_i or
++always @(slv_sel_r or s0_ack_i or s1_ack_i or s2_ack_i or s3_ack_i or
+ 	s4_ack_i or s5_ack_i or s6_ack_i or s7_ack_i or s8_ack_i or
+ 	s9_ack_i or s10_ack_i or s11_ack_i or s12_ack_i or
+ 	s13_ack_i or s14_ack_i or s15_ack_i)
+-	case(slv_sel)	// synopsys parallel_case
++	case(slv_sel_r)	// synopsys parallel_case
+ 	   4'd0:	wb_ack_o = s0_ack_i;
+ 	   4'd1:	wb_ack_o = s1_ack_i;
+ 	   4'd2:	wb_ack_o = s2_ack_i;
+@@ -603,11 +606,11 @@
+ 	   default:	wb_ack_o = 1'b0;
+ 	endcase
+ 
+-always @(slv_sel or s0_err_i or s1_err_i or s2_err_i or s3_err_i or
++always @(slv_sel_r or s0_err_i or s1_err_i or s2_err_i or s3_err_i or
+ 	s4_err_i or s5_err_i or s6_err_i or s7_err_i or s8_err_i or
+ 	s9_err_i or s10_err_i or s11_err_i or s12_err_i or
+ 	s13_err_i or s14_err_i or s15_err_i)
+-	case(slv_sel)	// synopsys parallel_case
++	case(slv_sel_r)	// synopsys parallel_case
+ 	   4'd0:	wb_err_o = s0_err_i;
+ 	   4'd1:	wb_err_o = s1_err_i;
+ 	   4'd2:	wb_err_o = s2_err_i;
+@@ -627,11 +630,11 @@
+ 	   default:	wb_err_o = 1'b0;
+ 	endcase
+ 
+-always @(slv_sel or s0_rty_i or s1_rty_i or s2_rty_i or s3_rty_i or
++always @(slv_sel_r or s0_rty_i or s1_rty_i or s2_rty_i or s3_rty_i or
+ 	s4_rty_i or s5_rty_i or s6_rty_i or s7_rty_i or s8_rty_i or
+ 	s9_rty_i or s10_rty_i or s11_rty_i or s12_rty_i or
+ 	s13_rty_i or s14_rty_i or s15_rty_i)
+-	case(slv_sel)	// synopsys parallel_case
++	case(slv_sel_r)	// synopsys parallel_case
+ 	   4'd0:	wb_rty_o = s0_rty_i;
+ 	   4'd1:	wb_rty_o = s1_rty_i;
+ 	   4'd2:	wb_rty_o = s2_rty_i;
+--- a/wb_conmax_rf.v
++++ b/wb_conmax_rf.v
+@@ -161,6 +161,7 @@
+ //synopsys infer_multibit "conf15"
+ 
+ wire		rf_sel;
++reg		rf_sel_r;
+ reg	[15:0]	rf_dout;
+ reg		rf_ack;
+ reg		rf_we;
+@@ -172,6 +173,9 @@
+ 
+ assign rf_sel = i_wb_cyc_i & i_wb_stb_i & (i_wb_addr_i[aw-5:aw-8] == rf_addr);
+ 
++always @(posedge clk_i)
++	rf_sel_r <= #1 rf_sel;
++
+ ////////////////////////////////////////////////////////////////////
+ //
+ // Register File Logic
+@@ -184,82 +188,82 @@
+ 	rf_ack <= #1 rf_sel & !rf_ack;
+ 
+ // Writre Logic
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf0 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd0) )		conf0 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf1 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd1) )		conf1 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf2 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd2) )		conf2 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf3 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd3) )		conf3 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf4 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd4) )		conf4 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf5 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd5) )		conf5 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf6 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd6) )		conf6 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf7 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd7) )		conf7 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf8 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd8) )		conf8 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf9 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd9) )		conf9 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf10 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd10) )	conf10 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf11 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd11) )	conf11 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf12 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd12) )	conf12 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf13 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd13) )	conf13 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf14 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd14) )	conf14 <= #1 i_wb_data_i[15:0];
+ 
+-always @(posedge clk_i or posedge rst_i)
++always @(posedge clk_i)
+ 	if(rst_i)					conf15 <= #1 16'h0;
+ 	else
+ 	if(rf_we & (i_wb_addr_i[5:2] == 4'd15) )	conf15 <= #1 i_wb_data_i[15:0];
+@@ -300,9 +304,9 @@
+ assign e_wb_stb_o  = i_wb_stb_i;
+ assign e_wb_we_o   = i_wb_we_i;
+ 
+-assign i_wb_data_o = rf_sel ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
+-assign i_wb_ack_o  = rf_sel ? rf_ack  : e_wb_ack_i;
+-assign i_wb_err_o  = rf_sel ? 1'b0    : e_wb_err_i;
+-assign i_wb_rty_o  = rf_sel ? 1'b0    : e_wb_rty_i;
++assign i_wb_data_o = rf_sel_r ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
++assign i_wb_ack_o  = rf_sel_r ? rf_ack  : e_wb_ack_i;
++assign i_wb_err_o  = rf_sel_r ? 1'b0    : e_wb_err_i;
++assign i_wb_rty_o  = rf_sel_r ? 1'b0    : e_wb_rty_i;
+ 
+ endmodule

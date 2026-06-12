@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	jpeg_encoder
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-1.0800	fdct_zigzag.dct_mod.ddin[I]	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.macu.mult_res[K]	1185	2370	1.605	82
+2	-0.3764	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.coef[K]	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.macu.mult_res[K]	1527	3054	1.440	7
+3	-0.0567	fdct_zigzag.dct_mod.ddin[I]	fdct_zigzag.dct_mod.ddin[I]	16	32	6.625	82
+4	0.0574	ena	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.coef[K]	351	700	1.000	1
+5	0.0594	ena	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.macu.result[K]	1385	2768	1.290	4
+6	0.0666	ena	qnr.divider.q[I]	2	2	7.500	15
+7	0.0677	ena	rle.rle.den	2	2	0.500	1
+8	0.0691	ena	qnr.divider.divider.s_pipe[I][J]	211	420	1.071	3
+9	0.0697	ena	rle.rle.amp[I]	11	20	1.000	2
+10	0.0697	ena	fdct_zigzag.dct_mod.dct_block_I.dct_unit_J.macu.mult_res[K]	1178	2354	1.571	7
+11	0.0737	ena	rle.rle.size[I]	5	8	1.500	3
+12	0.0744	ena	rle.rzI.state	5	8	3.500	4
+13	0.0745	ena	rle.rle.amp[I]	2	2	1.000	2
+14	0.0800	ena	rle.rle.zero_cnt[I]	5	8	1.875	4
+15	0.0805	ena	rle.rle.rlen[I]	5	8	1.500	3
+16	0.0807	ena	rle.rle.sample_cnt[I]	7	12	1.417	4
+17	0.0825	ena	rle.rle.dcterm	2	2	1.500	2
+18	0.0828	ena	qnr.dep[I]	17	32	1.000	2
+19	0.0837	ena	fdct_zigzag.dct_mod.douten	2	2	1.000	2
+20	0.0839	ena	qnr.divider.iz[I]	14	26	1.423	3
+21	0.0849	ena	rle.rzI.den	5	8	1.000	2
+22	0.0853	ena	qnr.rq[I]	12	22	1.909	5
+23	0.0867	ena	fdct_zigzag.dct_mod.sample_cnt[I]	7	12	1.417	3
+24	0.0920	ena	fdct_zigzag.dct_mod.ddcnt	2	2	1.500	3
+25	0.0967	ena	fdct_zigzag.dct_mod.ddgo	2	2	0.500	1

@@ -1,0 +1,358 @@
+--- a/modexp_core.v
++++ b/modexp_core.v
+@@ -147,8 +147,15 @@
+   reg          loop_counter_we;
+ 
+   reg [07 : 0] E_word_index;
++  reg [07 : 0] exponent_addr_pre_reg;
+   reg [04 : 0] E_bit_index;
+   reg          last_iteration;
++
++  reg          sel_one_nr_reg;
++  reg          sel_x_nr_reg;
++  reg          sel_z_p_reg;
++  reg          sel_p_p_reg;
++  reg          sel_z_one_reg;
+ 
+   reg          ei_reg;
+   reg          ei_new;
+@@ -391,12 +398,24 @@
+           cycle_ctr_low_reg   <= 32'h00000000;
+           cycle_ctr_high_reg  <= 32'h00000000;
+           cycle_ctr_state_reg <= 1'b0;
++          sel_one_nr_reg        <= 1'b1;
++          sel_x_nr_reg          <= 1'b0;
++          sel_z_p_reg           <= 1'b0;
++          sel_p_p_reg           <= 1'b0;
++          sel_z_one_reg         <= 1'b0;
++          exponent_addr_pre_reg <= 8'h00;
+         end
+       else
+         begin
+           one_reg             <= one_new;
+           b_one_reg           <= b_one_new;
+           residue_valid_reg   <= residue_valid_new;
++          sel_one_nr_reg        <= (montprod_select_reg == MONTPROD_SELECT_ONE_NR);
++          sel_x_nr_reg          <= (montprod_select_reg == MONTPROD_SELECT_X_NR);
++          sel_z_p_reg           <= (montprod_select_reg == MONTPROD_SELECT_Z_P);
++          sel_p_p_reg           <= (montprod_select_reg == MONTPROD_SELECT_P_P);
++          sel_z_one_reg         <= (montprod_select_reg == MONTPROD_SELECT_Z_ONE);
++          exponent_addr_pre_reg <= E_word_index;
+ 
+           if (ready_we)
+             ready_reg <= ready_new;
+@@ -466,7 +485,9 @@
+           cycle_ctr_low_new = cycle_ctr_low_reg + 1'b1;
+           cycle_ctr_low_we  = 1'b1;
+ 
+-          if (cycle_ctr_low_new == 32'h00000000)
++          // Use all-ones detect on the *current* value instead of
++          // add-then-compare-zero, saving one 32-bit adder from the path.
++          if (&cycle_ctr_low_reg)
+             begin
+               cycle_ctr_high_new  = cycle_ctr_high_reg + 1'b1;
+               cycle_ctr_high_we   = 1'b1;
+@@ -553,43 +574,21 @@
+       p_mem_rd1_addr                 = montprod_opb_addr;
+ 
+       montprod_opm_data = modulus_mem_int_rd_data;
+-      case (montprod_select_reg)
+-        MONTPROD_SELECT_ONE_NR:
+-          begin
+-            montprod_opa_data  = one_reg;
+-            montprod_opb_data  = residue_mem_montprod_read_data;
+-          end
+-
+-        MONTPROD_SELECT_X_NR:
+-          begin
+-            montprod_opa_data  = message_mem_int_rd_data;
+-            montprod_opb_data  = residue_mem_montprod_read_data;
+-          end
+-
+-        MONTPROD_SELECT_Z_P:
+-          begin
+-            montprod_opa_data  = result_mem_int_rd_data;
+-            montprod_opb_data  = p_mem_rd1_data;
+-          end
+-
+-        MONTPROD_SELECT_P_P:
+-          begin
+-            montprod_opa_data  = p_mem_rd0_data;
+-            montprod_opb_data  = p_mem_rd1_data;
+-          end
+-
+-        MONTPROD_SELECT_Z_ONE:
+-          begin
+-            montprod_opa_data  = result_mem_int_rd_data;
+-            montprod_opb_data  = b_one_reg;
+-          end
+-
+-        default:
+-          begin
+-            montprod_opa_data  = 32'h00000000;
+-            montprod_opb_data  = 32'h00000000;
+-          end
+-      endcase // case (montprod_selcect_reg)
++
++      // AND-OR mux using pre-decoded one-hot select (registered one cycle earlier).
++      // montprod_select_reg is set in the same cycle as montprod_calc; montprod
++      // does not consume opa/opb until CTRL_LOOP_BQ, so a 1-cycle delay is safe.
++      montprod_opa_data =
++          ({32{sel_one_nr_reg}} & one_reg)
++        | ({32{sel_x_nr_reg}}   & message_mem_int_rd_data)
++        | ({32{sel_z_p_reg}}    & result_mem_int_rd_data)
++        | ({32{sel_p_p_reg}}    & p_mem_rd0_data)
++        | ({32{sel_z_one_reg}}  & result_mem_int_rd_data);
++
++      montprod_opb_data =
++          ({32{sel_one_nr_reg | sel_x_nr_reg}} & residue_mem_montprod_read_data)
++        | ({32{sel_z_p_reg    | sel_p_p_reg}}  & p_mem_rd1_data)
++        | ({32{sel_z_one_reg}}                 & b_one_reg);
+     end
+ 
+ 
+@@ -666,13 +665,19 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : exponent_process
+-      // Accessing new instead of reg - pick up update at
+-      // CTRL_ITERATE_NEW to remove a pipeline stall.
+-      E_word_index  = length_m1 - loop_counter_new[ 12 : 5 ];
++      // Compute the exponent word address for the NEXT loop counter value.
++      // E_word_index is registered every cycle into exponent_addr_pre_reg,
++      // so the memory address in CTRL_ITERATE_END is driven from a FF
++      // rather than from the subtract chain, removing loop_counter from
++      // the SRAM-read critical path.  Safe because CTRL_CALCULATE_P0 and
++      // CTRL_ITERATE_P_P both hold loop_counter_reg stable long enough
++      // (montprod takes many cycles) for exponent_addr_pre_reg to settle.
++      E_word_index  = length_m1 - loop_counter_reg[12:5]
++                      - {7'b0, (&loop_counter_reg[4:0])};
+ 
+       E_bit_index   = loop_counter_reg[ 04 : 0 ];
+ 
+-      exponent_mem_int_rd_addr = E_word_index;
++      exponent_mem_int_rd_addr = exponent_addr_pre_reg;
+ 
+       ei_new = exponent_mem_int_rd_data[ E_bit_index ];
+ 
+--- a/montprod.v
++++ b/montprod.v
+@@ -114,6 +114,11 @@
+   reg [07 : 0] s_mem_wr_addr;
+   wire [31 : 0] s_mem_read_data;
+ 
++  // Second pipeline stage for s_mem write path: breaks adder->RAM timing arc
++  reg [31 : 0] s_mem_wr_data2;
++  reg [07 : 0] s_mem_wr_addr2;
++  reg          s_mem_we2;
++
+   reg          q; //q = (s - b * A) & 1
+   reg          q_reg;
+   reg          b; //b: bit of B
+@@ -142,6 +147,11 @@
+   reg          reset_word_index_LSW;
+   reg          reset_word_index_MSW;
+ 
++  // Extra stall flag: holds FSM in stallpipe state 1 more cycle so the
++  // second-stage write pipeline can commit before the next pass reads.
++  reg          stall_hold_reg;
++  reg          stall_hold_new;
++
+ 
+   //----------------------------------------------------------------
+   // Wires.
+@@ -178,9 +188,9 @@
+                      .clk(clk),
+                      .read_addr(s_mem_addr),
+                      .read_data(s_mem_read_data),
+-                     .wr(s_mem_we),
+-                     .write_addr(s_mem_wr_addr),
+-                     .write_data(s_mem_new)
++                     .wr(s_mem_we2),
++                     .write_addr(s_mem_wr_addr2),
++                     .write_data(s_mem_wr_data2)
+                     );
+ 
+ 
+@@ -249,6 +259,10 @@
+           s_mem_we          <= 1'b0;
+           s_mem_wr_addr     <= 8'h0;
+           B_bit_index_reg   <= 5'h0;
++          s_mem_wr_data2    <= 32'h0;
++          s_mem_wr_addr2    <= 8'h0;
++          s_mem_we2         <= 1'b0;
++          stall_hold_reg    <= 1'b0;
+         end
+       else
+         begin
+@@ -261,8 +275,13 @@
+              end
+ 
+           s_mem_wr_addr <= s_mem_addr;
+-
+-          s_mem_we <= s_mem_we_new;
++          s_mem_we      <= s_mem_we_new;
++
++          // Second stage: register the computed write data alongside addr/we
++          s_mem_wr_data2 <= s_mem_new;
++          s_mem_wr_addr2 <= s_mem_wr_addr;
++          s_mem_we2      <= s_mem_we;
++          stall_hold_reg <= stall_hold_new;
+ 
+           word_index <= word_index_new;
+           word_index_prev <= word_index;
+@@ -318,7 +337,9 @@
+           end
+ 
+         CTRL_L_STALLPIPE_D2:
+-            loop_counter_new = loop_counter_dec;
++            // Only decrement on the second cycle (stall_hold_reg=0), not the extra stall cycle
++            if (!stall_hold_reg)
++              loop_counter_new = loop_counter_dec;
+ 
+         default:
+           loop_counter_new = loop_counter;
+@@ -451,6 +472,8 @@
+       reset_word_index_LSW = 1'b0;
+       reset_word_index_MSW = 1'b0;
+ 
++      stall_hold_new = 1'b0;
++
+       case (montprod_ctrl_reg)
+         CTRL_IDLE:
+           begin
+@@ -475,14 +498,20 @@
+               begin
+                  montprod_ctrl_new = CTRL_LOOP_INIT;
+                  montprod_ctrl_we = 1'b1;
++                 stall_hold_new   = 1'b1;
+               end
+           end
+ 
+ 
+         CTRL_LOOP_INIT:
+           begin
+-            montprod_ctrl_new = CTRL_LOOP_ITER;
+-            montprod_ctrl_we  = 1'b1;
++            if (stall_hold_reg)
++              stall_hold_new = 1'b0; // consume hold, stay one extra cycle
++            else
++              begin
++                montprod_ctrl_new = CTRL_LOOP_ITER;
++                montprod_ctrl_we  = 1'b1;
++              end
+           end
+ 
+         //calculate q = (s - b * A) & 1;.
+@@ -508,14 +537,20 @@
+                 reset_word_index_LSW  = 1'b1;
+                 montprod_ctrl_we  = 1'b1;
+                 montprod_ctrl_new = CTRL_L_STALLPIPE_SM;
++                stall_hold_new    = 1'b1;
+               end
+           end
+ 
+         CTRL_L_STALLPIPE_SM:
+           begin
+-            montprod_ctrl_new = CTRL_L_CALC_SA;
+-            montprod_ctrl_we = 1'b1;
+             reset_word_index_LSW = 1'b1;
++            if (stall_hold_reg)
++              stall_hold_new = 1'b0; // consume hold, stay one extra cycle
++            else
++              begin
++                montprod_ctrl_new = CTRL_L_CALC_SA;
++                montprod_ctrl_we = 1'b1;
++              end
+           end
+ 
+         CTRL_L_CALC_SA:
+@@ -525,14 +560,20 @@
+                 reset_word_index_LSW  = 1'b1;
+                 montprod_ctrl_new = CTRL_L_STALLPIPE_SA;
+                 montprod_ctrl_we = 1'b1;
++                stall_hold_new   = 1'b1;
+               end
+           end
+ 
+         CTRL_L_STALLPIPE_SA:
+           begin
+-            montprod_ctrl_new = CTRL_L_CALC_SDIV2;
+-            montprod_ctrl_we = 1'b1;
+             reset_word_index_MSW = 1'b1;
++            if (stall_hold_reg)
++              stall_hold_new = 1'b0; // consume hold, stay one extra cycle
++            else
++              begin
++                montprod_ctrl_new = CTRL_L_CALC_SDIV2;
++                montprod_ctrl_we = 1'b1;
++              end
+           end
+ 
+         CTRL_L_CALC_SDIV2:
+@@ -541,19 +582,25 @@
+               begin
+                 montprod_ctrl_new = CTRL_L_STALLPIPE_D2;
+                 montprod_ctrl_we = 1'b1;
++                stall_hold_new   = 1'b1;
+                 //reset_word_index = 1'b1;
+               end
+           end
+ 
+         CTRL_L_STALLPIPE_D2:
+           begin
+-            montprod_ctrl_new = CTRL_LOOP_ITER; //loop
+-            montprod_ctrl_we = 1'b1;
+             reset_word_index_LSW = 1'b1;
+-            if (loop_counter == 0)
+-              begin
+-                montprod_ctrl_new = CTRL_L_STALLPIPE_ES;
++            if (stall_hold_reg)
++              stall_hold_new = 1'b0; // consume hold, stay one extra cycle
++            else
++              begin
++                montprod_ctrl_new = CTRL_LOOP_ITER; //loop
+                 montprod_ctrl_we = 1'b1;
++                if (loop_counter == 0)
++                  begin
++                    montprod_ctrl_new = CTRL_L_STALLPIPE_ES;
++                    montprod_ctrl_we = 1'b1;
++                  end
+               end
+           end
+ 
+--- a/residue.v
++++ b/residue.v
+@@ -112,6 +112,7 @@
+ reg          loop_counter_1_to_nn_we;
+ reg [14 : 0] nn_reg;
+ reg          nn_we;
++reg          loop_done_reg;
+ reg [07 : 0] length_m1_reg;
+ reg [07 : 0] length_m1_new;
+ reg          length_m1_we;
+@@ -192,6 +193,10 @@
+ 
+           if (loop_counter_1_to_nn_we)
+             loop_counter_1_to_nn_reg <= loop_counter_1_to_nn_new;
++
++          // Pre-register the end-of-loop comparison so it does not appear
++          // on the critical path from loop_counter to the modulus memory addr.
++          loop_done_reg <= (loop_counter_1_to_nn_reg == nn_reg);
+ 
+           if (ready_we)
+             ready_reg <= ready_new;
+@@ -429,8 +434,11 @@
+         end
+ 
+       CTRL_LOOP:
+-        begin
+-          if (loop_counter_1_to_nn_reg == nn_reg)
++        // loop_done_reg was latched one cycle earlier (in CTRL_COMPARE_STALL
++        // or CTRL_SUB_STALL) while the loop counter held the same value, so
++        // it correctly reflects whether this is the final iteration.
++        begin
++          if (loop_done_reg)
+             begin
+               ready_new = 1'b1;
+               ready_we  = 1'b1;

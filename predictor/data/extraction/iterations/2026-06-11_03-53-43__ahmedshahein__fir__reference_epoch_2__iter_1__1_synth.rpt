@@ -1,0 +1,12 @@
+# stage	1_synth
+# top_module	filt_fir
+# top_n	100
+# kind	blocks
+# skip_async	1
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-2.2546	i_data[I]	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	i_data[1]	g_fir_tf.g_fir[41].g_fir_dly_tf.FIR_TF_DFF.r_data[38]$_DFFE_PN0P_/D
+2	-0.9103	i_data[I]	o_data[I]	i_data[2]	o_data[33]
+3	0.0379	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	o_data[I]	g_fir_tf.g_fir[1].g_fir_dly_tf.FIR_TF_DFF.r_data[9]$_DFFE_PN0P_/Q	o_data[34]
+4	0.2997	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	g_fir_tf.g_fir[71].g_fir_dly_tf.FIR_TF_DFF.r_data[2]$_DFFE_PN0P_/Q	g_fir_tf.g_fir[70].g_fir_dly_tf.FIR_TF_DFF.r_data[36]$_DFFE_PN0P_/D
+5	0.3611	i_ena	g_fir_tf.g_fir[I].g_fir_dly_tf.FIR_TF_DFF.r_data[J]	i_ena	g_fir_tf.g_fir[55].g_fir_dly_tf.FIR_TF_DFF.r_data[36]$_DFFE_PN0P_/D

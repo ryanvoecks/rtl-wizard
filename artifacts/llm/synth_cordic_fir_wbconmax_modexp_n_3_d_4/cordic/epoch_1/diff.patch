@@ -1,0 +1,74 @@
+--- a/cordic_p2r.v
++++ b/cordic_p2r.v
+@@ -48,9 +48,9 @@
+ 		// {{{
+ 	localparam	IW=18,	// The number of bits in our inputs
+ 			OW=18,	// The number of output bits to produce
+-			NSTAGES=21,
++			NSTAGES=20,
+ 			// XTRA= 3,// Extra bits for internal precision
+-			WW=21,	// Our working bit-width
++			WW=20,	// Our working bit-width
+ 			PW=25	// Bits in our phase variables
+ 		// }}}
+ 	) (
+@@ -221,7 +221,7 @@
+ 	assign	cordic_angle[17] = 25'h000_0014; //   0.000219 deg
+ 	assign	cordic_angle[18] = 25'h000_000a; //   0.000109 deg
+ 	assign	cordic_angle[19] = 25'h000_0005; //   0.000055 deg
+-	assign	cordic_angle[20] = 25'h000_0002; //   0.000027 deg
++	// cordic_angle[20] removed: unreachable with NSTAGES=20
+ 	// {{{
+ 	// Std-Dev    : 0.00 (Units)
+ 	// Phase Quantization: 0.000001 (Radians)
+--- a/cordic_r2p.v
++++ b/cordic_r2p.v
+@@ -51,7 +51,7 @@
+ 			OW=18,// The number of output bits to produce
+ 			NSTAGES=23,
+ 			// XTRA= 4,// Extra bits for internal precision
+-			WW=26,	// Our working bit-width
++			WW=25,	// Our working bit-width
+ 			PW=26	// Bits in our phase variables
+ 		// }}}
+ 	) (
+--- a/cordic_engine.v
++++ b/cordic_engine.v
+@@ -36,20 +36,33 @@
+ 		output	wire				o_vec_aux
+ 	);
+ 
++	// Input pipeline registers to cut long input-to-first-stage paths
++	reg	signed	[IW-1:0]	r_xval, r_yval;
++	reg		[ROT_PW-1:0]	r_phase;
++	reg				r_aux;
++
++	always @(posedge i_clk)
++	if (i_ce) begin
++		r_xval  <= i_xval;
++		r_yval  <= i_yval;
++		r_phase <= i_phase;
++		r_aux   <= i_aux;
++	end
++
+ 	// Rotation: polar-to-rectangular
+ 	cordic_p2r u_rot (
+ 		.i_clk(i_clk), .i_reset(i_reset), .i_ce(i_ce),
+-		.i_xval(i_xval), .i_yval(i_yval), .i_phase(i_phase),
++		.i_xval(r_xval), .i_yval(r_yval), .i_phase(r_phase),
+ 		.o_xval(o_rot_xval), .o_yval(o_rot_yval),
+-		.i_aux(i_aux), .o_aux(o_rot_aux)
++		.i_aux(r_aux), .o_aux(o_rot_aux)
+ 	);
+ 
+ 	// Vectoring: rectangular-to-polar
+ 	cordic_r2p u_vec (
+ 		.i_clk(i_clk), .i_reset(i_reset), .i_ce(i_ce),
+-		.i_xval(i_xval), .i_yval(i_yval),
++		.i_xval(r_xval), .i_yval(r_yval),
+ 		.o_mag(o_vec_mag), .o_phase(o_vec_phase),
+-		.i_aux(i_aux), .o_aux(o_vec_aux)
++		.i_aux(r_aux), .o_aux(o_vec_aux)
+ 	);
+ 
+ endmodule

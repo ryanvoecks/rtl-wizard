@@ -1,0 +1,33 @@
+{
+  "cfg": {
+    "platform": "nangate45",
+    "anchor_period_ns": 0.5,
+    "core_aspect_ratio": 1.0,
+    "core_margin_um": 2.0,
+    "place_density": 0.75,
+    "io_delay_fraction": 0.4,
+    "seed": 0,
+    "synth_memory_max_bits": 8192,
+    "place_pins_args": "-hor_layers metal3 -ver_layers metal4"
+  },
+  "design": {
+    "benchmark": "ahmedshahein",
+    "name": "fir",
+    "variant": "reference",
+    "root": "/workspace/external/fir",
+    "rtl_dir": ".drl_src_code/filt_fir/rtl",
+    "rtl_files": [
+      "filt_fir.v",
+      "dff.v"
+    ],
+    "top_module": "filt_fir",
+    "test_script": "/workspace/common/scripts/fir.sh",
+    "tb_timeout_s": 120,
+    "clock_port": "i_clk",
+    "include_dirs": [
+      "."
+    ]
+  },
+  "period_ns": 1.2153,
+  "target_utilization": 60
+}

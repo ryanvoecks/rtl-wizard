@@ -1,0 +1,4 @@
+# start	end	slack_synth_ns	slack_route_ns
+data_in[I]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.reg_out[M]	-0.182900	-0.005165
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.reg_out[M]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.reg_out[M]	-0.116200	-0.174351
+SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.reg_out[M]	data_out[I]	0.144900	-0.182763

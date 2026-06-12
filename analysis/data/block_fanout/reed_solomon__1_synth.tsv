@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	RsDecodeTop
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-0.4836	omegaShiftedReg_I[J]	degreeOmegaReg[I]	181	362	1.047	4
+2	-0.4676	lambdaRegI_J[K]	degreeLambdaReg[I]	357	714	1.034	4
+3	-0.0481	RsDecodeSyndrome.count[I]	RsDecodePolymul.sumReg_I[J]	184	368	1.228	5
+4	-0.0046	enable	RsDecodeDelay.RsDecodeDpRam.mem[I][J]	3169	6336	1.000	2
+5	0.0011	RsDecodeDelay.RsDecodeDpRam.rRdAddr[I]	RsDecodeDelay.RsDecodeDpRam.q[I]	18	36	1.000	3
+6	0.0033	enable	RsDecodeChien.denomEIInvReg[J]	17	32	0.562	2
+7	0.0033	enable	RsDecodeEuclide.omegaInvReg[I]	9	16	0.625	2
+8	0.0035	enable	RsDecodeEuclide.lambdaBkp_I[J]	177	352	1.000	2
+9	0.0098	enable	omegaShiftedReg_I[J]	177	352	1.048	4
+10	0.0111	RsDecodeErasure.epsilonReg_I[J]	RsDecodePolymul.sumReg_I[J]	360	720	1.226	3
+11	0.0113	enable	RsDecodeEuclide.lambdaInner_I[J]	177	352	0.881	2
+12	0.0129	enable	RsDecodePolymul.epsilonReg_I[J]	177	352	0.994	3
+13	0.0129	enable	RsDecodePolymul.sumReg_I[J]	177	352	1.179	3
+14	0.0134	enable	doneReg[I]	4	6	1.167	3
+15	0.0134	enable	lambdaRegI_J[K]	353	704	1.026	4
+16	0.0134	enable	startReg[I]	5	8	1.000	2
+17	0.0157	enable	RsDecodeChien.numErrorReg[I]	6	10	1.700	4
+18	0.0173	enable	doneShiftReg	2	2	0.500	1
+19	0.0180	enable	RsDecodeChien.count[I]	9	16	1.938	4
+20	0.0180	enable	RsDecodeChien.epsilonReg_I[J]	185	368	0.720	4
+21	0.0180	enable	RsDecodeChien.lambdaReg_I[J]	177	352	0.707	4
+22	0.0180	enable	RsDecodeChien.omegaReg_I[J]	177	352	0.707	4
+23	0.0181	enable	RsDecodeSyndrome.reg_I[J]	177	352	0.895	4
+24	0.0219	enable	RsDecodeEuclide.count[I]	8	14	3.357	8
+25	0.0219	enable	RsDecodeEuclide.qNewReg[I]	9	16	0.500	1

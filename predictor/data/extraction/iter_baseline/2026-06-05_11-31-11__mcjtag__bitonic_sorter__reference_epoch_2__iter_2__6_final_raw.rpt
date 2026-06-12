@@ -1,0 +1,9 @@
+# stage	6_final
+# top_module	bitonic_sort
+# top_n	100
+# kind	blocks
+# include_full	1
+# rank	worst_slack_ns	start	end	start_full	end_full
+1	-0.4922	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	data_out[I]	SORT_STAGE[4].BLOCK[0].bitonic_block_inst.BLOCK_STAGE[4].NODE[14].bitonic_node_inst.REG_INPUT.din_reg[27]$_DFF_P_/Q	data_out[466]
+2	-0.1207	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	SORT_STAGE[4].BLOCK[0].bitonic_block_inst.BLOCK_STAGE[0].NODE[0].bitonic_node_inst.REG_INPUT.din_reg[313]$_DFF_P_/Q	SORT_STAGE[4].BLOCK[0].bitonic_block_inst.BLOCK_STAGE[1].NODE[1].bitonic_node_inst.REG_INPUT.din_reg[60]$_DFF_P_/D
+3	0.1335	data_in[I]	SORT_STAGE[I].BLOCK[J].bitonic_block_inst.BLOCK_STAGE[K].NODE[L].bitonic_node_inst.REG_INPUT.din_reg[M]	data_in[150]	SORT_STAGE[0].BLOCK[4].bitonic_block_inst.BLOCK_STAGE[0].NODE[0].bitonic_node_inst.REG_INPUT.din_reg[22]$_DFF_P_/D

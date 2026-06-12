@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	e203_cpu_top
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-3.0292	u_eI_cpu.u_eJ_clk_ctrl.u_exu_clkgate.enb	core_csr_clk	2	1	1.000	1
+2	-2.5762	test_mode	u_eI_cpu.u_eJ_clk_ctrl.dtcm_active_dffr.qout_r	2	2	0.500	1
+3	-2.5762	test_mode	u_eI_cpu.u_eJ_clk_ctrl.itcm_active_dffr.qout_r	2	2	0.500	1
+4	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_biu.u_biu_icb_arbt.arbt_num_gt_L_gen.dp_M.u_sirv_gnrl_rspid_fifo.dp_gt_N.vld_dfflr.qout_r	2	2	2.500	3
+5	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_biu.u_biu_icb_splt.splt_num_gt_L_gen.fifo_dp_M.u_sirv_gnrl_rspid_fifo.dp_gt_N.vld_dfflr.qout_r	2	2	1.000	1
+6	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_biu.u_sirv_gnrl_icb_buffer.outs_cnt_dfflr.qout_r	2	2	3.000	4
+7	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_biu.u_sirv_gnrl_icb_buffer.u_sirv_gnrl_cmd_fifo.dp_gtL.vec_M_dfflr.qout_r	2	2	3.000	4
+8	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_biu.u_sirv_gnrl_icb_buffer.u_sirv_gnrl_rsp_fifo.dp_gtL.vec_M_dfflr.qout_r	2	2	2.000	3
+9	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_lsuagu.icb_leftover_err_dfflr.qout_r	2	2	2.000	3
+10	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_lsuagu.icb_state_dfflr.qout_r[N]	4	6	2.000	4
+11	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_lsuagu.unalgn_flg_dffl.qout_r	2	2	1.000	2
+12	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_muldiv.exec_cnt_dfflr.qout_r[N]	7	12	1.667	4
+13	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_muldiv.flushed_dfflr.qout_r	2	2	1.000	1
+14	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_muldiv.muldiv_state_dfflr.qout_r[N]	4	6	1.333	3
+15	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_muldiv.part_prdt_sftN_dfflr.qout_r	2	2	2.000	4
+16	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_alu_muldiv.part_remd_sftN_dfflr.qout_r	2	2	1.000	2
+17	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_nice.u_nice_itag_fifo.dp_gtN.dp_gtO.rptr_vec_P_dfflr.qout_r[Q]	4	6	1.000	3
+18	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_nice.u_nice_itag_fifo.dp_gtN.dp_gtO.wptr_vec_P_dfflr.qout_r[Q]	4	6	0.833	2
+19	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_alu.u_eM_exu_nice.u_nice_itag_fifo.dp_gtN.vec_O_dfflr.qout_r[P]	5	8	1.375	3
+20	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_commit.u_eM_exu_excp.step_req_dfflr.qout_r	2	2	1.000	1
+21	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_commit.u_eM_exu_excp.wfi_flag_dfflr.qout_r	2	2	1.000	2
+22	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_commit.u_eM_exu_excp.wfi_halt_req_dfflr.qout_r	2	2	1.500	2
+23	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_csr.badaddr_dfflr.qout_r[M]	33	64	1.000	2
+24	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_csr.cause_dfflr.qout_r[M]	6	10	1.000	2
+25	-2.5762	test_mode	u_eI_cpu.u_eJ_core.u_eK_exu.u_eL_exu_csr.counterstop_dfflr.qout_r[M]	4	6	1.333	2

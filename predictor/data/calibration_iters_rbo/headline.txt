@@ -1,0 +1,16 @@
+RBO-trained beta (mean per-iter RBO@K=100 p=0.9, all 12 in-sample):
+  beta[input_only] = +0.232 ns
+  beta[output_only] = -0.333 ns
+  beta[both] = -0.068 ns
+  beta[internal] = -0.032 ns
+
+In-sample mean RBO (all 12 designs, all iters):
+  p          raw     mom     rbo
+  p=0.6    0.491   0.595   0.595
+  p=0.9    0.549   0.721   0.721
+  p=0.96   0.564   0.770   0.771
+
+LOO mean RBO across 12 held-out designs (RBO-trained):
+  p=0.6:  raw=0.491  corr=0.588  gain=+0.097
+  p=0.9:  raw=0.549  corr=0.715  gain=+0.167
+  p=0.96:  raw=0.564  corr=0.766  gain=+0.202

@@ -1,0 +1,30 @@
+--- a/filt_fir.v
++++ b/filt_fir.v
+@@ -24,11 +24,11 @@
+   localparam c_coeff_2       = (gp_symm) ? `DIV(gp_coeff_length, 2) : gp_coeff_length;
+   
+   wire signed [gp_coeff_length*c_mul_oup_width-1:0]     w_mul;
+-  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add; 
++  wire signed [gp_coeff_length*c_add_oup_width-1:0]     w_add;
+   wire signed [gp_coeff_width-1:0]                      c_coeff [0:c_coeff_2-1];
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   genvar i;
+-// -------------------------------------------------------------------  
++// -------------------------------------------------------------------
+   `include "filt_coeff.v"
+ // -------------------------------------------------------------------
+   generate
+--- a/dff.v
++++ b/dff.v
+@@ -20,8 +20,8 @@
+     begin: p_dff
+       if (!i_rst_an)
+         r_data <= 'd0;
+-      else if (i_ena)
+-        r_data <= i_data;  
++      else
++        r_data <= i_data;
+     end
+   
+   assign o_data = r_data;

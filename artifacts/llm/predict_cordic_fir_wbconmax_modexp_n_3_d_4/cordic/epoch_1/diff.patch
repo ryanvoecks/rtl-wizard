@@ -1,0 +1,144 @@
+--- a/cordic_p2r.v
++++ b/cordic_p2r.v
+@@ -50,7 +50,7 @@
+ 			OW=18,	// The number of output bits to produce
+ 			NSTAGES=21,
+ 			// XTRA= 3,// Extra bits for internal precision
+-			WW=21,	// Our working bit-width
++			WW=20,	// Our working bit-width
+ 			PW=25	// Bits in our phase variables
+ 		// }}}
+ 	) (
+--- a/cordic_r2p.v
++++ b/cordic_r2p.v
+@@ -49,9 +49,9 @@
+ 		// {{{
+ 		localparam	IW=18,	// The number of bits in our inputs
+ 			OW=18,// The number of output bits to produce
+-			NSTAGES=23,
++			NSTAGES=21,
+ 			// XTRA= 4,// Extra bits for internal precision
+-			WW=26,	// Our working bit-width
++			WW=25,	// Our working bit-width
+ 			PW=26	// Bits in our phase variables
+ 		// }}}
+ 	) (
+@@ -70,6 +70,9 @@
+ 	reg	signed	[(WW-1):0]	xv	[0:NSTAGES];
+ 	reg	signed	[(WW-1):0]	yv	[0:NSTAGES];
+ 	reg		[(PW-1):0]	ph	[0:NSTAGES];
++	reg	signed	[(WW-1):0]	xv_h	[0:NSTAGES-1];
++	reg	signed	[(WW-1):0]	yv_h	[0:NSTAGES-1];
++	reg		[(PW-1):0]	ph_h	[0:NSTAGES-1];
+ 	// }}}
+ 	// Sign extension
+ 	// {{{
+@@ -94,14 +97,14 @@
+ 	// are input together with i_aux, then when o_xval and o_yval are set
+ 	// to this value, o_aux *must* contain the value that was in i_aux.
+ 	//
+-	reg		[(NSTAGES):0]	ax;
++	reg		[(2*NSTAGES):0]	ax;
+ 
+ 	initial	ax = 0;
+ 	always @(posedge i_clk)
+ 	if (i_reset)
+ 		ax <= 0;
+ 	else if (i_ce)
+-		ax <= { ax[(NSTAGES-1):0], i_aux };
++		ax <= { ax[(2*NSTAGES-1):0], i_aux };
+ 
+ 	// }}}
+ 	// Pre-CORDIC rotation
+@@ -195,58 +198,35 @@
+ 	// }}}
+ 	// }}}
+ 
+-	// Actual CORDIC rotations
+-	// {{{
++	// Actual CORDIC rotations (2-stage per step)
++	// {{{
++	// Sub-stage 1: register xv[i]/yv[i]/ph[i] into dedicated hold registers.
++	//   Separates the sign-bit fanout from the carry-chain computation.
++	// Sub-stage 2: CORDIC add/subtract from hold registers.
+ 	genvar	i;
+ 	generate for(i=0; i<NSTAGES; i=i+1) begin : TOPOLARloop
+-		initial begin
+-			xv[i+1] = 0;
+-			yv[i+1] = 0;
+-			ph[i+1] = 0;
+-		end
+-
++		initial begin xv_h[i] = 0; yv_h[i] = 0; ph_h[i] = 0; end
+ 		always @(posedge i_clk)
+-		// Here's where we are going to put the actual CORDIC
+-		// rectangular to polar loop.  Everything up to this
+-		// point has simply been necessary preliminaries.
+-		if (i_reset)
+-		begin
+-			// {{{
+-			xv[i+1] <= 0;
+-			yv[i+1] <= 0;
+-			ph[i+1] <= 0;
+-			// }}}
+-		end else if (i_ce)
+-		begin
+-			// {{{
+-			if ((cordic_angle[i] == 0)||(i >= WW))
+-			begin // Do nothing but move our vector
+-			// forward one stage, since we have more
+-			// stages than valid data
+-				// {{{
+-				xv[i+1] <= xv[i];
+-				yv[i+1] <= yv[i];
+-				ph[i+1] <= ph[i];
+-				// }}}
+-			end else if (yv[i][(WW-1)]) // Below the axis
+-			begin
+-				// {{{
+-				// If the vector is below the x-axis, rotate by
+-				// the CORDIC angle in a positive direction.
+-				xv[i+1] <= xv[i] - (yv[i]>>>(i+1));
+-				yv[i+1] <= yv[i] + (xv[i]>>>(i+1));
+-				ph[i+1] <= ph[i] - cordic_angle[i];
+-				// }}}
++		if (i_reset) begin
++			xv_h[i] <= 0; yv_h[i] <= 0; ph_h[i] <= 0;
++		end else if (i_ce) begin
++			xv_h[i] <= xv[i]; yv_h[i] <= yv[i]; ph_h[i] <= ph[i];
++		end
++
++		initial begin xv[i+1] = 0; yv[i+1] = 0; ph[i+1] = 0; end
++		always @(posedge i_clk)
++		if (i_reset) begin
++			xv[i+1] <= 0; yv[i+1] <= 0; ph[i+1] <= 0;
++		end else if (i_ce) begin
++			if (yv_h[i][WW-1]) begin
++				xv[i+1] <= xv_h[i] - (yv_h[i]>>>(i+1));
++				yv[i+1] <= yv_h[i] + (xv_h[i]>>>(i+1));
++				ph[i+1] <= ph_h[i] - cordic_angle[i];
+ 			end else begin
+-				// {{{
+-				// On the other hand, if the vector is above the
+-				// x-axis, then rotate in the other direction
+-				xv[i+1] <= xv[i] + (yv[i]>>>(i+1));
+-				yv[i+1] <= yv[i] - (xv[i]>>>(i+1));
+-				ph[i+1] <= ph[i] + cordic_angle[i];
+-				// }}}
++				xv[i+1] <= xv_h[i] + (yv_h[i]>>>(i+1));
++				yv[i+1] <= yv_h[i] - (xv_h[i]>>>(i+1));
++				ph[i+1] <= ph_h[i] + cordic_angle[i];
+ 			end
+-			// }}}
+ 		end
+ 	end endgenerate
+ 	// }}}
+@@ -272,7 +252,7 @@
+ 	begin
+ 		o_mag   <= pre_mag[(WW-1):(WW-OW)];
+ 		o_phase <= ph[NSTAGES];
+-		o_aux <= ax[NSTAGES];
++		o_aux <= ax[2*NSTAGES];
+ 	end
+ 
+ 	// Make Verilator happy with pre_.val

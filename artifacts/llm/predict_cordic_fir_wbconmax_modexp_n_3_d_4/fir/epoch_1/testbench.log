@@ -1,0 +1,49 @@
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           1
+                    ./sim/testcases/stimuli/stimuli_tc_1_mat.dat
+### INFO: Testcase PASSED with         256 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 26us; walltime 0.000 s; speed 117.320 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           2
+                    ./sim/testcases/stimuli/stimuli_tc_2_mat.dat
+### INFO: Testcase PASSED with         256 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 26us; walltime 0.000 s; speed 90.347 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           3
+                    ./sim/testcases/stimuli/stimuli_tc_3_mat.dat
+### INFO: Testcase PASSED with         256 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 26us; walltime 0.000 s; speed 111.872 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           4
+                    ./sim/testcases/stimuli/stimuli_tc_4_mat.dat
+### INFO: Testcase PASSED with         512 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 52us; walltime 0.000 s; speed 111.781 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           5
+                    ./sim/testcases/stimuli/stimuli_tc_5_mat.dat
+### INFO: Testcase PASSED with         512 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 52us; walltime 0.000 s; speed 111.791 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           6
+                    ./sim/testcases/stimuli/stimuli_tc_6_mat.dat
+### INFO: Testcase PASSED with         512 samples
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 52us; walltime 0.001 s; speed 73.215 ms/s
+- Verilator: cpu 0.001 s on 1 threads; allocated 5 MB
+### INFO: All FIR testcases passed.

@@ -1,0 +1,84 @@
+--- a/montprod.v
++++ b/montprod.v
+@@ -75,10 +75,12 @@
+   localparam CTRL_L_CALC_SA      = 4'h7;
+   localparam CTRL_L_STALLPIPE_SA = 4'h8;
+   localparam CTRL_L_CALC_SDIV2   = 4'h9;
+-  localparam CTRL_L_STALLPIPE_D2 = 4'hA;
+-  localparam CTRL_L_STALLPIPE_ES = 4'hB;
+-  localparam CTRL_EMIT_S         = 4'hC;
+-  localparam CTRL_DONE           = 4'hD;
++  localparam CTRL_L_STALLPIPE_D2  = 4'hA;
++  localparam CTRL_L_STALLPIPE_ES  = 4'hB;
++  localparam CTRL_EMIT_S          = 4'hC;
++  localparam CTRL_DONE            = 4'hD;
++  localparam CTRL_L_STALLPIPE_SM2 = 4'hE;
++  localparam CTRL_L_STALLPIPE_SA2 = 4'hF;
+ 
+   localparam SMUX_0            = 2'h0;
+   localparam SMUX_ADD_SM       = 2'h1;
+@@ -112,6 +114,9 @@
+   reg          s_mem_we_new;
+   reg [07 : 0] s_mem_addr;
+   reg [07 : 0] s_mem_wr_addr;
++  reg [31 : 0] s_mem_new_r;
++  reg [07 : 0] s_mem_wr_addr_r;
++  reg          s_mem_we_r;
+   wire [31 : 0] s_mem_read_data;
+ 
+   reg          q; //q = (s - b * A) & 1
+@@ -248,6 +253,9 @@
+           s_mux_reg         <= SMUX_0;
+           s_mem_we          <= 1'b0;
+           s_mem_wr_addr     <= 8'h0;
++          s_mem_we_r        <= 1'b0;
++          s_mem_wr_addr_r   <= 8'h0;
++          s_mem_new_r       <= 32'h0;
+           B_bit_index_reg   <= 5'h0;
+         end
+       else
+@@ -261,8 +269,11 @@
+              end
+ 
+           s_mem_wr_addr <= s_mem_addr;
+-
+           s_mem_we <= s_mem_we_new;
++
++          s_mem_we_r      <= s_mem_we;
++          s_mem_wr_addr_r <= s_mem_wr_addr;
++          s_mem_new_r     <= s_mem_new;
+ 
+           word_index <= word_index_new;
+           word_index_prev <= word_index;
+@@ -547,21 +558,23 @@
+ 
+         CTRL_L_STALLPIPE_D2:
+           begin
+-            montprod_ctrl_new = CTRL_LOOP_ITER; //loop
++            montprod_ctrl_new = CTRL_L_STALLPIPE_ES;
+             montprod_ctrl_we = 1'b1;
+             reset_word_index_LSW = 1'b1;
+-            if (loop_counter == 0)
+-              begin
+-                montprod_ctrl_new = CTRL_L_STALLPIPE_ES;
+-                montprod_ctrl_we = 1'b1;
+-              end
+           end
+ 
+         CTRL_L_STALLPIPE_ES:
+           begin
+-            montprod_ctrl_new = CTRL_EMIT_S;
+             montprod_ctrl_we = 1'b1;
+-            //reset_word_index_LSW = 1'b1;
++            if (loop_counter == 13'h1fff)
++              begin
++                montprod_ctrl_new = CTRL_EMIT_S;
++              end
++            else
++              begin
++                montprod_ctrl_new = CTRL_LOOP_ITER;
++                reset_word_index_LSW = 1'b1;
++              end
+           end
+ 
+         CTRL_EMIT_S:

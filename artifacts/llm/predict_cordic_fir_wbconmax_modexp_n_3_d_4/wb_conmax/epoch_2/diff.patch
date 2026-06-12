@@ -1,0 +1,194 @@
+--- a/wb_conmax_master_if.v
++++ b/wb_conmax_master_if.v
+@@ -361,6 +361,7 @@
+ reg			wb_err_o;
+ reg			wb_rty_o;
+ wire	[3:0]		slv_sel;
++reg	[3:0]		slv_sel_r;
+ 
+ wire		s0_cyc_o_next, s1_cyc_o_next, s2_cyc_o_next, s3_cyc_o_next;
+ wire		s4_cyc_o_next, s5_cyc_o_next, s6_cyc_o_next, s7_cyc_o_next;
+@@ -378,6 +379,10 @@
+ //
+ 
+ assign slv_sel = wb_addr_i[aw-1:aw-4];
++
++always @(posedge clk_i or posedge rst_i)
++	if(rst_i)	slv_sel_r <= #1 4'h0;
++	else		slv_sel_r <= #1 slv_sel;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -435,11 +440,11 @@
+ assign s14_data_o = wb_data_i;
+ assign s15_data_o = wb_data_i;
+ 
+-always @(slv_sel or s0_data_i or s1_data_i or s2_data_i or s3_data_i or
++always @(slv_sel_r or s0_data_i or s1_data_i or s2_data_i or s3_data_i or
+ 	s4_data_i or s5_data_i or s6_data_i or s7_data_i or s8_data_i or
+ 	s9_data_i or s10_data_i or s11_data_i or s12_data_i or
+ 	s13_data_i or s14_data_i or s15_data_i)
+-	case(slv_sel)	// synopsys parallel_case
++	case(slv_sel_r)	// synopsys parallel_case
+ 	   4'd0:	wb_data_o = s0_data_i;
+ 	   4'd1:	wb_data_o = s1_data_i;
+ 	   4'd2:	wb_data_o = s2_data_i;
+@@ -579,77 +584,31 @@
+ assign s14_stb_o = (slv_sel==4'd14) ? wb_stb_i : 1'b0;
+ assign s15_stb_o = (slv_sel==4'd15) ? wb_stb_i : 1'b0;
+ 
+-always @(slv_sel or s0_ack_i or s1_ack_i or s2_ack_i or s3_ack_i or
+-	s4_ack_i or s5_ack_i or s6_ack_i or s7_ack_i or s8_ack_i or
+-	s9_ack_i or s10_ack_i or s11_ack_i or s12_ack_i or
+-	s13_ack_i or s14_ack_i or s15_ack_i)
+-	case(slv_sel)	// synopsys parallel_case
+-	   4'd0:	wb_ack_o = s0_ack_i;
+-	   4'd1:	wb_ack_o = s1_ack_i;
+-	   4'd2:	wb_ack_o = s2_ack_i;
+-	   4'd3:	wb_ack_o = s3_ack_i;
+-	   4'd4:	wb_ack_o = s4_ack_i;
+-	   4'd5:	wb_ack_o = s5_ack_i;
+-	   4'd6:	wb_ack_o = s6_ack_i;
+-	   4'd7:	wb_ack_o = s7_ack_i;
+-	   4'd8:	wb_ack_o = s8_ack_i;
+-	   4'd9:	wb_ack_o = s9_ack_i;
+-	   4'd10:	wb_ack_o = s10_ack_i;
+-	   4'd11:	wb_ack_o = s11_ack_i;
+-	   4'd12:	wb_ack_o = s12_ack_i;
+-	   4'd13:	wb_ack_o = s13_ack_i;
+-	   4'd14:	wb_ack_o = s14_ack_i;
+-	   4'd15:	wb_ack_o = s15_ack_i;
+-	   default:	wb_ack_o = 1'b0;
+-	endcase
+-
+-always @(slv_sel or s0_err_i or s1_err_i or s2_err_i or s3_err_i or
+-	s4_err_i or s5_err_i or s6_err_i or s7_err_i or s8_err_i or
+-	s9_err_i or s10_err_i or s11_err_i or s12_err_i or
+-	s13_err_i or s14_err_i or s15_err_i)
+-	case(slv_sel)	// synopsys parallel_case
+-	   4'd0:	wb_err_o = s0_err_i;
+-	   4'd1:	wb_err_o = s1_err_i;
+-	   4'd2:	wb_err_o = s2_err_i;
+-	   4'd3:	wb_err_o = s3_err_i;
+-	   4'd4:	wb_err_o = s4_err_i;
+-	   4'd5:	wb_err_o = s5_err_i;
+-	   4'd6:	wb_err_o = s6_err_i;
+-	   4'd7:	wb_err_o = s7_err_i;
+-	   4'd8:	wb_err_o = s8_err_i;
+-	   4'd9:	wb_err_o = s9_err_i;
+-	   4'd10:	wb_err_o = s10_err_i;
+-	   4'd11:	wb_err_o = s11_err_i;
+-	   4'd12:	wb_err_o = s12_err_i;
+-	   4'd13:	wb_err_o = s13_err_i;
+-	   4'd14:	wb_err_o = s14_err_i;
+-	   4'd15:	wb_err_o = s15_err_i;
+-	   default:	wb_err_o = 1'b0;
+-	endcase
+-
+-always @(slv_sel or s0_rty_i or s1_rty_i or s2_rty_i or s3_rty_i or
+-	s4_rty_i or s5_rty_i or s6_rty_i or s7_rty_i or s8_rty_i or
+-	s9_rty_i or s10_rty_i or s11_rty_i or s12_rty_i or
+-	s13_rty_i or s14_rty_i or s15_rty_i)
+-	case(slv_sel)	// synopsys parallel_case
+-	   4'd0:	wb_rty_o = s0_rty_i;
+-	   4'd1:	wb_rty_o = s1_rty_i;
+-	   4'd2:	wb_rty_o = s2_rty_i;
+-	   4'd3:	wb_rty_o = s3_rty_i;
+-	   4'd4:	wb_rty_o = s4_rty_i;
+-	   4'd5:	wb_rty_o = s5_rty_i;
+-	   4'd6:	wb_rty_o = s6_rty_i;
+-	   4'd7:	wb_rty_o = s7_rty_i;
+-	   4'd8:	wb_rty_o = s8_rty_i;
+-	   4'd9:	wb_rty_o = s9_rty_i;
+-	   4'd10:	wb_rty_o = s10_rty_i;
+-	   4'd11:	wb_rty_o = s11_rty_i;
+-	   4'd12:	wb_rty_o = s12_rty_i;
+-	   4'd13:	wb_rty_o = s13_rty_i;
+-	   4'd14:	wb_rty_o = s14_rty_i;
+-	   4'd15:	wb_rty_o = s15_rty_i;
+-	   default:	wb_rty_o = 1'b0;
+-	endcase
++// Only one slave can assert ack/err/rty at a time (only addressed slave gets stb),
++// so OR-reduction is equivalent to mux selection and avoids the 16:1 mux delay.
++always @(s0_ack_i or s1_ack_i or s2_ack_i or s3_ack_i or s4_ack_i or
++	s5_ack_i or s6_ack_i or s7_ack_i or s8_ack_i or s9_ack_i or
++	s10_ack_i or s11_ack_i or s12_ack_i or s13_ack_i or s14_ack_i or s15_ack_i)
++	wb_ack_o = s0_ack_i | s1_ack_i | s2_ack_i | s3_ack_i |
++	           s4_ack_i | s5_ack_i | s6_ack_i | s7_ack_i |
++	           s8_ack_i | s9_ack_i | s10_ack_i | s11_ack_i |
++	           s12_ack_i | s13_ack_i | s14_ack_i | s15_ack_i;
++
++always @(s0_err_i or s1_err_i or s2_err_i or s3_err_i or s4_err_i or
++	s5_err_i or s6_err_i or s7_err_i or s8_err_i or s9_err_i or
++	s10_err_i or s11_err_i or s12_err_i or s13_err_i or s14_err_i or s15_err_i)
++	wb_err_o = s0_err_i | s1_err_i | s2_err_i | s3_err_i |
++	           s4_err_i | s5_err_i | s6_err_i | s7_err_i |
++	           s8_err_i | s9_err_i | s10_err_i | s11_err_i |
++	           s12_err_i | s13_err_i | s14_err_i | s15_err_i;
++
++always @(s0_rty_i or s1_rty_i or s2_rty_i or s3_rty_i or s4_rty_i or
++	s5_rty_i or s6_rty_i or s7_rty_i or s8_rty_i or s9_rty_i or
++	s10_rty_i or s11_rty_i or s12_rty_i or s13_rty_i or s14_rty_i or s15_rty_i)
++	wb_rty_o = s0_rty_i | s1_rty_i | s2_rty_i | s3_rty_i |
++	           s4_rty_i | s5_rty_i | s6_rty_i | s7_rty_i |
++	           s8_rty_i | s9_rty_i | s10_rty_i | s11_rty_i |
++	           s12_rty_i | s13_rty_i | s14_rty_i | s15_rty_i;
+ 
+ endmodule
+ 
+--- a/wb_conmax_msel.v
++++ b/wb_conmax_msel.v
+@@ -95,7 +95,7 @@
+ wire	[2:0]	gnt_p0, gnt_p1, gnt_p2, gnt_p3;
+ 
+ reg	[2:0]	sel1, sel2;
+-wire	[2:0]	sel;
++reg	[2:0]	sel;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -237,7 +237,9 @@
+ 	endcase
+ 
+ 
+-assign sel = (pri_sel==2'd0) ? gnt_p0 : ( (pri_sel==2'd1) ? sel1 : sel2 );
++always @(posedge clk_i)
++	if(rst_i)	sel <= #1 3'd0;
++	else		sel <= #1 (pri_sel==2'd0) ? gnt_p0 : ( (pri_sel==2'd1) ? sel1 : sel2 );
+ 
+ endmodule
+ 
+--- a/wb_conmax_rf.v
++++ b/wb_conmax_rf.v
+@@ -161,6 +161,7 @@
+ //synopsys infer_multibit "conf15"
+ 
+ wire		rf_sel;
++reg		rf_sel_r;
+ reg	[15:0]	rf_dout;
+ reg		rf_ack;
+ reg		rf_we;
+@@ -171,6 +172,9 @@
+ //
+ 
+ assign rf_sel = i_wb_cyc_i & i_wb_stb_i & (i_wb_addr_i[aw-5:aw-8] == rf_addr);
++
++always @(posedge clk_i)
++	rf_sel_r <= #1 rf_sel;
+ 
+ ////////////////////////////////////////////////////////////////////
+ //
+@@ -300,9 +304,9 @@
+ assign e_wb_stb_o  = i_wb_stb_i;
+ assign e_wb_we_o   = i_wb_we_i;
+ 
+-assign i_wb_data_o = rf_sel ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
+-assign i_wb_ack_o  = rf_sel ? rf_ack  : e_wb_ack_i;
+-assign i_wb_err_o  = rf_sel ? 1'b0    : e_wb_err_i;
+-assign i_wb_rty_o  = rf_sel ? 1'b0    : e_wb_rty_i;
++assign i_wb_data_o = rf_sel_r ? { {aw-16{1'b0}}, rf_dout} : e_wb_data_i;
++assign i_wb_ack_o  = rf_sel_r ? rf_ack  : e_wb_ack_i;
++assign i_wb_err_o  = rf_sel_r ? 1'b0    : e_wb_err_i;
++assign i_wb_rty_o  = rf_sel_r ? 1'b0    : e_wb_rty_i;
+ 
+ endmodule

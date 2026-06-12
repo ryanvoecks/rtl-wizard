@@ -1,0 +1,327 @@
+--- a/modexp.v
++++ b/modexp.v
+@@ -123,6 +123,7 @@
+ 
+   reg          start_reg;
+   reg          start_new;
++  reg          start_rd_reg;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -148,7 +149,9 @@
+   wire [31 : 0] result_mem_api_read_data;
+ 
+   wire          ready;
+-  wire [63 : 0] cycles;
++
++  reg [31 : 0]  cycle_ctr_low_reg;
++  reg [31 : 0]  cycle_ctr_high_reg;
+ 
+   reg [31 : 0]  tmp_read_data;
+ 
+@@ -157,6 +160,32 @@
+   // Concurrent connectivity for ports etc.
+   //----------------------------------------------------------------
+   assign read_data = tmp_read_data;
++
++
++  //----------------------------------------------------------------
++  // cycle_ctr
++  // Counts cycles while the core is busy (!ready).
++  // Co-located with the read mux to minimise routing delay.
++  //----------------------------------------------------------------
++  always @(posedge clk or negedge reset_n)
++    begin : cycle_ctr
++      if (!reset_n)
++        begin
++          cycle_ctr_low_reg  <= 32'h0;
++          cycle_ctr_high_reg <= 32'h0;
++        end
++      else if (start_reg)
++        begin
++          cycle_ctr_low_reg  <= 32'h0;
++          cycle_ctr_high_reg <= 32'h0;
++        end
++      else if (!ready)
++        begin
++          cycle_ctr_low_reg <= cycle_ctr_low_reg + 1'b1;
++          if (cycle_ctr_low_reg == 32'hFFFFFFFF)
++            cycle_ctr_high_reg <= cycle_ctr_high_reg + 1'b1;
++        end
++    end
+ 
+ 
+   //----------------------------------------------------------------
+@@ -171,8 +200,6 @@
+ 
+                         .exponent_length(exponent_length_reg),
+                         .modulus_length(modulus_length_reg),
+-
+-                        .cycles(cycles),
+ 
+                         .exponent_mem_api_cs(exponent_mem_api_cs),
+                         .exponent_mem_api_wr(exponent_mem_api_wr),
+@@ -210,12 +237,14 @@
+       if (!reset_n)
+         begin
+           start_reg           <= 1'b0;
++          start_rd_reg        <= 1'b0;
+           exponent_length_reg <= DEFAULT_EXPLENGTH;
+           modulus_length_reg  <= DEFAULT_MODLENGTH;
+         end
+       else
+         begin
+-          start_reg <= start_new;
++          start_reg    <= start_new;
++          start_rd_reg <= start_reg;
+ 
+           if (exponent_length_we)
+             begin
+@@ -337,16 +366,16 @@
+                         tmp_read_data = CORE_VERSION;
+ 
+                       ADDR_CTRL:
+-                        tmp_read_data = {31'h00000000, start_reg};
++                        tmp_read_data = {31'h00000000, start_rd_reg};
+ 
+                       ADDR_STATUS:
+                         tmp_read_data = {31'h00000000, ready};
+ 
+                       ADDR_CYCLES_HIGH:
+-                        tmp_read_data = cycles[63 : 32];
++                        tmp_read_data = cycle_ctr_high_reg;
+ 
+                       ADDR_CYCLES_LOW:
+-                        tmp_read_data = cycles[31 : 0];
++                        tmp_read_data = cycle_ctr_low_reg;
+ 
+                       ADDR_MODULUS_LENGTH:
+                         tmp_read_data = {24'h000000, modulus_length_reg};
+--- a/modexp_core.v
++++ b/modexp_core.v
+@@ -64,7 +64,6 @@
+                    input wire [07 : 0]  exponent_length,
+                    input wire [07 : 0]  modulus_length,
+ 
+-                   output wire [63 : 0] cycles,
+ 
+                    input wire           exponent_mem_api_cs,
+                    input wire           exponent_mem_api_wr,
+@@ -93,11 +92,11 @@
+   //----------------------------------------------------------------
+   // Internal constant and parameter definitions.
+   //----------------------------------------------------------------
+-  localparam MONTPROD_SELECT_ONE_NR = 3'h0;
+-  localparam MONTPROD_SELECT_X_NR   = 3'h1;
+-  localparam MONTPROD_SELECT_Z_P    = 3'h2;
+-  localparam MONTPROD_SELECT_P_P    = 3'h3;
+-  localparam MONTPROD_SELECT_Z_ONE  = 3'h4;
++  localparam MONTPROD_SELECT_ONE_NR = 5'b00001;
++  localparam MONTPROD_SELECT_X_NR   = 5'b00010;
++  localparam MONTPROD_SELECT_Z_P    = 5'b00100;
++  localparam MONTPROD_SELECT_P_P    = 5'b01000;
++  localparam MONTPROD_SELECT_Z_ONE  = 5'b10000;
+ 
+   localparam MONTPROD_DEST_Z        = 2'b00;
+   localparam MONTPROD_DEST_P        = 2'b01;
+@@ -126,8 +125,8 @@
+   reg          ready_new;
+   reg          ready_we;
+ 
+-  reg [2 : 0]  montprod_select_reg;
+-  reg [2 : 0]  montprod_select_new;
++  reg [4 : 0]  montprod_select_reg;
++  reg [4 : 0]  montprod_select_new;
+   reg          montprod_select_we;
+   reg [1 : 0]  montprod_dest_reg;
+   reg [1 : 0]  montprod_dest_new;
+@@ -157,18 +156,6 @@
+   reg          exponation_mode_reg;
+   reg          exponation_mode_new;
+   reg          exponation_mode_we;
+-
+-  reg [31 : 0] cycle_ctr_low_reg;
+-  reg [31 : 0] cycle_ctr_low_new;
+-  reg          cycle_ctr_low_we;
+-  reg [31 : 0] cycle_ctr_high_reg;
+-  reg [31 : 0] cycle_ctr_high_new;
+-  reg          cycle_ctr_high_we;
+-  reg          cycle_ctr_state_reg;
+-  reg          cycle_ctr_state_new;
+-  reg          cycle_ctr_state_we;
+-  reg          cycle_ctr_start;
+-  reg          cycle_ctr_stop;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -242,7 +229,6 @@
+   // Concurrent connectivity for ports etc.
+   //----------------------------------------------------------------
+   assign ready  = ready_reg;
+-  assign cycles = {cycle_ctr_high_reg, cycle_ctr_low_reg};
+ 
+   assign length_m1 = modulus_length - 8'h1;
+ 
+@@ -388,9 +374,6 @@
+           ei_reg              <= 1'b0;
+           residue_valid_reg   <= 1'b0;
+           exponation_mode_reg <= EXPONATION_MODE_SECRET_SECURE;
+-          cycle_ctr_low_reg   <= 32'h00000000;
+-          cycle_ctr_high_reg  <= 32'h00000000;
+-          cycle_ctr_state_reg <= 1'b0;
+         end
+       else
+         begin
+@@ -416,63 +399,12 @@
+           if (exponation_mode_we)
+             exponation_mode_reg <= exponation_mode_new;
+ 
+-          if (cycle_ctr_low_we)
+-            cycle_ctr_low_reg <= cycle_ctr_low_new;
+-
+-          if (cycle_ctr_high_we)
+-            cycle_ctr_high_reg <= cycle_ctr_high_new;
+-
+-          if (cycle_ctr_state_we)
+-            cycle_ctr_state_reg <= cycle_ctr_state_new;
+ 
+           if (modexp_ctrl_we)
+             modexp_ctrl_reg <= modexp_ctrl_new;
+         end
+     end // reg_update
+ 
+-
+-  //----------------------------------------------------------------
+-  // cycle_ctr
+-  //
+-  // Implementation of the cycle counter
+-  //----------------------------------------------------------------
+-  always @*
+-    begin : cycle_ctr
+-      cycle_ctr_low_new   = 32'h00000000;
+-      cycle_ctr_low_we    = 1'b0;
+-      cycle_ctr_high_new  = 32'h00000000;
+-      cycle_ctr_high_we   = 1'b0;
+-      cycle_ctr_state_new = 1'b0;
+-      cycle_ctr_state_we  = 1'b0;
+-
+-      if (cycle_ctr_start)
+-        begin
+-          cycle_ctr_low_new   = 32'h00000000;
+-          cycle_ctr_low_we    = 1'b1;
+-          cycle_ctr_high_new  = 32'h00000000;
+-          cycle_ctr_high_we   = 1'b1;
+-          cycle_ctr_state_new = 1'b1;
+-          cycle_ctr_state_we  = 1'b1;
+-        end
+-
+-      if (cycle_ctr_stop)
+-        begin
+-          cycle_ctr_state_new = 1'b0;
+-          cycle_ctr_state_we  = 1'b1;
+-        end
+-
+-      if (cycle_ctr_state_reg)
+-        begin
+-          cycle_ctr_low_new = cycle_ctr_low_reg + 1'b1;
+-          cycle_ctr_low_we  = 1'b1;
+-
+-          if (cycle_ctr_low_new == 32'h00000000)
+-            begin
+-              cycle_ctr_high_new  = cycle_ctr_high_reg + 1'b1;
+-              cycle_ctr_high_we   = 1'b1;
+-            end
+-        end
+-    end // cycle_ctr
+ 
+ 
+   //----------------------------------------------------------------
+@@ -553,43 +485,26 @@
+       p_mem_rd1_addr                 = montprod_opb_addr;
+ 
+       montprod_opm_data = modulus_mem_int_rd_data;
+-      case (montprod_select_reg)
+-        MONTPROD_SELECT_ONE_NR:
+-          begin
+-            montprod_opa_data  = one_reg;
+-            montprod_opb_data  = residue_mem_montprod_read_data;
+-          end
+-
+-        MONTPROD_SELECT_X_NR:
+-          begin
+-            montprod_opa_data  = message_mem_int_rd_data;
+-            montprod_opb_data  = residue_mem_montprod_read_data;
+-          end
+-
+-        MONTPROD_SELECT_Z_P:
+-          begin
+-            montprod_opa_data  = result_mem_int_rd_data;
+-            montprod_opb_data  = p_mem_rd1_data;
+-          end
+-
+-        MONTPROD_SELECT_P_P:
+-          begin
+-            montprod_opa_data  = p_mem_rd0_data;
+-            montprod_opb_data  = p_mem_rd1_data;
+-          end
+-
+-        MONTPROD_SELECT_Z_ONE:
+-          begin
+-            montprod_opa_data  = result_mem_int_rd_data;
+-            montprod_opb_data  = b_one_reg;
+-          end
+-
+-        default:
+-          begin
+-            montprod_opa_data  = 32'h00000000;
+-            montprod_opb_data  = 32'h00000000;
+-          end
+-      endcase // case (montprod_selcect_reg)
++
++      // One-hot mux: merge select bits that share the same data source to shrink OR-tree depth.
++      // sel[2] and sel[4] both feed result_mem_int_rd_data into OPA.
++      // sel[0] and sel[1] both feed residue_mem into OPB; sel[2] and sel[3] both feed p_mem_rd1.
++      // OR-combining them reduces OPA from 5→4 inputs and OPB from 5→3 inputs (saves ~1 gate level).
++      begin : operand_mux
++        reg opa_sel_24, opb_sel_01, opb_sel_23;
++        opa_sel_24 = montprod_select_reg[2] | montprod_select_reg[4];
++        opb_sel_01 = montprod_select_reg[0] | montprod_select_reg[1];
++        opb_sel_23 = montprod_select_reg[2] | montprod_select_reg[3];
++
++        montprod_opa_data = ({32{montprod_select_reg[0]}} & one_reg)
++                         | ({32{montprod_select_reg[1]}} & message_mem_int_rd_data)
++                         | ({32{opa_sel_24}}             & result_mem_int_rd_data)
++                         | ({32{montprod_select_reg[3]}} & p_mem_rd0_data);
++
++        montprod_opb_data = ({32{opb_sel_01}}             & residue_mem_montprod_read_data)
++                         | ({32{opb_sel_23}}              & p_mem_rd1_data)
++                         | ({32{montprod_select_reg[4]}} & b_one_reg);
++      end
+     end
+ 
+ 
+@@ -699,8 +614,6 @@
+       montprod_calc       = 0;
+       modexp_ctrl_new     = CTRL_IDLE;
+       modexp_ctrl_we      = 1'b0;
+-      cycle_ctr_start     = 1'b0;
+-      cycle_ctr_stop      = 1'b0;
+ 
+       residue_calculate = 1'b0;
+ 
+@@ -713,7 +626,6 @@
+               begin
+                 ready_new       = 1'b0;
+                 ready_we        = 1'b1;
+-                cycle_ctr_start = 1'b1;
+ 
+                 if (residue_valid_reg)
+                   begin
+@@ -842,7 +754,6 @@
+ 
+         CTRL_DONE:
+           begin
+-            cycle_ctr_stop  = 1'b1;
+             ready_new       = 1'b1;
+             ready_we        = 1'b1;
+             modexp_ctrl_new = CTRL_IDLE;

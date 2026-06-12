@@ -1,0 +1,13 @@
+design        , label     , kind  , top_k, p  , n_synth, n_route, n_common, rbo
+wb_dma        , artifact  , blocks,   100, 0.6,     100,     100,       71, 6.297969714725764e-05
+sha512        , reliable  , blocks,   100, 0.6,     100,     100,       76, 0.9753238604803697
+systolic_tpu  , reliable  , blocks,   100, 0.6,      88,      88,       88, 0.9101946472278073
+jpeg_encoder  , reliable  , blocks,   100, 0.6,      93,      93,       89, 0.8217228833723986
+viterbi       , reliable  , blocks,   100, 0.6,     100,     100,       73, 0.7883523685725131
+aes           , reliable  , blocks,   100, 0.6,     100,     100,       83, 0.7744217937533022
+reed_solomon  , reliable  , blocks,   100, 0.6,     100,     100,       37, 0.4867382271874952
+double_fpu    , reliable  , blocks,   100, 0.6,      99,     100,       50, 0.2697752834502522
+bitonic_sorter, unreliable, blocks,   100, 0.6,       8,       8,        8, 0.16542994285714285
+uberddr3      , unreliable, blocks,   100, 0.6,     100,     100,       53, 0.019925993425937507
+verilog_axi   , unreliable, blocks,   100, 0.6,     100,     100,       49, 0.00011776818576086357
+e203          , unreliable, blocks,   100, 0.6,     100,     100,        0, 0.0

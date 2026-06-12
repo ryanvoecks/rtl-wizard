@@ -1,0 +1,18 @@
+### INFO: RTL Simulation of FIR Filter.
+### Testcase           1
+                    ./sim/testcases/stimuli/stimuli_tc_1_mat.dat
+### MISMATCH sample 1: RTL = 0, MAT = -32767
+### MISMATCH sample 2: RTL = 0, MAT = -32767
+### MISMATCH sample 3: RTL = 0, MAT = -32767
+### MISMATCH sample 4: RTL = -32767, MAT = 0
+### MISMATCH sample 5: RTL = -32767, MAT = 32767
+### MISMATCH sample 6: RTL = -32767, MAT = 32767
+### MISMATCH sample 8: RTL = 32767, MAT = -65534
+### MISMATCH sample 9: RTL = 32767, MAT = -131068
+### MISMATCH sample 10: RTL = 0, MAT = -98301
+### MISMATCH sample 11: RTL = -65534, MAT = 163835
+### INFO: Testcase FAILED
+- sim/testbench/filt_fir_tb.sv:71: Verilog $finish
+- S i m u l a t i o n   R e p o r t: Verilator 5.048 2026-04-26
+- Verilator: $finish at 26us; walltime 0.000 s; speed 105.570 ms/s
+- Verilator: cpu 0.000 s on 1 threads; allocated 5 MB

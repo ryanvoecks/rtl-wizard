@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	wb_dma_top
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-7.5527	rst_i	uI.csr_r[J]	2	2	2.000	3
+2	-7.5527	rst_i	uI.int_maska_r[J]	32	62	1.274	4
+3	-7.5527	rst_i	uI.int_maskb_r[J]	32	62	1.290	4
+4	-7.5527	rst_i	uI.uJ.ch_csr_rK[L]	241	480	1.431	4
+5	-7.5527	rst_i	uI.uJ.ch_done	17	32	1.000	2
+6	-7.5527	rst_i	uI.uJ.ch_eol	17	32	1.000	2
+7	-7.5527	rst_i	uI.uJ.int_src_r[K]	47	92	1.652	4
+8	-7.5527	rst_i	uI.uJ.ptr_valid	17	32	1.469	3
+9	-7.5527	rst_i	uI.uJ.rest_en	17	32	0.781	4
+10	-7.5527	rst_i	uI.uJ.sw_pointer_r[K]	449	896	1.000	2
+11	-7.5527	rst_i	uI.uJ.ch_err	3	4	2.000	4
+12	-7.5527	rst_i	uI.ch_sel_r[J]	6	10	0.600	2
+13	-7.5527	rst_i	uI.uJ.state[K]	11	20	1.000	1
+14	-7.5527	rst_i	uI.state[J]	12	22	1.227	5
+15	-5.6837	rst_i	uI.uJ.ch_amK_r[L]	897	1792	1.500	3
+16	-0.3207	uI.state[J]	wbIs_data_o[J]	75	22	1.227	5
+17	-0.2385	uI.uJ.pri_outK[L]	wbIs_data_o[J]	65	2	0.500	1
+18	-0.2222	uI.uJ.state[K]	wbIs_data_o[J]	74	20	1.000	1
+19	-0.1966	uI.ch_sel_r[J]	wbIs_data_o[J]	69	10	0.600	2
+20	-0.1352	wbI_addr_i[J]	wbIs_data_o[J]	128	0	0.000	0
+21	-0.1270	wbI_addr_i[J]	wbI_addr_o[J]	128	0	0.000	0
+22	-0.1198	wbI_addr_i[J]	wbI_cyc_o	66	0	0.000	0
+23	-0.1029	wbI_addr_i[J]	wbI_err_o	66	0	0.000	0
+24	-0.1029	wbI_addr_i[J]	wbI_rty_o	66	0	0.000	0
+25	-0.0971	wbI_addr_i[J]	wbIm_data_o[J]	128	0	0.000	0

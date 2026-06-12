@@ -1,0 +1,13 @@
+design,label,kind,top_k,p,n_synth,n_route,n_common,rbo
+wb_dma,artifact,paths,100,0.3,100,99,0,0.0
+sha512,reliable,paths,100,0.3,95,88,72,0.9952007221376297
+systolic_tpu,reliable,paths,100,0.3,100,100,84,0.9646171407866491
+aes,reliable,paths,100,0.3,100,100,97,0.8661409805057322
+viterbi,reliable,paths,100,0.3,100,100,85,0.15948512931003736
+double_fpu,reliable,paths,100,0.3,99,100,52,0.06277574129332288
+reed_solomon,reliable,paths,100,0.3,100,100,64,0.06150628303227509
+jpeg_encoder,reliable,paths,100,0.3,100,100,84,6.521414947412434e-08
+bitonic_sorter,unreliable,paths,100,0.3,8,8,8,0.030917099999999993
+uberddr3,unreliable,paths,100,0.3,99,97,54,0.0005078506076364054
+verilog_axi,unreliable,paths,100,0.3,100,100,6,9.08157187412598e-41
+e203,unreliable,paths,100,0.3,100,100,0,0.0

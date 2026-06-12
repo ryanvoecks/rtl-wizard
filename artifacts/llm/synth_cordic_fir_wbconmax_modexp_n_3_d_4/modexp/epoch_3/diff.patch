@@ -1,0 +1,140 @@
+--- a/modexp_core.v
++++ b/modexp_core.v
+@@ -113,6 +113,7 @@
+   localparam CTRL_ITERATE_END       = 4'h7;
+   localparam CTRL_CALCULATE_ZN      = 4'h8;
+   localparam CTRL_DONE              = 4'h9;
++  localparam CTRL_ITERATE_FETCH     = 4'hA;
+ 
+   //for rsa, c=M^65537 etc, there is no need to slow down to hide the exponent
+   localparam EXPONATION_MODE_SECRET_SECURE = 1'b0;
+@@ -169,6 +170,7 @@
+   reg          cycle_ctr_state_we;
+   reg          cycle_ctr_start;
+   reg          cycle_ctr_stop;
++  reg          cycle_ctr_carry_reg;
+ 
+ 
+   //----------------------------------------------------------------
+@@ -391,6 +393,7 @@
+           cycle_ctr_low_reg   <= 32'h00000000;
+           cycle_ctr_high_reg  <= 32'h00000000;
+           cycle_ctr_state_reg <= 1'b0;
++          cycle_ctr_carry_reg <= 1'b0;
+         end
+       else
+         begin
+@@ -418,6 +421,9 @@
+ 
+           if (cycle_ctr_low_we)
+             cycle_ctr_low_reg <= cycle_ctr_low_new;
++
++          // Pipelined carry: register overflow flag, apply to high word next cycle.
++          cycle_ctr_carry_reg <= cycle_ctr_low_we && (cycle_ctr_low_new == 32'h0);
+ 
+           if (cycle_ctr_high_we)
+             cycle_ctr_high_reg <= cycle_ctr_high_new;
+@@ -465,12 +471,13 @@
+         begin
+           cycle_ctr_low_new = cycle_ctr_low_reg + 1'b1;
+           cycle_ctr_low_we  = 1'b1;
+-
+-          if (cycle_ctr_low_new == 32'h00000000)
+-            begin
+-              cycle_ctr_high_new  = cycle_ctr_high_reg + 1'b1;
+-              cycle_ctr_high_we   = 1'b1;
+-            end
++        end
++
++      // Increment high word one cycle after low word overflows (pipelined carry).
++      if (cycle_ctr_carry_reg)
++        begin
++          cycle_ctr_high_new = cycle_ctr_high_reg + 1'b1;
++          cycle_ctr_high_we  = 1'b1;
+         end
+     end // cycle_ctr
+ 
+@@ -666,9 +673,9 @@
+   //----------------------------------------------------------------
+   always @*
+     begin : exponent_process
+-      // Accessing new instead of reg - pick up update at
+-      // CTRL_ITERATE_NEW to remove a pipeline stall.
+-      E_word_index  = length_m1 - loop_counter_new[ 12 : 5 ];
++      // Use registered counter; address is now clean (no adder on path).
++      // CTRL_ITERATE_FETCH provides the extra cycle for memory latency.
++      E_word_index  = length_m1 - loop_counter_reg[ 12 : 5 ];
+ 
+       E_bit_index   = loop_counter_reg[ 04 : 0 ];
+ 
+@@ -816,7 +823,7 @@
+           begin
+             if (!last_iteration)
+               begin
+-                modexp_ctrl_new = CTRL_ITERATE;
++                modexp_ctrl_new = CTRL_ITERATE_FETCH;
+                 modexp_ctrl_we  = 1;
+               end
+             else
+@@ -831,6 +838,15 @@
+               end
+           end
+ 
++        CTRL_ITERATE_FETCH:
++          begin
++            // One stall cycle: loop_counter_reg is now updated, so
++            // exponent_mem_int_rd_addr (= length_m1 - loop_counter_reg[12:5])
++            // presents the correct address; data arrives next cycle in CTRL_ITERATE.
++            modexp_ctrl_new = CTRL_ITERATE;
++            modexp_ctrl_we  = 1;
++          end
++
+         CTRL_CALCULATE_ZN:
+           begin
+             if (montprod_ready)
+--- a/residue.v
++++ b/residue.v
+@@ -110,6 +110,7 @@
+ reg [14 : 0] loop_counter_1_to_nn_reg; //for i = 1 to nn (2*N)
+ reg [14 : 0] loop_counter_1_to_nn_new;
+ reg          loop_counter_1_to_nn_we;
++reg          loop_counter_done_reg; // registered (loop_counter == nn), valid when CTRL_LOOP entered
+ reg [14 : 0] nn_reg;
+ reg          nn_we;
+ reg [07 : 0] length_m1_reg;
+@@ -172,6 +173,7 @@
+           length_m1_reg    <= 8'h0;
+           nn_reg           <= 15'h0;
+           loop_counter_1_to_nn_reg <= 15'h0;
++          loop_counter_done_reg    <= 1'b0;
+           ready_reg        <= 1'b1;
+           sub_carry_in_reg <= 1'b0;
+           shl_carry_in_reg <= 1'b0;
+@@ -192,6 +194,10 @@
+ 
+           if (loop_counter_1_to_nn_we)
+             loop_counter_1_to_nn_reg <= loop_counter_1_to_nn_new;
++
++          // Pre-register loop-done comparison; counter only changes in CTRL_LOOP,
++          // so this is valid whenever CTRL_LOOP is the current or next active state.
++          loop_counter_done_reg <= (loop_counter_1_to_nn_reg == nn_reg);
+ 
+           if (ready_we)
+             ready_reg <= ready_new;
+@@ -430,7 +436,7 @@
+ 
+       CTRL_LOOP:
+         begin
+-          if (loop_counter_1_to_nn_reg == nn_reg)
++          if (loop_counter_done_reg)
+             begin
+               ready_new = 1'b1;
+               ready_we  = 1'b1;
+--- a/adder32.v
++++ b/adder32.v
+@@ -51,4 +51,5 @@
+ 
+    always @(a, b, carry_in)
+      adder_result = {1'b0, a} + {1'b0, b} + {32'b0, carry_in};
++
+ endmodule

@@ -1,0 +1,30 @@
+# stage	1_synth
+# top_module	viterbi_core
+# top_n	25
+# kind	block_fanout
+# rank	worst_slack_ns	start	end	n_cells	n_output_nets	mean_fanout	max_fanout
+1	-2.4579	acs_inst_I.pm_r[J]	pm_normalize_inst.pm_nom_r[I][J]	1152	2304	1.830	8
+2	-1.0558	register_num_i[I]	pm_normalize_inst.pm_nom_r[I][J]	578	1152	1.768	8
+3	-0.2651	src_rdata_i[I]	bmu_inst_I.bm_r[J]	538	1028	1.215	64
+4	-0.0896	register_num_i[I]	acs_inst_I.pm_r[J]	578	1152	1.891	5
+5	-0.0375	register_num_i[I]	acs_inst_I.survivor_path_r	66	128	0.500	1
+6	0.5393	bmu_inst_I.bm_r[J]	acs_inst_I.pm_r[J]	1090	2180	1.572	64
+7	0.5915	bmu_inst_I.bm_r[J]	acs_inst_I.survivor_path_r	578	1156	1.136	64
+8	0.6264	frame_start_i	fetch_src_cnt_r[I]	13	24	2.333	4
+9	0.6273	rst_sync_i	fetch_src_cnt_r[I]	13	24	2.333	4
+10	0.6282	register_num_i[I]	bmu_inst_I.low_codeword_tmp[J]	380	756	1.000	2
+11	0.6394	infobit_length_i[I]	src_addr_r[I]	24	24	1.500	4
+12	0.6465	frame_start_i	pm_normalize_inst.pm_nom_r[I][J]	577	1152	1.768	8
+13	0.6525	polynomialI_i[J]	bmu_inst_I.low_codeword_tmp[J]	426	756	1.000	2
+14	0.6649	tail_biting_en_i	pm_normalize_inst.pm_nom_r[I][J]	577	1152	1.768	8
+15	0.6739	rst_sync_i	pm_normalize_inst.pm_nom_r[I][J]	577	1152	1.768	8
+16	0.6786	valid_polynomials_i[I]	bmu_inst_I.bm_r[J]	517	1028	1.215	64
+17	0.6937	infobit_length_i[I]	src_len_counter_r[I]	24	24	2.000	5
+18	0.6998	valid_polynomials_i[I]	bmu_inst_I.low_codeword[J]	381	756	0.500	1
+19	0.7037	frame_start_i	src_addr_r[I]	13	24	1.500	4
+20	0.7109	register_num_i[I]	acs_en_r[I]	6	8	1.125	2
+21	0.7160	rst_sync_i	bmu_inst_I.low_codeword_tmp[J]	379	756	1.000	2
+22	0.7217	rst_sync_i	src_addr_r[I]	13	24	1.500	4
+23	0.7310	rst_sync_i	bmu_inst_I.low_codeword[J]	379	756	0.500	1
+24	0.7366	rst_sync_i	acs_inst_I.pm_r[J]	577	1152	1.891	5
+25	0.7396	acs_inst_I.valid_r	tb_addr_o[I]	7	2	0.500	1

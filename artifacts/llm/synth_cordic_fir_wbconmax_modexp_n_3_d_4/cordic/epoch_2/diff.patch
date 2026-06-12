@@ -1,0 +1,351 @@
+--- a/cordic_p2r.v
++++ b/cordic_p2r.v
+@@ -70,7 +70,11 @@
+ 	reg	signed	[(WW-1):0]	xv	[0:(NSTAGES)];
+ 	reg	signed	[(WW-1):0]	yv	[0:(NSTAGES)];
+ 	reg		[(PW-1):0]	ph	[0:(NSTAGES)];
+-	reg		[(NSTAGES):0]	ax;
++	reg		[(NSTAGES+1):0]	ax;
++	// Pipeline register to break input→pre-rotation critical path
++	reg	signed	[(WW-1):0]	xv_in, yv_in;
++	reg		[(PW-1):0]	ph_in;
++	reg		[2:0]		ph_top;
+ 	// }}}
+ 
+ 	// Sign extend our inputs
+@@ -85,6 +89,17 @@
+ 	assign	e_xval = { {i_xval[(IW-1)]}, i_xval, {(WW-IW-1){1'b0}} };
+ 	assign	e_yval = { {i_yval[(IW-1)]}, i_yval, {(WW-IW-1){1'b0}} };
+ 
++	initial begin xv_in = 0; yv_in = 0; ph_in = 0; ph_top = 0; end
++	always @(posedge i_clk)
++	if (i_reset) begin
++		xv_in <= 0; yv_in <= 0; ph_in <= 0; ph_top <= 0;
++	end else if (i_ce) begin
++		xv_in  <= e_xval;
++		yv_in  <= e_yval;
++		ph_in  <= i_phase;
++		ph_top <= i_phase[(PW-1):(PW-3)];
++	end
++
+ 	// }}}
+ 	//
+ 	// Handle the auxilliary logic.
+@@ -102,7 +117,7 @@
+ 	if (i_reset)
+ 		ax <= 0;
+ 	else if (i_ce)
+-		ax <= { ax[(NSTAGES-1):0], i_aux };
++		ax <= { ax[(NSTAGES):0], i_aux };
+ 	// }}}
+ 
+ 	// Pre-CORDIC rotation
+@@ -126,63 +141,62 @@
+ 		// {{{
+ 		// Walk through all possible quick phase shifts necessary
+ 		// to constrain the input to within +/- 45 degrees.
+-		// This is a zero-gain operation, involving only sign
+-		// adjustments.
+-		case(i_phase[(PW-1):(PW-3)])
++		// Uses registered ph_top/xv_in/yv_in/ph_in to break input critical path.
++		case(ph_top)
+ 		3'b000: begin	// 0 .. 45, No change
+ 		// {{{
+-			xv[0] <= e_xval;
+-			yv[0] <= e_yval;
+-			ph[0] <= i_phase;
++			xv[0] <= xv_in;
++			yv[0] <= yv_in;
++			ph[0] <= ph_in;
+ 			end
+ 			// }}}
+ 		3'b001: begin	// 45 .. 90
+ 		// {{{
+-			xv[0] <= -e_yval;
+-			yv[0] <= e_xval;
+-			ph[0] <= i_phase - 25'h800000;
++			xv[0] <= -yv_in;
++			yv[0] <= xv_in;
++			ph[0] <= ph_in - 25'h800000;
+ 			end
+ 			// }}}
+ 		3'b010: begin	// 90 .. 135
+ 		// {{{
+-			xv[0] <= -e_yval;
+-			yv[0] <= e_xval;
+-			ph[0] <= i_phase - 25'h800000;
++			xv[0] <= -yv_in;
++			yv[0] <= xv_in;
++			ph[0] <= ph_in - 25'h800000;
+ 			end
+ 			// }}}
+ 		3'b011: begin	// 135 .. 180
+ 		// {{{
+-			xv[0] <= -e_xval;
+-			yv[0] <= -e_yval;
+-			ph[0] <= i_phase - 25'h1000000;
++			xv[0] <= -xv_in;
++			yv[0] <= -yv_in;
++			ph[0] <= ph_in - 25'h1000000;
+ 			end
+ 			// }}}
+ 		3'b100: begin	// 180 .. 225
+ 		// {{{
+-			xv[0] <= -e_xval;
+-			yv[0] <= -e_yval;
+-			ph[0] <= i_phase - 25'h1000000;
++			xv[0] <= -xv_in;
++			yv[0] <= -yv_in;
++			ph[0] <= ph_in - 25'h1000000;
+ 			end
+ 			// }}}
+ 		3'b101: begin	// 225 .. 270
+ 		// {{{
+-			xv[0] <= e_yval;
+-			yv[0] <= -e_xval;
+-			ph[0] <= i_phase - 25'h1800000;
++			xv[0] <= yv_in;
++			yv[0] <= -xv_in;
++			ph[0] <= ph_in - 25'h1800000;
+ 			end
+ 			// }}}
+ 		3'b110: begin	// 270 .. 315
+ 		// {{{
+-			xv[0] <= e_yval;
+-			yv[0] <= -e_xval;
+-			ph[0] <= i_phase - 25'h1800000;
++			xv[0] <= yv_in;
++			yv[0] <= -xv_in;
++			ph[0] <= ph_in - 25'h1800000;
+ 			end
+ 			// }}}
+ 		3'b111: begin	// 315 .. 360, No change
+ 		// {{{
+-			xv[0] <= e_xval;
+-			yv[0] <= e_yval;
+-			ph[0] <= i_phase;
++			xv[0] <= xv_in;
++			yv[0] <= yv_in;
++			ph[0] <= ph_in;
+ 			end
+ 			// }}}
+ 		endcase
+@@ -315,7 +329,7 @@
+ 	begin
+ 		o_xval <= pre_xval[(WW-1):(WW-OW)];
+ 		o_yval <= pre_yval[(WW-1):(WW-OW)];
+-		o_aux <= ax[NSTAGES];
++		o_aux <= ax[NSTAGES+1];
+ 	end
+ 	// }}}
+ 	// Make Verilator happy with pre_.val
+--- a/cordic_r2p.v
++++ b/cordic_r2p.v
+@@ -51,7 +51,7 @@
+ 			OW=18,// The number of output bits to produce
+ 			NSTAGES=23,
+ 			// XTRA= 4,// Extra bits for internal precision
+-			WW=26,	// Our working bit-width
++			WW=25,	// Our working bit-width
+ 			PW=26	// Bits in our phase variables
+ 		// }}}
+ 	) (
+@@ -70,6 +70,15 @@
+ 	reg	signed	[(WW-1):0]	xv	[0:NSTAGES];
+ 	reg	signed	[(WW-1):0]	yv	[0:NSTAGES];
+ 	reg		[(PW-1):0]	ph	[0:NSTAGES];
++	// Pipeline register to break input→pre-rotation critical path
++	reg	signed	[(WW-1):0]	xv_in, yv_in;
++	reg		[1:0]		xy_sign;
++	// Half-stage registers: pre-register yv sign bit to break
++	// the "sign-bit-controls-same-register-adder" critical path
++	reg	signed	[(WW-1):0]	xv_h	[0:NSTAGES-1];
++	reg	signed	[(WW-1):0]	yv_h	[0:NSTAGES-1];
++	reg		[(PW-1):0]	ph_h	[0:NSTAGES-1];
++	reg				dir_h	[0:NSTAGES-1];
+ 	// }}}
+ 	// Sign extension
+ 	// {{{
+@@ -83,6 +92,16 @@
+ 	assign	e_xval = { {(2){i_xval[(IW-1)]}}, i_xval, {(WW-IW-2){1'b0}} };
+ 	assign	e_yval = { {(2){i_yval[(IW-1)]}}, i_yval, {(WW-IW-2){1'b0}} };
+ 
++	initial begin xv_in = 0; yv_in = 0; xy_sign = 0; end
++	always @(posedge i_clk)
++	if (i_reset) begin
++		xv_in <= 0; yv_in <= 0; xy_sign <= 0;
++	end else if (i_ce) begin
++		xv_in   <= e_xval;
++		yv_in   <= e_yval;
++		xy_sign <= {i_xval[IW-1], i_yval[IW-1]};
++	end
++
+ 	// }}}
+ 	//
+ 	// Handle the auxilliary logic.
+@@ -94,14 +113,18 @@
+ 	// are input together with i_aux, then when o_xval and o_yval are set
+ 	// to this value, o_aux *must* contain the value that was in i_aux.
+ 	//
+-	reg		[(NSTAGES):0]	ax;
++	// Total latency: 1(xv_in) + 1(xv[0]) + 2*NSTAGES(half stages) + 1(output) = 2*NSTAGES+3
++	// ax aligns with xv[NSTAGES] ready cycle (= 2*NSTAGES+2 clocks from input),
++	// so TOTAL_STAGES = 2*NSTAGES+2 - 1 = 2*NSTAGES+1
++	localparam TOTAL_STAGES = 2*NSTAGES+1;
++	reg		[TOTAL_STAGES:0]	ax;
+ 
+ 	initial	ax = 0;
+ 	always @(posedge i_clk)
+ 	if (i_reset)
+ 		ax <= 0;
+ 	else if (i_ce)
+-		ax <= { ax[(NSTAGES-1):0], i_aux };
++		ax <= { ax[(TOTAL_STAGES-1):0], i_aux };
+ 
+ 	// }}}
+ 	// Pre-CORDIC rotation
+@@ -112,6 +135,7 @@
+ 		ph[0] = 0;
+ 	end
+ 	// First stage, map to within +/- 45 degrees
++	// Uses registered xv_in/yv_in/xy_sign to break input critical path
+ 	always @(posedge i_clk)
+ 	if (i_reset)
+ 	begin
+@@ -119,33 +143,33 @@
+ 		yv[0] <= 0;
+ 		ph[0] <= 0;
+ 	end else if (i_ce)
+-	case({i_xval[IW-1], i_yval[IW-1]})
++	case(xy_sign)
+ 	2'b01: begin // Rotate by -315 degrees
+ 		// {{{
+-		xv[0] <=  e_xval - e_yval;
+-		yv[0] <=  e_xval + e_yval;
++		xv[0] <=  xv_in - yv_in;
++		yv[0] <=  xv_in + yv_in;
+ 		ph[0] <= 26'h3800000;
+ 		end
+ 		// }}}
+ 	2'b10: begin // Rotate by -135 degrees
+ 		// {{{
+-		xv[0] <= -e_xval + e_yval;
+-		yv[0] <= -e_xval - e_yval;
++		xv[0] <= -xv_in + yv_in;
++		yv[0] <= -xv_in - yv_in;
+ 		ph[0] <= 26'h1800000;
+ 		end
+ 		// }}}
+ 	2'b11: begin // Rotate by -225 degrees
+ 		// {{{
+-		xv[0] <= -e_xval - e_yval;
+-		yv[0] <=  e_xval - e_yval;
++		xv[0] <= -xv_in - yv_in;
++		yv[0] <=  xv_in - yv_in;
+ 		ph[0] <= 26'h2800000;
+ 		end
+ 		// }}}
+ 	// 2'b00:
+ 		// {{{
+ 	default: begin // Rotate by -45 degrees
+-		xv[0] <=  e_xval + e_yval;
+-		yv[0] <= -e_xval + e_yval;
++		xv[0] <=  xv_in + yv_in;
++		yv[0] <= -xv_in + yv_in;
+ 		ph[0] <= 26'h800000;
+ 		end
+ 		// }}}
+@@ -195,9 +219,27 @@
+ 	// }}}
+ 	// }}}
+ 
+-	// Actual CORDIC rotations
+-	// {{{
++	// Actual CORDIC rotations — two-phase pipeline per stage
++	// {{{
++	// Phase A: register values + pre-capture yv sign bit (dir_h)
++	// Phase B: compute using pre-registered dir_h, removing sign-bit
++	//          from the adder critical path
+ 	genvar	i;
++	generate for(i=0; i<NSTAGES; i=i+1) begin : TOPOLARhalf
++		initial begin
++			xv_h[i] = 0; yv_h[i] = 0; ph_h[i] = 0; dir_h[i] = 0;
++		end
++		always @(posedge i_clk)
++		if (i_reset) begin
++			xv_h[i] <= 0; yv_h[i] <= 0; ph_h[i] <= 0; dir_h[i] <= 0;
++		end else if (i_ce) begin
++			xv_h[i]  <= xv[i];
++			yv_h[i]  <= yv[i];
++			ph_h[i]  <= ph[i];
++			dir_h[i] <= yv[i][(WW-1)];
++		end
++	end endgenerate
++
+ 	generate for(i=0; i<NSTAGES; i=i+1) begin : TOPOLARloop
+ 		initial begin
+ 			xv[i+1] = 0;
+@@ -206,47 +248,23 @@
+ 		end
+ 
+ 		always @(posedge i_clk)
+-		// Here's where we are going to put the actual CORDIC
+-		// rectangular to polar loop.  Everything up to this
+-		// point has simply been necessary preliminaries.
+ 		if (i_reset)
+ 		begin
+-			// {{{
+ 			xv[i+1] <= 0;
+ 			yv[i+1] <= 0;
+ 			ph[i+1] <= 0;
+-			// }}}
+ 		end else if (i_ce)
+ 		begin
+-			// {{{
+-			if ((cordic_angle[i] == 0)||(i >= WW))
+-			begin // Do nothing but move our vector
+-			// forward one stage, since we have more
+-			// stages than valid data
+-				// {{{
+-				xv[i+1] <= xv[i];
+-				yv[i+1] <= yv[i];
+-				ph[i+1] <= ph[i];
+-				// }}}
+-			end else if (yv[i][(WW-1)]) // Below the axis
++			if (dir_h[i]) // Below the axis (pre-registered sign bit)
+ 			begin
+-				// {{{
+-				// If the vector is below the x-axis, rotate by
+-				// the CORDIC angle in a positive direction.
+-				xv[i+1] <= xv[i] - (yv[i]>>>(i+1));
+-				yv[i+1] <= yv[i] + (xv[i]>>>(i+1));
+-				ph[i+1] <= ph[i] - cordic_angle[i];
+-				// }}}
++				xv[i+1] <= xv_h[i] - (yv_h[i]>>>(i+1));
++				yv[i+1] <= yv_h[i] + (xv_h[i]>>>(i+1));
++				ph[i+1] <= ph_h[i] - cordic_angle[i];
+ 			end else begin
+-				// {{{
+-				// On the other hand, if the vector is above the
+-				// x-axis, then rotate in the other direction
+-				xv[i+1] <= xv[i] + (yv[i]>>>(i+1));
+-				yv[i+1] <= yv[i] - (xv[i]>>>(i+1));
+-				ph[i+1] <= ph[i] + cordic_angle[i];
+-				// }}}
++				xv[i+1] <= xv_h[i] + (yv_h[i]>>>(i+1));
++				yv[i+1] <= yv_h[i] - (xv_h[i]>>>(i+1));
++				ph[i+1] <= ph_h[i] + cordic_angle[i];
+ 			end
+-			// }}}
+ 		end
+ 	end endgenerate
+ 	// }}}
+@@ -272,7 +290,7 @@
+ 	begin
+ 		o_mag   <= pre_mag[(WW-1):(WW-OW)];
+ 		o_phase <= ph[NSTAGES];
+-		o_aux <= ax[NSTAGES];
++		o_aux <= ax[TOTAL_STAGES];
+ 	end
+ 
+ 	// Make Verilator happy with pre_.val
